@@ -1,13 +1,16 @@
 'use client'
 
-// DEBUG BUILD — direct signInWithPassword with flowType:'implicit' to bypass
-// the PKCE redirect_to validation that causes "Invalid path specified in
-// request URL" when using createBrowserClient's default PKCE mode.
-// Revert to the fetch-based /api/auth/login flow once root cause is confirmed.
+// DEBUG BUILD — uses plain @supabase/supabase-js createClient instead of
+// @supabase/ssr createBrowserClient.  The ssr browser client in ^0.1.0 has a
+// bug where its cookie-storage adapter is undefined at call time, causing:
+//   "Cannot read properties of undefined (reading 'get')"
+//   "Cannot read properties of undefined (reading 'remove')"
+// Plain createClient stores the session in localStorage and avoids that path.
+// Revert to the rate-limit API route once @supabase/ssr is upgraded.
 
 import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createBrowserClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,25 +47,23 @@ function LoginForm() {
 
     const redirectPath = getSafeRedirect(searchParams.get('redirectTo'))
 
-    // Log env var presence — baked in at build time, safe to surface in debug.
+    // Log env var presence — values baked in at build time, safe to surface.
+    // Never log the key value or the password.
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
-    console.info('[debug:login] supabase url      :', supabaseUrl.slice(0, 50) || '(empty — check Vercel env vars)')
-    console.info('[debug:login] anon key present  :', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
-    console.info('[debug:login] redirect target   :', redirectPath)
+    console.info('[debug:login] supabase url     :', supabaseUrl.slice(0, 50) || '(empty — check Vercel env vars)')
+    console.info('[debug:login] anon key present :', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+    console.info('[debug:login] redirect target  :', redirectPath)
 
     try {
-      // Bypass the shared createClient() (which uses createBrowserClient with
-      // flowType:'pkce' by default).  Explicit implicit flow avoids the PKCE
-      // code exchange that sends redirect_to to GoTrue and triggers URL
-      // validation against the allowed-origins list.
-      const supabase = createBrowserClient(
+      const supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
           auth: {
-            flowType: 'implicit',
+            flowType:          'implicit',
             detectSessionInUrl: false,
-            persistSession: true,
+            persistSession:    true,
+            autoRefreshToken:  true,
           },
         }
       )
@@ -80,7 +81,6 @@ function LoginForm() {
         console.error('[debug:login] error.code    :', code)
         console.error('[debug:login] full error    :', authError)
 
-        // Surface all three fields in the UI so you can diagnose without DevTools.
         setError(`${authError.message} (status=${authError.status ?? '?'} code=${code})`)
         return
       }
