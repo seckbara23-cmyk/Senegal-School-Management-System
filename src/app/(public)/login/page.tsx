@@ -1,7 +1,12 @@
 'use client'
 
+// DEBUG BUILD — direct signInWithPassword bypasses /api/auth/login rate-limit
+// route to isolate whether the failure is in the custom route or Supabase Auth.
+// Revert to the fetch-based flow once the root cause is confirmed.
+
 import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,21 +39,30 @@ function LoginForm() {
     setError(null)
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ email: email.trim(), password }),
+      const supabase = createClient()
+
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email:    email.trim().toLowerCase(),
+        password,
       })
 
-      if (!res.ok) {
-        const data = await res.json() as { error?: string }
-        setError(data.error ?? "Une erreur inattendue s'est produite. Veuillez réessayer.")
+      if (authError) {
+        // Detailed diagnostic output — check the browser console.
+        console.error('[debug:login] signInWithPassword failed')
+        console.error('[debug:login] error.message :', authError.message)
+        console.error('[debug:login] error.status  :', authError.status)
+        console.error('[debug:login] error.code    :', (authError as { code?: string }).code ?? 'n/a')
+        console.error('[debug:login] full error    :', authError)
+
+        setError(authError.message)
         return
       }
 
+      console.info('[debug:login] signInWithPassword succeeded — redirecting')
       router.push(getSafeRedirect(searchParams.get('redirectTo')))
       router.refresh()
-    } catch {
+    } catch (err) {
+      console.error('[debug:login] unexpected exception:', err)
       setError("Une erreur inattendue s'est produite. Veuillez réessayer.")
     } finally {
       setLoading(false)
