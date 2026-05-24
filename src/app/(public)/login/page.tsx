@@ -10,13 +10,34 @@ import { createClient } from '@/lib/supabase/client'
 
 export const dynamic = 'force-dynamic'
 
-// Only allow relative paths that start with a single '/'.
-// Rejects '//' (protocol-relative) and absolute URLs to prevent open redirect.
+// ─── Redirect sanitizer ───────────────────────────────────────────────────────
+//
+// Returns a safe relative path for router.push().  Anything that is not a
+// clean relative path (starts with exactly one '/', no protocol, no host)
+// falls back to /dashboard.
+//
+// Defence layers:
+//  1. Null / empty → /dashboard
+//  2. decodeURIComponent — handles double-encoded values (%252F → %2F → /)
+//  3. Must start with '/' and not '//' (protocol-relative)
+//  4. Must not contain ':' — rules out javascript:, https:, data:, etc.
+//  5. Must not be /login — prevents a redirect loop
+
 function getSafeRedirect(value: string | null): string {
-  if (value && value.startsWith('/') && !value.startsWith('//')) {
-    return value
+  if (!value) return '/dashboard'
+
+  let path: string
+  try {
+    path = decodeURIComponent(value)
+  } catch {
+    return '/dashboard'
   }
-  return '/dashboard'
+
+  if (!path.startsWith('/') || path.startsWith('//')) return '/dashboard'
+  if (path.includes(':'))                              return '/dashboard'
+  if (path === '/login' || path.startsWith('/login/')) return '/dashboard'
+
+  return path
 }
 
 // ─── Form (needs Suspense boundary for useSearchParams in Next.js 14) ─────────
@@ -38,6 +59,14 @@ function LoginForm() {
     setLoading(true)
     setError(null)
 
+    // Resolve the redirect target before auth so it never touches the Supabase
+    // SDK.  createBrowserClient reads the current URL during / after auth and
+    // would treat a raw `redirectTo` query param as its own redirect URL,
+    // causing "Invalid path specified in request URL" when the value doesn't
+    // match a registered Supabase allowed origin.
+    const redirectPath = getSafeRedirect(searchParams.get('redirectTo'))
+    console.info('[debug:login] redirect target (sanitized):', redirectPath)
+
     try {
       const supabase = createClient()
 
@@ -47,7 +76,6 @@ function LoginForm() {
       })
 
       if (authError) {
-        // Detailed diagnostic output — check the browser console.
         console.error('[debug:login] signInWithPassword failed')
         console.error('[debug:login] error.message :', authError.message)
         console.error('[debug:login] error.status  :', authError.status)
@@ -58,8 +86,8 @@ function LoginForm() {
         return
       }
 
-      console.info('[debug:login] signInWithPassword succeeded — redirecting')
-      router.push(getSafeRedirect(searchParams.get('redirectTo')))
+      console.info('[debug:login] signInWithPassword succeeded — pushing', redirectPath)
+      router.push(redirectPath)
       router.refresh()
     } catch (err) {
       console.error('[debug:login] unexpected exception:', err)
