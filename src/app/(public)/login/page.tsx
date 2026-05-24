@@ -1,21 +1,13 @@
 'use client'
 
-// DEBUG BUILD — uses plain @supabase/supabase-js createClient instead of
-// @supabase/ssr createBrowserClient.  The ssr browser client in ^0.1.0 has a
-// bug where its cookie-storage adapter is undefined at call time, causing:
-//   "Cannot read properties of undefined (reading 'get')"
-//   "Cannot read properties of undefined (reading 'remove')"
-// Plain createClient stores the session in localStorage and avoids that path.
-// Revert to the rate-limit API route once @supabase/ssr is upgraded.
-
 import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
-// ─── Redirect sanitizer ───────────────────────────────────────────────────────
-
+// Only allow relative paths that start with a single '/'.
+// Rejects '//' (protocol-relative), absolute URLs, ':' (any protocol),
+// and /login itself to prevent open redirect and redirect loops.
 function getSafeRedirect(value: string | null): string {
   if (!value) return '/dashboard'
   let path: string
@@ -26,7 +18,7 @@ function getSafeRedirect(value: string | null): string {
   return path
 }
 
-// ─── Form ─────────────────────────────────────────────────────────────────────
+// ─── Form (needs Suspense boundary for useSearchParams in Next.js 14) ─────────
 
 function LoginForm() {
   const [email, setEmail]       = useState('')
@@ -45,51 +37,26 @@ function LoginForm() {
     setLoading(true)
     setError(null)
 
+    // Resolve the redirect target before the network call so the value is
+    // never present in the URL while Supabase SDK processes the auth response.
     const redirectPath = getSafeRedirect(searchParams.get('redirectTo'))
 
-    // Log env var presence — values baked in at build time, safe to surface.
-    // Never log the key value or the password.
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
-    console.info('[debug:login] supabase url     :', supabaseUrl.slice(0, 50) || '(empty — check Vercel env vars)')
-    console.info('[debug:login] anon key present :', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
-    console.info('[debug:login] redirect target  :', redirectPath)
-
     try {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-          auth: {
-            flowType:          'implicit',
-            detectSessionInUrl: false,
-            persistSession:    true,
-            autoRefreshToken:  true,
-          },
-        }
-      )
-
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email:    email.trim().toLowerCase(),
-        password,
+      const res = await fetch('/api/auth/login', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email: email.trim(), password }),
       })
 
-      if (authError) {
-        const code = (authError as { code?: string }).code ?? 'n/a'
-        console.error('[debug:login] signInWithPassword failed')
-        console.error('[debug:login] error.message :', authError.message)
-        console.error('[debug:login] error.status  :', authError.status)
-        console.error('[debug:login] error.code    :', code)
-        console.error('[debug:login] full error    :', authError)
-
-        setError(`${authError.message} (status=${authError.status ?? '?'} code=${code})`)
+      if (!res.ok) {
+        const data = await res.json() as { error?: string }
+        setError(data.error ?? "Une erreur inattendue s'est produite. Veuillez réessayer.")
         return
       }
 
-      console.info('[debug:login] success — pushing', redirectPath)
       router.push(redirectPath)
       router.refresh()
-    } catch (err) {
-      console.error('[debug:login] unexpected exception:', err)
+    } catch {
       setError("Une erreur inattendue s'est produite. Veuillez réessayer.")
     } finally {
       setLoading(false)
@@ -100,7 +67,9 @@ function LoginForm() {
     <form className="mt-8 space-y-6" onSubmit={handleLogin} noValidate>
       <div className="rounded-md shadow-sm -space-y-px">
         <div>
-          <label htmlFor="email" className="sr-only">Adresse email</label>
+          <label htmlFor="email" className="sr-only">
+            Adresse email
+          </label>
           <input
             id="email"
             name="email"
@@ -116,7 +85,9 @@ function LoginForm() {
           />
         </div>
         <div>
-          <label htmlFor="password" className="sr-only">Mot de passe</label>
+          <label htmlFor="password" className="sr-only">
+            Mot de passe
+          </label>
           <input
             id="password"
             name="password"
@@ -140,7 +111,7 @@ function LoginForm() {
           aria-live="assertive"
           className="rounded-md bg-red-50 border border-red-200 p-3"
         >
-          <p className="text-sm text-red-700 font-mono break-all">{error}</p>
+          <p className="text-sm text-red-700">{error}</p>
         </div>
       )}
 
@@ -168,6 +139,7 @@ export default function LoginPage() {
             Connexion
           </h2>
         </div>
+        {/* Suspense is required by Next.js 14 for components using useSearchParams */}
         <Suspense>
           <LoginForm />
         </Suspense>
