@@ -62,7 +62,11 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: '/(.*)',
+        // Apply security headers to all routes except Next.js internals.
+        // /_next/static and /_next/image are served by Vercel's CDN — adding
+        // CSP / nosniff to those responses is unnecessary and can interfere
+        // with CDN caching or asset delivery.
+        source: '/((?!_next/).*)',
         headers: securityHeaders,
       },
     ]
