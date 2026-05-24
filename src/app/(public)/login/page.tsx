@@ -1,46 +1,29 @@
 'use client'
 
-// DEBUG BUILD — direct signInWithPassword bypasses /api/auth/login rate-limit
-// route to isolate whether the failure is in the custom route or Supabase Auth.
-// Revert to the fetch-based flow once the root cause is confirmed.
+// DEBUG BUILD — direct signInWithPassword with flowType:'implicit' to bypass
+// the PKCE redirect_to validation that causes "Invalid path specified in
+// request URL" when using createBrowserClient's default PKCE mode.
+// Revert to the fetch-based /api/auth/login flow once root cause is confirmed.
 
 import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createBrowserClient } from '@supabase/ssr'
 
 export const dynamic = 'force-dynamic'
 
 // ─── Redirect sanitizer ───────────────────────────────────────────────────────
-//
-// Returns a safe relative path for router.push().  Anything that is not a
-// clean relative path (starts with exactly one '/', no protocol, no host)
-// falls back to /dashboard.
-//
-// Defence layers:
-//  1. Null / empty → /dashboard
-//  2. decodeURIComponent — handles double-encoded values (%252F → %2F → /)
-//  3. Must start with '/' and not '//' (protocol-relative)
-//  4. Must not contain ':' — rules out javascript:, https:, data:, etc.
-//  5. Must not be /login — prevents a redirect loop
 
 function getSafeRedirect(value: string | null): string {
   if (!value) return '/dashboard'
-
   let path: string
-  try {
-    path = decodeURIComponent(value)
-  } catch {
-    return '/dashboard'
-  }
-
+  try { path = decodeURIComponent(value) } catch { return '/dashboard' }
   if (!path.startsWith('/') || path.startsWith('//')) return '/dashboard'
   if (path.includes(':'))                              return '/dashboard'
   if (path === '/login' || path.startsWith('/login/')) return '/dashboard'
-
   return path
 }
 
-// ─── Form (needs Suspense boundary for useSearchParams in Next.js 14) ─────────
+// ─── Form ─────────────────────────────────────────────────────────────────────
 
 function LoginForm() {
   const [email, setEmail]       = useState('')
@@ -59,16 +42,30 @@ function LoginForm() {
     setLoading(true)
     setError(null)
 
-    // Resolve the redirect target before auth so it never touches the Supabase
-    // SDK.  createBrowserClient reads the current URL during / after auth and
-    // would treat a raw `redirectTo` query param as its own redirect URL,
-    // causing "Invalid path specified in request URL" when the value doesn't
-    // match a registered Supabase allowed origin.
     const redirectPath = getSafeRedirect(searchParams.get('redirectTo'))
-    console.info('[debug:login] redirect target (sanitized):', redirectPath)
+
+    // Log env var presence — baked in at build time, safe to surface in debug.
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
+    console.info('[debug:login] supabase url      :', supabaseUrl.slice(0, 50) || '(empty — check Vercel env vars)')
+    console.info('[debug:login] anon key present  :', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+    console.info('[debug:login] redirect target   :', redirectPath)
 
     try {
-      const supabase = createClient()
+      // Bypass the shared createClient() (which uses createBrowserClient with
+      // flowType:'pkce' by default).  Explicit implicit flow avoids the PKCE
+      // code exchange that sends redirect_to to GoTrue and triggers URL
+      // validation against the allowed-origins list.
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          auth: {
+            flowType: 'implicit',
+            detectSessionInUrl: false,
+            persistSession: true,
+          },
+        }
+      )
 
       const { error: authError } = await supabase.auth.signInWithPassword({
         email:    email.trim().toLowerCase(),
@@ -76,17 +73,19 @@ function LoginForm() {
       })
 
       if (authError) {
+        const code = (authError as { code?: string }).code ?? 'n/a'
         console.error('[debug:login] signInWithPassword failed')
         console.error('[debug:login] error.message :', authError.message)
         console.error('[debug:login] error.status  :', authError.status)
-        console.error('[debug:login] error.code    :', (authError as { code?: string }).code ?? 'n/a')
+        console.error('[debug:login] error.code    :', code)
         console.error('[debug:login] full error    :', authError)
 
-        setError(authError.message)
+        // Surface all three fields in the UI so you can diagnose without DevTools.
+        setError(`${authError.message} (status=${authError.status ?? '?'} code=${code})`)
         return
       }
 
-      console.info('[debug:login] signInWithPassword succeeded — pushing', redirectPath)
+      console.info('[debug:login] success — pushing', redirectPath)
       router.push(redirectPath)
       router.refresh()
     } catch (err) {
@@ -101,9 +100,7 @@ function LoginForm() {
     <form className="mt-8 space-y-6" onSubmit={handleLogin} noValidate>
       <div className="rounded-md shadow-sm -space-y-px">
         <div>
-          <label htmlFor="email" className="sr-only">
-            Adresse email
-          </label>
+          <label htmlFor="email" className="sr-only">Adresse email</label>
           <input
             id="email"
             name="email"
@@ -119,9 +116,7 @@ function LoginForm() {
           />
         </div>
         <div>
-          <label htmlFor="password" className="sr-only">
-            Mot de passe
-          </label>
+          <label htmlFor="password" className="sr-only">Mot de passe</label>
           <input
             id="password"
             name="password"
@@ -145,7 +140,7 @@ function LoginForm() {
           aria-live="assertive"
           className="rounded-md bg-red-50 border border-red-200 p-3"
         >
-          <p className="text-sm text-red-700">{error}</p>
+          <p className="text-sm text-red-700 font-mono break-all">{error}</p>
         </div>
       )}
 
@@ -173,7 +168,6 @@ export default function LoginPage() {
             Connexion
           </h2>
         </div>
-        {/* Suspense is required by Next.js 14 for components using useSearchParams */}
         <Suspense>
           <LoginForm />
         </Suspense>
