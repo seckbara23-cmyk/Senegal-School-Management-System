@@ -79,11 +79,29 @@ export default async function StudentsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Élèves</h1>
           <p className="text-sm text-gray-500 mt-0.5">{school.name}</p>
         </div>
-        {students && students.length > 0 && (
-          <span className="mt-1 inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-50 text-indigo-700">
-            {students.length} élève{students.length !== 1 ? 's' : ''}
-          </span>
-        )}
+        <div className="mt-1 flex items-center gap-3">
+          {students && students.length > 0 && (
+            <span className="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-sm font-medium text-indigo-700">
+              {students.length} élève{students.length !== 1 ? 's' : ''}
+            </span>
+          )}
+          <a
+            href="/school/students/new"
+            className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          >
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+              aria-hidden="true"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            Ajouter un élève
+          </a>
+        </div>
       </div>
 
       {/* Error state */}
