@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
     }
   )
 
-  const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
+  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password })
 
   // ── 6a. Auth failed — record the attempt and return a generic error ───────────
   if (authError) {
@@ -127,9 +127,6 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 6b. Auth succeeded — clear the failed-attempt history for this email ─────
-  // Allows the user to log in normally again after a lockout window expires
-  // naturally, or immediately after a successful login resets the counter.
-  // Best-effort: do not delay the success response if cleanup fails.
   db.from('login_attempts')
     .delete()
     .eq('email', email)
@@ -138,6 +135,17 @@ export async function POST(request: NextRequest) {
       () => { /* noop */ },
       (err: unknown) => console.error('[rate-limit] cleanup error:', err)
     )
+
+  // ── 6c. Fire-and-forget audit log ────────────────────────────────────────────
+  db.rpc('log_audit_event', {
+    p_actor_id:    authData.user?.id    ?? null,
+    p_actor_email: authData.user?.email ?? email,
+    p_action:      'login',
+    p_metadata:    ip ? { ip } : null,
+  }).then(
+    () => { /* noop */ },
+    (err: unknown) => console.error('[audit] log_audit_event error:', err)
+  )
 
   // The `response` object already carries the Supabase session cookies written
   // by the `setAll` callback above during signInWithPassword.

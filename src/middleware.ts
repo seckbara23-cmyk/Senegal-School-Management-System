@@ -63,6 +63,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  if (user && request.nextUrl.pathname === '/login') {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
   // IMPORTANT: Return supabaseResponse as-is to preserve session cookies.
   return supabaseResponse
 }
