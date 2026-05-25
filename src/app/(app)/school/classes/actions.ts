@@ -183,3 +183,138 @@ export async function createClass(
 
   redirect(`/school/classes/${newClass.id}`)
 }
+
+// ─── Enroll students ──────────────────────────────────────────────────────────
+
+export type EnrollStudentsState = {
+  errors?: {
+    student_ids?: string[]
+    _form?:       string[]
+  }
+}
+
+export async function enrollStudents(
+  _prevState: EnrollStudentsState,
+  formData: FormData
+): Promise<EnrollStudentsState> {
+  const supabase = createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) return { errors: { _form: ['Non autorisé.'] } }
+
+  const { data: memberships } = await supabase
+    .from('school_memberships')
+    .select('school_id')
+    .eq('user_id', user.id)
+    .eq('role', 'school_admin')
+    .eq('status', 'active')
+
+  if (!memberships || memberships.length === 0) {
+    return { errors: { _form: ['Non autorisé.'] } }
+  }
+
+  const schoolId = memberships[0].school_id as string
+
+  // Verify class belongs to this school — classId from form is NOT trusted for auth,
+  // only for query lookup combined with the server-side schoolId.
+  const classId = (formData.get('classId') as string | null)?.trim()
+  if (!classId) return { errors: { _form: ['Classe introuvable.'] } }
+
+  const { data: cls } = await supabase
+    .from('classes')
+    .select('id, academic_year_id')
+    .eq('id', classId)
+    .eq('school_id', schoolId)
+    .maybeSingle()
+
+  if (!cls) return { errors: { _form: ['Classe introuvable.'] } }
+
+  // Collect selected student IDs from checkboxes.
+  const rawIds = formData.getAll('student_ids') as string[]
+  const studentIds = rawIds.map((id) => id.trim()).filter(Boolean)
+
+  if (studentIds.length === 0) {
+    return { errors: { student_ids: ['Sélectionnez au moins un élève.'] } }
+  }
+
+  // Verify every submitted student ID belongs to this school.
+  // This prevents enrolling students from another school even if someone crafts
+  // a malicious request with foreign student IDs.
+  const { data: validStudents } = await supabase
+    .from('students')
+    .select('id')
+    .eq('school_id', schoolId)
+    .in('id', studentIds)
+
+  const validSet = new Set((validStudents ?? []).map((s) => (s as { id: string }).id))
+  const hasInvalid = studentIds.some((id) => !validSet.has(id))
+
+  if (hasInvalid) {
+    return { errors: { _form: ['Un ou plusieurs élèves sélectionnés sont invalides.'] } }
+  }
+
+  // Upsert handles both fresh enrollments and re-enrollment of previously
+  // withdrawn students (sets status back to 'active').
+  const now = new Date().toISOString()
+  const records = studentIds.map((studentId) => ({
+    school_id:        schoolId,
+    student_id:       studentId,
+    class_id:         cls.id         as string,
+    academic_year_id: cls.academic_year_id as string,
+    status:           'active',
+    enrolled_at:      now,
+  }))
+
+  const { error: upsertError } = await supabase
+    .from('student_class_enrollments')
+    .upsert(records, { onConflict: 'student_id,class_id,academic_year_id' })
+
+  if (upsertError) {
+    console.error('[enrollStudents] upsert error:', upsertError.message)
+    return {
+      errors: { _form: ["Erreur lors de l'inscription. Veuillez réessayer."] },
+    }
+  }
+
+  redirect(`/school/classes/${classId}`)
+}
+
+// ─── Withdraw enrollment ──────────────────────────────────────────────────────
+
+export async function withdrawEnrollment(formData: FormData): Promise<void> {
+  const supabase = createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) return
+
+  const { data: memberships } = await supabase
+    .from('school_memberships')
+    .select('school_id')
+    .eq('user_id', user.id)
+    .eq('role', 'school_admin')
+    .eq('status', 'active')
+
+  if (!memberships || memberships.length === 0) return
+
+  const schoolId    = memberships[0].school_id as string
+  const enrollmentId = (formData.get('enrollmentId') as string | null)?.trim()
+  const classId      = (formData.get('classId')      as string | null)?.trim()
+
+  if (!enrollmentId || !classId) return
+
+  // Update WHERE id = enrollmentId AND school_id = schoolId — prevents
+  // withdrawing enrollments that belong to a different school.
+  await supabase
+    .from('student_class_enrollments')
+    .update({ status: 'withdrawn' })
+    .eq('id', enrollmentId)
+    .eq('school_id', schoolId)
+
+  redirect(`/school/classes/${classId}`)
+}

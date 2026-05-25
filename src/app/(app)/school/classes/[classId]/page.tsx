@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
+import { withdrawEnrollment } from '../actions'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -123,7 +124,7 @@ export default async function ClassDetailPage({ params }: Props) {
           <h1 className="text-2xl font-bold text-gray-900">{displayName}</h1>
           <p className="mt-0.5 text-sm text-gray-500">{school.name}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex shrink-0 flex-wrap items-center gap-3">
           {yr.is_active && (
             <span className="inline-flex items-center rounded-full bg-primary-50 px-3 py-1 text-sm font-medium text-primary-700">
               Année en cours
@@ -132,6 +133,15 @@ export default async function ClassDetailPage({ params }: Props) {
           <span className="inline-flex items-center rounded-full bg-sand-100 px-3 py-1 text-sm font-medium text-gray-600">
             {yr.name}
           </span>
+          <a
+            href={`/school/classes/${cls.id}/enroll`}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 transition-colors"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            Ajouter des élèves
+          </a>
         </div>
       </div>
 
@@ -197,7 +207,7 @@ export default async function ClassDetailPage({ params }: Props) {
                     Inscrit le
                   </th>
                   <th scope="col" className="px-5 py-3">
-                    <span className="sr-only">Voir le dossier</span>
+                    <span className="sr-only">Actions</span>
                   </th>
                 </tr>
               </thead>
@@ -220,7 +230,7 @@ export default async function ClassDetailPage({ params }: Props) {
                     <td className="hidden px-5 py-3.5 whitespace-nowrap text-sm text-gray-400 sm:table-cell">
                       {formatDate(e.enrolled_at)}
                     </td>
-                    <td className="px-5 py-3.5 text-right">
+                    <td className="px-5 py-3.5 text-right whitespace-nowrap">
                       <a
                         href={`/school/students/${e.students.id}`}
                         className="text-sm font-medium text-primary-600 hover:text-primary-700 hover:underline"
@@ -228,6 +238,17 @@ export default async function ClassDetailPage({ params }: Props) {
                       >
                         Voir →
                       </a>
+                      <form action={withdrawEnrollment} className="inline ml-4">
+                        <input type="hidden" name="enrollmentId" value={e.id} />
+                        <input type="hidden" name="classId" value={cls.id} />
+                        <button
+                          type="submit"
+                          className="text-sm font-medium text-red-500 hover:text-red-700 transition-colors"
+                          aria-label={`Retirer ${e.students.last_name} ${e.students.first_name} de la classe`}
+                        >
+                          Retirer
+                        </button>
+                      </form>
                     </td>
                   </tr>
                 ))}
@@ -239,8 +260,20 @@ export default async function ClassDetailPage({ params }: Props) {
 
       {/* Empty enrollment state */}
       {enrollments.length === 0 && (
-        <div className="rounded-xl border border-sand-200 bg-white py-12 text-center">
-          <p className="text-sm text-gray-500">Aucun élève inscrit dans cette classe pour le moment.</p>
+        <div className="rounded-xl border-2 border-dashed border-sand-300 bg-white py-14 text-center">
+          <p className="text-sm font-medium text-gray-900">Aucun élève inscrit</p>
+          <p className="mt-1 text-sm text-gray-500">
+            Cette classe n&apos;a pas encore d&apos;élèves inscrits.
+          </p>
+          <a
+            href={`/school/classes/${cls.id}/enroll`}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            Ajouter des élèves
+          </a>
         </div>
       )}
 
