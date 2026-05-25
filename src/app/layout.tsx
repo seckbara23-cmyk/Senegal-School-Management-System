@@ -6,8 +6,9 @@ import PWA from '@/components/PWA'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'School Management System',
-  description: 'Multi-tenant school management SaaS for Senegal',
+  title: 'EduSen — La gestion scolaire pour les écoles sénégalaises',
+  description:
+    'Plateforme de gestion scolaire tout-en-un pour les établissements au Sénégal. Gérez élèves, présences, paiements et communication en français.',
   manifest: '/manifest.json',
   icons: {
     icon: [
