@@ -4,9 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 
-// ─── Validation schema ────────────────────────────────────────────────────────
+// ─── Validation schema (shared by create and update) ─────────────────────────
 
-const CreateStudentSchema = z.object({
+const StudentSchema = z.object({
   first_name: z
     .string()
     .min(1, 'Le prénom est requis.')
@@ -84,7 +84,7 @@ export async function createStudent(
   const schoolId = memberships[0].school_id as string
 
   // ── Input validation ───────────────────────────────────────────────────────
-  const parsed = CreateStudentSchema.safeParse({
+  const parsed = StudentSchema.safeParse({
     first_name:       formData.get('first_name'),
     last_name:        formData.get('last_name'),
     admission_number: formData.get('admission_number'),
@@ -127,4 +127,107 @@ export async function createStudent(
 
   // redirect() throws NEXT_REDIRECT — must be called outside try/catch.
   redirect(`/school/students/${newStudent.id}`)
+}
+
+// ─── Update student ───────────────────────────────────────────────────────────
+
+export type UpdateStudentState = {
+  errors?: {
+    first_name?:       string[]
+    last_name?:        string[]
+    admission_number?: string[]
+    gender?:           string[]
+    date_of_birth?:    string[]
+    status?:           string[]
+    _form?:            string[]
+  }
+}
+
+export async function updateStudent(
+  _prevState: UpdateStudentState,
+  formData: FormData
+): Promise<UpdateStudentState> {
+  const supabase = createClient()
+
+  // ── Auth check ─────────────────────────────────────────────────────────────
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) return { errors: { _form: ['Non autorisé.'] } }
+
+  // ── School admin guard ─────────────────────────────────────────────────────
+  const { data: memberships } = await supabase
+    .from('school_memberships')
+    .select('school_id')
+    .eq('user_id', user.id)
+    .eq('role', 'school_admin')
+    .eq('status', 'active')
+
+  if (!memberships || memberships.length === 0) {
+    return { errors: { _form: ['Non autorisé.'] } }
+  }
+
+  const schoolId = memberships[0].school_id as string
+
+  // ── Student ID from form ───────────────────────────────────────────────────
+  // The studentId is taken from a hidden field, but we always combine it with
+  // the server-side schoolId in the WHERE clause — so a tampered ID cannot
+  // reach a student from another school.
+  const studentId = (formData.get('studentId') as string | null)?.trim()
+  if (!studentId) return { errors: { _form: ['Identifiant élève manquant.'] } }
+
+  // ── Input validation ───────────────────────────────────────────────────────
+  const parsed = StudentSchema.safeParse({
+    first_name:       formData.get('first_name'),
+    last_name:        formData.get('last_name'),
+    admission_number: formData.get('admission_number'),
+    gender:           formData.get('gender'),
+    date_of_birth:    formData.get('date_of_birth'),
+    status:           formData.get('status'),
+  })
+
+  if (!parsed.success) {
+    return {
+      errors: parsed.error.flatten().fieldErrors as UpdateStudentState['errors'],
+    }
+  }
+
+  // ── Update ─────────────────────────────────────────────────────────────────
+  // Both id and school_id must match — prevents cross-school writes.
+  // RLS on the students table provides a second isolation layer.
+  const { error: updateError } = await supabase
+    .from('students')
+    .update({
+      first_name:       parsed.data.first_name,
+      last_name:        parsed.data.last_name,
+      admission_number: parsed.data.admission_number,
+      gender:           parsed.data.gender        ?? null,
+      date_of_birth:    parsed.data.date_of_birth ?? null,
+      status:           parsed.data.status,
+    })
+    .eq('id', studentId)
+    .eq('school_id', schoolId)
+
+  if (updateError) {
+    console.error('[updateStudent] update error:', updateError.message)
+
+    if (updateError.code === '23505') {
+      return {
+        errors: {
+          admission_number: [
+            "Ce numéro d'admission est déjà utilisé par un autre élève.",
+          ],
+        },
+      }
+    }
+
+    return {
+      errors: {
+        _form: ['Une erreur est survenue lors de la mise à jour. Veuillez réessayer.'],
+      },
+    }
+  }
+
+  redirect(`/school/students/${studentId}`)
 }

@@ -112,9 +112,20 @@ export default async function StudentDetailPage({ params }: Props) {
           <h1 className="text-2xl font-bold text-gray-900">{fullName}</h1>
           <p className="mt-0.5 text-sm text-gray-500">{school.name}</p>
         </div>
-        <span className={`mt-1 shrink-0 inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${STATUS_CLASS[s.status] ?? 'bg-gray-100 text-gray-600'}`}>
-          {STATUS_LABEL[s.status] ?? s.status}
-        </span>
+        <div className="flex shrink-0 items-center gap-3">
+          <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${STATUS_CLASS[s.status] ?? 'bg-gray-100 text-gray-600'}`}>
+            {STATUS_LABEL[s.status] ?? s.status}
+          </span>
+          <a
+            href={`/school/students/${s.id}/edit`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-sand-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-sand-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-1"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+            </svg>
+            Modifier
+          </a>
+        </div>
       </div>
 
       {/* Detail cards */}
