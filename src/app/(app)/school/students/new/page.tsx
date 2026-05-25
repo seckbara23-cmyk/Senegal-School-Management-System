@@ -29,13 +29,13 @@ export default async function NewStudentPage() {
         className="flex flex-wrap items-center gap-y-1 text-sm text-gray-500"
         aria-label="Fil d'Ariane"
       >
-        <a href="/school" className="hover:text-indigo-600 hover:underline">
+        <a href="/school" className="hover:text-primary-600 hover:underline">
           Administration
         </a>
         <span className="mx-2 select-none" aria-hidden="true">
           /
         </span>
-        <a href="/school/students" className="hover:text-indigo-600 hover:underline">
+        <a href="/school/students" className="hover:text-primary-600 hover:underline">
           Élèves
         </a>
         <span className="mx-2 select-none" aria-hidden="true">
@@ -51,7 +51,7 @@ export default async function NewStudentPage() {
       </div>
 
       {/* Form card */}
-      <div className="max-w-2xl rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="max-w-2xl rounded-xl border border-sand-200 bg-white p-6 shadow-sm">
         <StudentNewForm />
       </div>
     </div>

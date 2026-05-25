@@ -14,7 +14,7 @@ function inputClass(hasError: boolean): string {
       ? 'border-red-400 text-red-900 placeholder-red-300 ' +
         'focus:border-red-500 focus:ring-red-500'
       : 'border-gray-300 text-gray-900 placeholder-gray-400 ' +
-        'focus:border-indigo-500 focus:ring-indigo-500')
+        'focus:border-primary-600 focus:ring-primary-600')
   )
 }
 
@@ -40,7 +40,7 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="inline-flex justify-center rounded-md bg-indigo-600 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+      className="inline-flex justify-center rounded-md bg-primary-600 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
     >
       {pending ? 'Enregistrement…' : "Enregistrer l’élève"}
     </button>

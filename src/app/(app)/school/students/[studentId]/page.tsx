@@ -1,8 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 type StudentRow = {
   id: string
   admission_number: string
@@ -15,8 +13,6 @@ type StudentRow = {
   updated_at: string
 }
 
-// ─── Lookup tables ────────────────────────────────────────────────────────────
-
 const STATUS_LABEL: Record<string, string> = {
   active:    'Actif',
   inactive:  'Inactif',
@@ -24,9 +20,9 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 const STATUS_CLASS: Record<string, string> = {
-  active:    'bg-green-100 text-green-800',
-  inactive:  'bg-gray-100 text-gray-600',
-  graduated: 'bg-blue-100 text-blue-800',
+  active:    'bg-primary-50 text-primary-700',
+  inactive:  'bg-stone-100 text-stone-500',
+  graduated: 'bg-sky-50 text-sky-700',
 }
 
 const GENDER_LABEL: Record<string, string> = {
@@ -35,16 +31,12 @@ const GENDER_LABEL: Record<string, string> = {
   other:  'Autre',
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function formatDate(value: string | null): string | null {
   if (!value) return null
   const d = new Date(value)
   if (isNaN(d.getTime())) return null
   return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
-
-// ─── Sub-component ────────────────────────────────────────────────────────────
 
 function DetailRow({
   label,
@@ -57,20 +49,14 @@ function DetailRow({
 }) {
   const hasValue = value !== null && value !== undefined && value !== ''
   return (
-    <div className="px-6 py-3.5 sm:grid sm:grid-cols-3 sm:gap-4">
+    <div className="px-5 py-3.5 sm:grid sm:grid-cols-3 sm:gap-4">
       <dt className="text-sm font-medium text-gray-500">{label}</dt>
-      <dd
-        className={`mt-1 sm:mt-0 sm:col-span-2 text-sm ${
-          mono ? 'font-mono tracking-wide text-gray-900' : ''
-        } ${hasValue ? 'text-gray-900' : 'text-gray-400 italic'}`}
-      >
+      <dd className={`mt-1 sm:col-span-2 sm:mt-0 text-sm ${mono ? 'font-mono tracking-wide' : ''} ${hasValue ? 'text-gray-900' : 'italic text-gray-400'}`}>
         {hasValue ? value : 'Non renseigné'}
       </dd>
     </div>
   )
 }
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
 
 type Props = { params: { studentId: string } }
 
@@ -94,9 +80,7 @@ export default async function StudentDetailPage({ params }: Props) {
 
   const school = memberships[0].schools as unknown as { id: string; name: string }
 
-  // Double-guard: filter by BOTH id and school_id.
-  // RLS already enforces school isolation, but the explicit school_id filter
-  // ensures cross-school access is blocked even if a policy were ever relaxed.
+  // Double-guard: filter by BOTH id and school_id to prevent cross-school access.
   const { data: student } = await supabase
     .from('students')
     .select(
@@ -114,67 +98,53 @@ export default async function StudentDetailPage({ params }: Props) {
   return (
     <div className="space-y-6">
       {/* Breadcrumb */}
-      <nav
-        className="flex items-center flex-wrap gap-y-1 text-sm text-gray-500"
-        aria-label="Fil d'Ariane"
-      >
-        <a href="/school" className="hover:text-indigo-600 hover:underline">
-          Administration
-        </a>
+      <nav className="flex flex-wrap items-center gap-y-1 text-sm text-gray-500" aria-label="Fil d'Ariane">
+        <a href="/school" className="hover:text-primary-600 hover:underline">Administration</a>
         <span className="mx-2 select-none" aria-hidden="true">/</span>
-        <a href="/school/students" className="hover:text-indigo-600 hover:underline">
-          Élèves
-        </a>
+        <a href="/school/students" className="hover:text-primary-600 hover:underline">Élèves</a>
         <span className="mx-2 select-none" aria-hidden="true">/</span>
-        <span className="text-gray-900 font-medium truncate max-w-[16rem]">{fullName}</span>
+        <span className="truncate max-w-[16rem] font-medium text-gray-900">{fullName}</span>
       </nav>
 
       {/* Page header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{fullName}</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{school.name}</p>
+          <p className="mt-0.5 text-sm text-gray-500">{school.name}</p>
         </div>
-        <span
-          className={`shrink-0 mt-1 inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-            STATUS_CLASS[s.status] ?? 'bg-gray-100 text-gray-600'
-          }`}
-        >
+        <span className={`mt-1 shrink-0 inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${STATUS_CLASS[s.status] ?? 'bg-gray-100 text-gray-600'}`}>
           {STATUS_LABEL[s.status] ?? s.status}
         </span>
       </div>
 
       {/* Detail cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* Identity */}
-        <div className="bg-white shadow-sm rounded-lg border border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+        <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
+          <div className="border-b border-sand-100 bg-sand-50 px-5 py-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
               Identité
             </h2>
           </div>
-          <dl className="divide-y divide-gray-100">
-            <DetailRow label="Prénom"           value={s.first_name} />
-            <DetailRow label="Nom"              value={s.last_name} />
-            <DetailRow
-              label="Sexe"
-              value={s.gender ? (GENDER_LABEL[s.gender] ?? s.gender) : null}
-            />
+          <dl className="divide-y divide-sand-100">
+            <DetailRow label="Prénom"            value={s.first_name} />
+            <DetailRow label="Nom"               value={s.last_name} />
+            <DetailRow label="Sexe"              value={s.gender ? (GENDER_LABEL[s.gender] ?? s.gender) : null} />
             <DetailRow label="Date de naissance" value={formatDate(s.date_of_birth)} />
           </dl>
         </div>
 
         {/* Enrollment */}
-        <div className="bg-white shadow-sm rounded-lg border border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+        <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
+          <div className="border-b border-sand-100 bg-sand-50 px-5 py-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
               Scolarité
             </h2>
           </div>
-          <dl className="divide-y divide-gray-100">
-            <DetailRow label="N° d'admission"      value={s.admission_number} mono />
-            <DetailRow label="Statut"              value={STATUS_LABEL[s.status] ?? s.status} />
-            <DetailRow label="Date d'inscription"  value={formatDate(s.created_at)} />
+          <dl className="divide-y divide-sand-100">
+            <DetailRow label="N° d'admission"       value={s.admission_number} mono />
+            <DetailRow label="Statut"               value={STATUS_LABEL[s.status] ?? s.status} />
+            <DetailRow label="Date d'inscription"   value={formatDate(s.created_at)} />
             <DetailRow label="Dernière mise à jour" value={formatDate(s.updated_at)} />
           </dl>
         </div>
@@ -183,16 +153,9 @@ export default async function StudentDetailPage({ params }: Props) {
       {/* Back link */}
       <a
         href="/school/students"
-        className="inline-flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-800 hover:underline"
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 hover:underline"
       >
-        <svg
-          className="h-4 w-4"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
-          aria-hidden="true"
-        >
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
         </svg>
         Retour à la liste des élèves
