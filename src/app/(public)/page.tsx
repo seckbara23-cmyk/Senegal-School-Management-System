@@ -1,3 +1,7 @@
+// Opt out of static pre-rendering so Vercel always serves fresh HTML
+// instead of a cached pre-rendered file from a previous build.
+export const dynamic = 'force-dynamic'
+
 // ─── Icon helper ──────────────────────────────────────────────────────────────
 
 function Icon({ path, className = 'h-5 w-5' }: { path: string; className?: string }) {
