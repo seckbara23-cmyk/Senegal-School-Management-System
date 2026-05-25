@@ -144,15 +144,21 @@ export default async function StudentsPage() {
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Inscrit le
                   </th>
+                  <th scope="col" className="px-6 py-3">
+                    <span className="sr-only">Voir le détail</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {(students as Student[]).map((student) => (
                   <tr key={student.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm font-medium text-gray-900">
+                      <a
+                        href={`/school/students/${student.id}`}
+                        className="text-sm font-medium text-gray-900 hover:text-indigo-600 hover:underline"
+                      >
                         {student.last_name} {student.first_name}
-                      </span>
+                      </a>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-sm text-gray-600 font-mono tracking-wide">
@@ -184,6 +190,15 @@ export default async function StudentsPage() {
                       <span className="text-sm text-gray-500">
                         {formatDate(student.created_at)}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <a
+                        href={`/school/students/${student.id}`}
+                        className="text-sm text-indigo-600 hover:text-indigo-800 hover:underline font-medium"
+                        aria-label={`Voir le dossier de ${student.last_name} ${student.first_name}`}
+                      >
+                        Voir →
+                      </a>
                     </td>
                   </tr>
                 ))}
