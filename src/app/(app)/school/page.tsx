@@ -25,24 +25,27 @@ export default async function SchoolAdminPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">{school.name} — Admin Dashboard</h1>
-        <p className="text-gray-600">Manage your school</p>
+        <h1 className="text-2xl font-bold text-gray-900">{school.name}</h1>
+        <p className="text-gray-600">Tableau de bord administrateur</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div className="bg-white shadow rounded-lg p-6">
-          <h3 className="text-lg font-medium text-gray-900">Students</h3>
-          <p className="text-gray-600 mt-1">Manage student records</p>
+        <a
+          href="/school/students"
+          className="bg-white shadow rounded-lg p-6 hover:shadow-md hover:ring-1 hover:ring-indigo-200 transition-all group"
+        >
+          <h3 className="text-lg font-medium text-gray-900 group-hover:text-indigo-700">Élèves</h3>
+          <p className="text-gray-600 mt-1 text-sm">Consulter les dossiers des élèves</p>
+        </a>
+
+        <div className="bg-white shadow rounded-lg p-6 opacity-60 cursor-not-allowed">
+          <h3 className="text-lg font-medium text-gray-900">Enseignants</h3>
+          <p className="text-gray-600 mt-1 text-sm">Bientôt disponible</p>
         </div>
 
-        <div className="bg-white shadow rounded-lg p-6">
-          <h3 className="text-lg font-medium text-gray-900">Teachers</h3>
-          <p className="text-gray-600 mt-1">Manage teaching staff</p>
-        </div>
-
-        <div className="bg-white shadow rounded-lg p-6">
+        <div className="bg-white shadow rounded-lg p-6 opacity-60 cursor-not-allowed">
           <h3 className="text-lg font-medium text-gray-900">Parents</h3>
-          <p className="text-gray-600 mt-1">Manage parent accounts</p>
+          <p className="text-gray-600 mt-1 text-sm">Bientôt disponible</p>
         </div>
       </div>
     </div>
