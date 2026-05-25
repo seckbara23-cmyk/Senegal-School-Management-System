@@ -55,7 +55,7 @@ const MAIN_NAV: NavItem[] = [
   { label: 'Présences',        href: '/school/attendance',       iconPath: P.clock      },
   { label: 'Annonces',         href: '/school/announcements',    iconPath: P.megaphone  },
   { label: 'Notes & bulletins',                                  iconPath: P.document, soon: true },
-  { label: 'Paiements',                                 iconPath: P.money,    soon: true },
+  { label: 'Paiements',         href: '/school/finance', iconPath: P.money    },
 ]
 
 const BOTTOM_NAV: NavItem[] = [
