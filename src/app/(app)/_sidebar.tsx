@@ -49,7 +49,7 @@ const MAIN_NAV: NavItem[] = [
   { label: 'Tableau de bord', href: '/school',          iconPath: P.home     },
   { label: 'Élèves',          href: '/school/students', iconPath: P.students },
   { label: 'Enseignants',                               iconPath: P.teachers, soon: true },
-  { label: 'Parents',                                   iconPath: P.parents,  soon: true },
+  { label: 'Parents',          href: '/school/parents',  iconPath: P.parents  },
   { label: 'Classes',          href: '/school/classes', iconPath: P.classes  },
   { label: 'Présences',        href: '/school/attendance', iconPath: P.clock    },
   { label: 'Notes & bulletins',                         iconPath: P.document, soon: true },
