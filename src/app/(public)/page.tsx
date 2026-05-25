@@ -1,6 +1,8 @@
-// Opt out of static pre-rendering so Vercel always serves fresh HTML
-// instead of a cached pre-rendered file from a previous build.
+// Opt out of static pre-rendering and all data/full-route caching.
+// These two exports together prevent Vercel from ever serving a cached
+// version of this page, and ensure Cache-Control: no-store is set.
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 // ─── Icon helper ──────────────────────────────────────────────────────────────
 
