@@ -18,20 +18,6 @@ type AttendanceSession = {
 
 const PAGE_SIZE = 25
 
-const STATUS_CHIP: Record<keyof StatusCount, string> = {
-  present: 'bg-primary-50 text-primary-700',
-  absent:  'bg-red-50    text-red-700',
-  late:    'bg-amber-50  text-amber-700',
-  excused: 'bg-sky-50    text-sky-700',
-}
-
-const STATUS_LABEL: Record<keyof StatusCount, string> = {
-  present: 'Pres.',
-  absent:  'Abs.',
-  late:    'Ret.',
-  excused: 'Exc.',
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatSessionDate(dateStr: string): string {
@@ -103,36 +89,42 @@ export default async function AttendancePage({ searchParams }: Props) {
   return (
     <div className="space-y-5">
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <nav className="flex items-center text-sm text-gray-500 mb-1" aria-label="Fil d'Ariane">
-            <a href="/school" className="hover:text-primary-600 hover:underline">
-              Administration
-            </a>
-            <span className="mx-2 select-none" aria-hidden="true">/</span>
-            <span className="font-medium text-gray-900">Présences</span>
-          </nav>
-          <h1 className="text-2xl font-bold text-gray-900">Présences</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{school.name}</p>
-        </div>
+      {/* ── Header band ─────────────────────────────────────────────────────── */}
+      <div className="rounded-xl bg-primary-800 px-6 py-5">
+        <nav className="flex items-center text-sm text-primary-300 mb-3" aria-label="Fil d'Ariane">
+          <a href="/school" className="hover:text-white transition-colors">
+            Administration
+          </a>
+          <span className="mx-2 text-primary-600" aria-hidden="true">/</span>
+          <span className="text-white font-medium">Présences</span>
+        </nav>
 
-        <div className="flex items-center gap-3">
-          {total > 0 && (
-            <span className="inline-flex items-center rounded-full bg-primary-50 px-3 py-1 text-sm font-medium text-primary-700">
-              {total} séance{total !== 1 ? 's' : ''}
-            </span>
-          )}
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-white tracking-tight">
+              Registre des Présences
+            </h1>
+            <p className="text-primary-300 text-sm mt-0.5">{school.name}</p>
+          </div>
           <a
             href="/school/attendance/new"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
             Nouvelle séance
           </a>
         </div>
+
+        {total > 0 && (
+          <div className="mt-4 pt-4 border-t border-primary-700">
+            <p className="text-sm text-primary-300">
+              <span className="font-semibold text-white">{total}</span>{' '}
+              séance{total !== 1 ? 's' : ''} enregistrée{total !== 1 ? 's' : ''}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ── Error ───────────────────────────────────────────────────────────── */}
@@ -146,20 +138,24 @@ export default async function AttendancePage({ searchParams }: Props) {
 
       {/* ── Empty state ─────────────────────────────────────────────────────── */}
       {!error && total === 0 && (
-        <div className="rounded-xl border-2 border-dashed border-sand-300 bg-white py-16 text-center">
-          <svg
-            className="mx-auto h-12 w-12 text-sand-300"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={1.2}
-            aria-hidden="true"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <h3 className="mt-4 text-base font-semibold text-gray-900">Aucune séance enregistrée</h3>
-          <p className="mt-1 text-sm text-gray-500">
-            Commencez par saisir la première séance de présences.
+        <div className="rounded-xl border-2 border-dashed border-sand-300 bg-sand-50 py-16 px-6 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-sand-200">
+            <svg
+              className="h-8 w-8 text-gray-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={1.2}
+              aria-hidden="true"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h3 className="text-base font-semibold text-gray-900">
+            Aucune séance enregistrée
+          </h3>
+          <p className="mt-1 text-sm text-gray-500 max-w-xs mx-auto">
+            Ouvrez la première séance de présences pour l&apos;une de vos classes.
           </p>
           <a
             href="/school/attendance/new"
@@ -168,18 +164,18 @@ export default async function AttendancePage({ searchParams }: Props) {
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
-            Nouvelle séance
+            Ouvrir une séance
           </a>
         </div>
       )}
 
-      {/* ── Session list ────────────────────────────────────────────────────── */}
+      {/* ── Register table ──────────────────────────────────────────────────── */}
       {!error && sessions.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-sand-200">
+            <table className="min-w-full">
               <thead>
-                <tr className="bg-sand-50">
+                <tr className="border-b border-sand-200 bg-sand-100">
                   <th scope="col" className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
                     Date
                   </th>
@@ -202,9 +198,9 @@ export default async function AttendancePage({ searchParams }: Props) {
                   const counts    = countStatuses(s.attendance_records)
                   const className = [s.classes.name, s.classes.section].filter(Boolean).join(' — ')
                   return (
-                    <tr key={s.id} className="group hover:bg-sand-50 transition-colors">
+                    <tr key={s.id} className="odd:bg-white even:bg-sand-50 hover:bg-accent-50 transition-colors">
                       <td className="px-5 py-3.5">
-                        <span className="text-sm font-medium text-gray-900 capitalize">
+                        <span className="text-sm font-semibold text-gray-900 capitalize">
                           {formatSessionDate(s.session_date)}
                         </span>
                       </td>
@@ -215,15 +211,27 @@ export default async function AttendancePage({ searchParams }: Props) {
                         {s.academic_years.name}
                       </td>
                       <td className="px-5 py-3.5">
-                        <div className="flex flex-wrap gap-1.5">
-                          {(Object.keys(counts) as (keyof StatusCount)[]).map((k) => (
-                            <span
-                              key={k}
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CHIP[k]}`}
-                            >
-                              {counts[k]} {STATUS_LABEL[k]}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span className="text-xs font-medium text-primary-700">
+                            <span className="text-primary-500" aria-hidden="true">● </span>
+                            {counts.present} pré.
+                          </span>
+                          <span className="text-xs font-medium text-red-700">
+                            <span className="text-red-500" aria-hidden="true">● </span>
+                            {counts.absent} abs.
+                          </span>
+                          {counts.late > 0 && (
+                            <span className="text-xs font-medium text-amber-700">
+                              <span className="text-amber-500" aria-hidden="true">● </span>
+                              {counts.late} ret.
                             </span>
-                          ))}
+                          )}
+                          {counts.excused > 0 && (
+                            <span className="text-xs font-medium text-sky-700">
+                              <span className="text-sky-500" aria-hidden="true">● </span>
+                              {counts.excused} exc.
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-5 py-3.5 text-right">

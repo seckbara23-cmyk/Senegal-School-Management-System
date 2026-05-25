@@ -1,5 +1,6 @@
 'use client'
 
+import { useRef } from 'react'
 import { useFormState, useFormStatus } from 'react-dom'
 import { createAttendanceSession, type CreateAttendanceState } from '../actions'
 
@@ -46,7 +47,7 @@ const STATUS_OPTIONS = [
   },
 ] as const
 
-// ─── Submit button ─────────────────────────────────────────────────────────────
+// ─── Submit button ────────────────────────────────────────────────────────────
 
 function SubmitButton({ count }: { count: number }) {
   const { pending } = useFormStatus()
@@ -54,11 +55,11 @@ function SubmitButton({ count }: { count: number }) {
     <button
       type="submit"
       disabled={pending}
-      className="inline-flex justify-center rounded-md bg-primary-600 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+      className="inline-flex justify-center rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
     >
       {pending
         ? 'Enregistrement…'
-        : `Enregistrer la présence (${count} élève${count !== 1 ? 's' : ''})`}
+        : `Enregistrer la séance (${count} élève${count !== 1 ? 's' : ''})`}
     </button>
   )
 }
@@ -79,10 +80,25 @@ export function AttendanceForm({
   cancelHref: string
 }) {
   const [state, formAction] = useFormState(createAttendanceSession, initialState)
+  const formRef = useRef<HTMLFormElement>(null)
+
+  function handleMarkAllPresent() {
+    if (!formRef.current) return
+    formRef.current
+      .querySelectorAll<HTMLInputElement>('input[type="radio"][value="present"]')
+      .forEach((r) => { r.checked = true })
+  }
+
+  function handleMarkAllAbsent() {
+    if (!formRef.current) return
+    formRef.current
+      .querySelectorAll<HTMLInputElement>('input[type="radio"][value="absent"]')
+      .forEach((r) => { r.checked = true })
+  }
 
   return (
-    <form action={formAction} noValidate className="space-y-5">
-      {/* Hidden session fields */}
+    <form ref={formRef} action={formAction} noValidate className="space-y-5">
+      {/* Hidden fields */}
       <input type="hidden" name="class_id"     value={classId} />
       <input type="hidden" name="session_date" value={sessionDate} />
 
@@ -90,24 +106,43 @@ export function AttendanceForm({
       {state.errors?._form && state.errors._form.length > 0 && (
         <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3">
           {state.errors._form.map((msg, i) => (
-            <p key={i} className="text-sm text-red-700">
-              {msg}
-            </p>
+            <p key={i} className="text-sm text-red-700">{msg}</p>
           ))}
         </div>
       )}
 
-      {/* Student attendance table */}
-      <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
+      {/* Quick-mark toolbar */}
+      <div className="flex items-center gap-3 rounded-lg border border-sand-200 bg-sand-50 px-4 py-2.5">
+        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 mr-1">
+          Marquer tout :
+        </span>
+        <button
+          type="button"
+          onClick={handleMarkAllPresent}
+          className="rounded-md border border-primary-200 bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700 hover:bg-primary-100 transition-colors"
+        >
+          ● Présent
+        </button>
+        <button
+          type="button"
+          onClick={handleMarkAllAbsent}
+          className="rounded-md border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
+        >
+          ● Absent
+        </button>
+      </div>
+
+      {/* Student register table */}
+      <div className="overflow-hidden rounded-xl border border-sand-200">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-sand-200">
+          <table className="min-w-full">
             <thead>
-              <tr className="bg-sand-50">
-                <th scope="col" className="sticky left-0 z-10 bg-sand-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <tr className="border-b border-sand-200 bg-sand-100">
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
                   Élève
                 </th>
                 <th scope="col" className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 sm:table-cell">
-                  {`N° d'admission`}
+                  {`N° Adm.`}
                 </th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
                   Statut
@@ -116,14 +151,14 @@ export function AttendanceForm({
             </thead>
             <tbody className="divide-y divide-sand-100">
               {students.map((s) => (
-                <tr key={s.id} className="hover:bg-sand-50 transition-colors">
-                  <td className="sticky left-0 z-10 bg-white px-4 py-3.5 group-hover:bg-sand-50">
+                <tr key={s.id} className="odd:bg-white even:bg-sand-50">
+                  <td className="px-4 py-3.5">
                     <span className="text-sm font-medium text-gray-900">
                       {s.last_name} {s.first_name}
                     </span>
                   </td>
                   <td className="hidden px-4 py-3.5 whitespace-nowrap sm:table-cell">
-                    <span className="font-mono text-sm text-gray-500">
+                    <span className="font-mono text-sm text-gray-400">
                       {s.admission_number}
                     </span>
                   </td>
@@ -158,7 +193,7 @@ export function AttendanceForm({
         </div>
       </div>
 
-      {/* Optional session notes */}
+      {/* Notes */}
       <div>
         <label htmlFor="notes" className="block text-sm font-medium text-gray-700">
           Notes de séance{' '}
@@ -177,11 +212,11 @@ export function AttendanceForm({
       </div>
 
       {/* Actions */}
-      <div className="flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4">
+      <div className="flex flex-wrap items-center gap-3 border-t border-sand-200 pt-4">
         <SubmitButton count={students.length} />
         <a
           href={cancelHref}
-          className="text-sm text-gray-600 hover:text-gray-900 hover:underline"
+          className="text-sm text-gray-500 hover:text-gray-800 hover:underline"
         >
           Annuler
         </a>

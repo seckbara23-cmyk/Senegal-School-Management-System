@@ -14,8 +14,17 @@ type ClassOption = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function classLabel(c: ClassOption): string {
-  const parts = [c.name, c.section].filter(Boolean).join(' — ')
-  return `${parts} (${c.academic_years.name})`
+  return [c.name, c.section].filter(Boolean).join(' — ') + ` (${c.academic_years.name})`
+}
+
+function formatSessionDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -44,7 +53,6 @@ export default async function NewAttendancePage({ searchParams }: Props) {
 
   const school = memberships[0].schools as unknown as { id: string; name: string }
 
-  // ── Fetch all classes for this school ────────────────────────────────────
   const { data: rawClasses } = await supabase
     .from('classes')
     .select('id, name, section, academic_years!academic_year_id(name)')
@@ -53,7 +61,6 @@ export default async function NewAttendancePage({ searchParams }: Props) {
 
   const classes = (rawClasses ?? []) as unknown as ClassOption[]
 
-  // ── Parse step-1 params ──────────────────────────────────────────────────
   const rawClassId = Array.isArray(searchParams.classId)
     ? searchParams.classId[0]
     : searchParams.classId
@@ -63,15 +70,14 @@ export default async function NewAttendancePage({ searchParams }: Props) {
 
   const selectedClassId = rawClassId?.trim() ?? ''
   const selectedDate    = rawDate?.trim() ?? ''
+  const isDateValid     = /^\d{4}-\d{2}-\d{2}$/.test(selectedDate)
 
-  const isDateValid = /^\d{4}-\d{2}-\d{2}$/.test(selectedDate)
+  const selectedClass = classes.find((c) => c.id === selectedClassId)
 
-  // ── Step 2: both params present — resolve students ───────────────────────
   let enrolledStudents: EnrolledStudent[] | null = null
   let selectionError: string | null = null
 
   if (selectedClassId && isDateValid) {
-    // Verify class belongs to this school
     const { data: cls } = await supabase
       .from('classes')
       .select('id')
@@ -82,7 +88,6 @@ export default async function NewAttendancePage({ searchParams }: Props) {
     if (!cls) {
       selectionError = 'Classe introuvable pour cet établissement.'
     } else {
-      // Check if a session already exists for this class+date
       const { data: existing } = await supabase
         .from('attendance_sessions')
         .select('id')
@@ -91,11 +96,8 @@ export default async function NewAttendancePage({ searchParams }: Props) {
         .eq('school_id', school.id)
         .maybeSingle()
 
-      if (existing) {
-        redirect(`/school/attendance/${existing.id}`)
-      }
+      if (existing) redirect(`/school/attendance/${existing.id}`)
 
-      // Fetch enrolled students
       const { data: enrollments } = await supabase
         .from('student_class_enrollments')
         .select('students!student_id(id, first_name, last_name, admission_number)')
@@ -109,42 +111,50 @@ export default async function NewAttendancePage({ searchParams }: Props) {
     }
   }
 
-  const cancelHref = '/school/attendance'
+  const registerClassLabel = selectedClass
+    ? [selectedClass.name, selectedClass.section].filter(Boolean).join(' — ')
+    : ''
+  const registerDate = isDateValid ? formatSessionDate(selectedDate) : ''
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div>
-        <nav className="flex items-center text-sm text-gray-500 mb-1" aria-label="Fil d'Ariane">
-          <a href="/school" className="hover:text-primary-600 hover:underline">
+      {/* ── Header band ─────────────────────────────────────────────────────── */}
+      <div className="rounded-xl bg-primary-800 px-6 py-5">
+        <nav className="flex items-center text-sm text-primary-300 mb-3" aria-label="Fil d'Ariane">
+          <a href="/school" className="hover:text-white transition-colors">
             Administration
           </a>
-          <span className="mx-2 select-none" aria-hidden="true">/</span>
-          <a href="/school/attendance" className="hover:text-primary-600 hover:underline">
+          <span className="mx-2 text-primary-600" aria-hidden="true">/</span>
+          <a href="/school/attendance" className="hover:text-white transition-colors">
             Présences
           </a>
-          <span className="mx-2 select-none" aria-hidden="true">/</span>
-          <span className="font-medium text-gray-900">Nouvelle séance</span>
+          <span className="mx-2 text-primary-600" aria-hidden="true">/</span>
+          <span className="text-white font-medium">Nouvelle séance</span>
         </nav>
-        <h1 className="text-2xl font-bold text-gray-900">Nouvelle séance de présences</h1>
-        <p className="text-sm text-gray-500 mt-0.5">{school.name}</p>
+        <h1 className="text-2xl font-bold text-white tracking-tight">
+          Nouvelle séance de présences
+        </h1>
+        <p className="text-primary-300 text-sm mt-0.5">{school.name}</p>
       </div>
 
-      {/* ── Step 1 card: class + date ────────────────────────────────────────── */}
-      <div className="rounded-xl border border-sand-200 bg-white p-5 shadow-sm">
+      {/* ── Step 1: class + date ─────────────────────────────────────────────── */}
+      <div className="rounded-xl border border-sand-200 bg-sand-50 px-6 py-5">
+        <p className="text-xs font-bold uppercase tracking-widest text-primary-600 mb-1">
+          Étape 1
+        </p>
         <h2 className="text-base font-semibold text-gray-900 mb-4">
-          1. Choisir la classe et la date
+          Sélectionner la classe et la date
         </h2>
 
         {classes.length === 0 ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-            <p className="text-sm text-amber-700">
-              Aucune classe n&apos;a été créée. Veuillez d&apos;abord{' '}
-              <a href="/school/classes/new" className="underline hover:text-amber-900">
-                créer une classe
+            <p className="text-sm text-amber-800">
+              Aucune classe n&apos;a été créée.{' '}
+              <a href="/school/classes/new" className="font-medium underline hover:text-amber-900">
+                Créer une classe
               </a>{' '}
-              et y inscrire des élèves.
+              et y inscrire des élèves avant de saisir les présences.
             </p>
           </div>
         ) : (
@@ -157,8 +167,8 @@ export default async function NewAttendancePage({ searchParams }: Props) {
                 id="classId"
                 name="classId"
                 defaultValue={selectedClassId}
-                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600"
                 required
+                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600"
               >
                 <option value="">— Sélectionner une classe —</option>
                 {classes.map((c) => (
@@ -178,8 +188,8 @@ export default async function NewAttendancePage({ searchParams }: Props) {
                 type="date"
                 name="date"
                 defaultValue={selectedDate}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600"
                 required
+                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600"
               />
             </div>
 
@@ -187,7 +197,7 @@ export default async function NewAttendancePage({ searchParams }: Props) {
               type="submit"
               className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 transition-colors"
             >
-              Charger les élèves
+              Charger la liste
             </button>
           </form>
         )}
@@ -200,37 +210,54 @@ export default async function NewAttendancePage({ searchParams }: Props) {
         </div>
       )}
 
-      {/* ── Step 2: no students enrolled ────────────────────────────────────── */}
+      {/* ── No students enrolled ─────────────────────────────────────────────── */}
       {enrolledStudents !== null && enrolledStudents.length === 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <p className="text-sm text-amber-700">
-            Aucun élève actif inscrit dans cette classe. Veuillez{' '}
+          <p className="text-sm text-amber-800">
+            Aucun élève actif dans cette classe.{' '}
             <a
               href={`/school/classes/${selectedClassId}/enroll`}
-              className="underline hover:text-amber-900"
+              className="font-medium underline hover:text-amber-900"
             >
-              inscrire des élèves
+              Inscrire des élèves
             </a>{' '}
             avant de saisir les présences.
           </p>
         </div>
       )}
 
-      {/* ── Step 2: attendance form ──────────────────────────────────────────── */}
+      {/* ── Step 2: register sheet ───────────────────────────────────────────── */}
       {enrolledStudents !== null && enrolledStudents.length > 0 && (
-        <div className="rounded-xl border border-sand-200 bg-white p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-gray-900 mb-4">
-            2. Saisir les présences{' '}
-            <span className="text-sm font-normal text-gray-400">
-              ({enrolledStudents.length} élève{enrolledStudents.length !== 1 ? 's' : ''})
-            </span>
-          </h2>
-          <AttendanceForm
-            students={enrolledStudents}
-            classId={selectedClassId}
-            sessionDate={selectedDate}
-            cancelHref={cancelHref}
-          />
+        <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
+
+          {/* Register sheet header */}
+          <div className="bg-primary-700 px-6 py-4">
+            <p className="text-xs font-bold uppercase tracking-widest text-primary-300 mb-1">
+              Étape 2 — Liste de présence
+            </p>
+            <p className="text-lg font-bold text-white capitalize">
+              {registerDate}
+            </p>
+            <div className="flex flex-wrap items-center justify-between gap-2 mt-1">
+              <p className="text-sm text-primary-200">
+                {registerClassLabel}
+                {' · '}
+                <span className="font-medium text-white">
+                  {enrolledStudents.length} élève{enrolledStudents.length !== 1 ? 's' : ''}
+                </span>
+              </p>
+            </div>
+          </div>
+
+          {/* Form body */}
+          <div className="bg-white px-6 py-5">
+            <AttendanceForm
+              students={enrolledStudents}
+              classId={selectedClassId}
+              sessionDate={selectedDate}
+              cancelHref="/school/attendance"
+            />
+          </div>
         </div>
       )}
     </div>

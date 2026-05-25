@@ -26,24 +26,6 @@ type SessionDetail = {
   attendance_records: AttendanceRecord[]
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const STATUS_BADGE: Record<StatusKey, { label: string; className: string }> = {
-  present: { label: 'Présent',    className: 'bg-primary-50 text-primary-700 ring-primary-200' },
-  absent:  { label: 'Absent',     className: 'bg-red-50    text-red-700    ring-red-200'    },
-  late:    { label: 'En retard',  className: 'bg-amber-50  text-amber-700  ring-amber-200'  },
-  excused: { label: 'Excusé',     className: 'bg-sky-50    text-sky-700    ring-sky-200'    },
-}
-
-const STATUS_SUMMARY_ORDER: StatusKey[] = ['present', 'absent', 'late', 'excused']
-
-const SUMMARY_LABEL: Record<StatusKey, string> = {
-  present: 'Présents',
-  absent:  'Absents',
-  late:    'En retard',
-  excused: 'Excusés',
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatSessionDate(dateStr: string): string {
@@ -98,98 +80,114 @@ export default async function AttendanceSessionPage({ params }: Props) {
 
   const session = raw as unknown as SessionDetail
 
-  // ── Compute summary counts ────────────────────────────────────────────────
   const counts: Record<StatusKey, number> = { present: 0, absent: 0, late: 0, excused: 0 }
   for (const r of session.attendance_records) {
     if (r.status in counts) counts[r.status]++
   }
 
-  const className = [session.classes.name, session.classes.section]
-    .filter(Boolean)
-    .join(' — ')
-
+  const total         = session.attendance_records.length
+  const className     = [session.classes.name, session.classes.section].filter(Boolean).join(' — ')
   const formattedDate = formatSessionDate(session.session_date)
-  const total = session.attendance_records.length
 
-  // Sort records: last name then first name
   const sortedRecords = [...session.attendance_records].sort((a, b) => {
-    const la = a.students.last_name.localeCompare(b.students.last_name, 'fr')
-    return la !== 0 ? la : a.students.first_name.localeCompare(b.students.first_name, 'fr')
+    const cmp = a.students.last_name.localeCompare(b.students.last_name, 'fr')
+    return cmp !== 0 ? cmp : a.students.first_name.localeCompare(b.students.first_name, 'fr')
   })
 
-  return (
-    <div className="space-y-6">
+  function pct(n: number) {
+    return total > 0 ? Math.round((n / total) * 100) : 0
+  }
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <nav className="flex items-center text-sm text-gray-500 mb-1" aria-label="Fil d'Ariane">
-            <a href="/school" className="hover:text-primary-600 hover:underline">
-              Administration
-            </a>
-            <span className="mx-2 select-none" aria-hidden="true">/</span>
-            <a href="/school/attendance" className="hover:text-primary-600 hover:underline">
-              Présences
-            </a>
-            <span className="mx-2 select-none" aria-hidden="true">/</span>
-            <span className="font-medium text-gray-900 capitalize">{formattedDate}</span>
-          </nav>
-          <h1 className="text-2xl font-bold text-gray-900 capitalize">{formattedDate}</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {className} · {session.academic_years.name} · {school.name}
-          </p>
-        </div>
+  return (
+    <div className="space-y-5">
+
+      {/* ── Header band ─────────────────────────────────────────────────────── */}
+      <div className="rounded-xl bg-primary-800 px-6 py-5">
         <a
           href="/school/attendance"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-sand-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-sand-50 transition-colors"
+          className="inline-flex items-center gap-1.5 text-sm text-primary-300 hover:text-white transition-colors mb-3"
         >
-          ← Retour aux séances
+          ← Retour au registre
         </a>
+        <h1 className="text-2xl font-bold text-white tracking-tight capitalize">
+          {formattedDate}
+        </h1>
+        <p className="text-primary-300 text-sm mt-0.5">
+          {className} · {session.academic_years.name} · {school.name}
+        </p>
       </div>
 
-      {/* ── Summary cards ───────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {STATUS_SUMMARY_ORDER.map((k) => {
-          const badge = STATUS_BADGE[k]
-          const pct   = total > 0 ? Math.round((counts[k] / total) * 100) : 0
-          return (
-            <div
-              key={k}
-              className="rounded-xl border border-sand-200 bg-white p-4 shadow-sm text-center"
-            >
-              <p className="text-2xl font-bold text-gray-900">{counts[k]}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{SUMMARY_LABEL[k]}</p>
-              <span
-                className={`mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${badge.className}`}
-              >
-                {pct}%
-              </span>
-            </div>
-          )
-        })}
+      {/* ── Status summary strip ─────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-xl grid grid-cols-2 sm:grid-cols-4 shadow-sm">
+        <div className="bg-primary-600 px-5 py-5 text-center">
+          <p className="text-3xl font-bold text-white">{counts.present}</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-primary-200 mt-1">
+            Présents
+          </p>
+          <p className="text-sm font-medium text-primary-100 mt-1">
+            {pct(counts.present)} %
+          </p>
+        </div>
+        <div className="bg-red-600 px-5 py-5 text-center">
+          <p className="text-3xl font-bold text-white">{counts.absent}</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-red-200 mt-1">
+            Absents
+          </p>
+          <p className="text-sm font-medium text-red-100 mt-1">
+            {pct(counts.absent)} %
+          </p>
+        </div>
+        <div className="bg-amber-500 px-5 py-5 text-center">
+          <p className="text-3xl font-bold text-white">{counts.late}</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-amber-100 mt-1">
+            En retard
+          </p>
+          <p className="text-sm font-medium text-amber-50 mt-1">
+            {pct(counts.late)} %
+          </p>
+        </div>
+        <div className="bg-sky-600 px-5 py-5 text-center">
+          <p className="text-3xl font-bold text-white">{counts.excused}</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-sky-200 mt-1">
+            Excusés
+          </p>
+          <p className="text-sm font-medium text-sky-100 mt-1">
+            {pct(counts.excused)} %
+          </p>
+        </div>
       </div>
 
-      {/* ── Notes ───────────────────────────────────────────────────────────── */}
+      {/* ── Session notes ────────────────────────────────────────────────────── */}
       {session.notes && (
-        <div className="rounded-xl border border-sand-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
+        <div className="rounded-xl border border-sand-200 bg-sand-50 px-5 py-4">
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1.5">
             Notes de séance
           </p>
-          <p className="text-sm text-gray-700 whitespace-pre-wrap">{session.notes}</p>
+          <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+            {session.notes}
+          </p>
         </div>
       )}
 
-      {/* ── Records table ───────────────────────────────────────────────────── */}
-      <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
+      {/* ── Records register ─────────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
+        <div className="border-b border-sand-200 bg-sand-100 px-5 py-3 flex items-center justify-between">
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-500">
+            Liste nominative
+          </p>
+          <p className="text-xs text-gray-400">
+            {total} élève{total !== 1 ? 's' : ''}
+          </p>
+        </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-sand-200">
+          <table className="min-w-full">
             <thead>
-              <tr className="bg-sand-50">
+              <tr className="border-b border-sand-200 bg-sand-50">
                 <th scope="col" className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  Élève
+                  Nom
                 </th>
                 <th scope="col" className="hidden px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 sm:table-cell">
-                  {`N° d'admission`}
+                  {`N° Adm.`}
                 </th>
                 <th scope="col" className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
                   Statut
@@ -197,30 +195,42 @@ export default async function AttendanceSessionPage({ params }: Props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-sand-100">
-              {sortedRecords.map((r) => {
-                const badge = STATUS_BADGE[r.status] ?? STATUS_BADGE.absent
-                return (
-                  <tr key={r.id} className="hover:bg-sand-50 transition-colors">
-                    <td className="px-5 py-3.5">
-                      <span className="text-sm font-medium text-gray-900">
-                        {r.students.last_name} {r.students.first_name}
+              {sortedRecords.map((r) => (
+                <tr key={r.id} className="odd:bg-white even:bg-sand-50">
+                  <td className="px-5 py-3.5">
+                    <span className="text-sm font-medium text-gray-900">
+                      {r.students.last_name} {r.students.first_name}
+                    </span>
+                  </td>
+                  <td className="hidden px-5 py-3.5 whitespace-nowrap sm:table-cell">
+                    <span className="font-mono text-sm text-gray-400">
+                      {r.students.admission_number}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    {r.status === 'present' && (
+                      <span className="text-sm font-semibold text-primary-600">
+                        ● Présent
                       </span>
-                    </td>
-                    <td className="hidden px-5 py-3.5 whitespace-nowrap sm:table-cell">
-                      <span className="font-mono text-sm text-gray-500">
-                        {r.students.admission_number}
+                    )}
+                    {r.status === 'absent' && (
+                      <span className="text-sm font-semibold text-red-600">
+                        ● Absent
                       </span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${badge.className}`}
-                      >
-                        {badge.label}
+                    )}
+                    {r.status === 'late' && (
+                      <span className="text-sm font-semibold text-amber-600">
+                        ● En retard
                       </span>
-                    </td>
-                  </tr>
-                )
-              })}
+                    )}
+                    {r.status === 'excused' && (
+                      <span className="text-sm font-semibold text-sky-600">
+                        ● Excusé
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
