@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type StudentRow = {
   id: string
   admission_number: string
@@ -11,6 +13,34 @@ type StudentRow = {
   status: string
   created_at: string
   updated_at: string
+}
+
+type InvoiceRow = {
+  id: string
+  invoice_number: string
+  title: string
+  total_amount: number
+  amount_paid: number
+  status: string
+  due_date: string | null
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmt(n: number): string {
+  return new Intl.NumberFormat('fr-FR').format(n) + ' FCFA'
+}
+
+function formatDate(value: string | null): string | null {
+  if (!value) return null
+  const d = new Date(value)
+  if (isNaN(d.getTime())) return null
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+function fmtDate(iso: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -31,12 +61,21 @@ const GENDER_LABEL: Record<string, string> = {
   other:  'Autre',
 }
 
-function formatDate(value: string | null): string | null {
-  if (!value) return null
-  const d = new Date(value)
-  if (isNaN(d.getTime())) return null
-  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+const INV_STATUS_LABEL: Record<string, string> = {
+  unpaid:    'Impayée',
+  partial:   'Partielle',
+  paid:      'Réglée',
+  cancelled: 'Annulée',
 }
+
+const INV_STATUS_CLASS: Record<string, string> = {
+  unpaid:    'border-red-200 bg-red-50 text-red-700',
+  partial:   'border-amber-200 bg-amber-50 text-amber-700',
+  paid:      'border-emerald-200 bg-emerald-50 text-emerald-700',
+  cancelled: 'border-gray-200 bg-gray-100 text-gray-500',
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function DetailRow({
   label,
@@ -58,15 +97,14 @@ function DetailRow({
   )
 }
 
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 type Props = { params: { studentId: string } }
 
 export default async function StudentDetailPage({ params }: Props) {
   const supabase = createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
   const { data: memberships } = await supabase
@@ -80,24 +118,57 @@ export default async function StudentDetailPage({ params }: Props) {
 
   const school = memberships[0].schools as unknown as { id: string; name: string }
 
-  // Double-guard: filter by BOTH id and school_id to prevent cross-school access.
-  const { data: student } = await supabase
-    .from('students')
-    .select(
-      'id, admission_number, first_name, last_name, gender, date_of_birth, status, created_at, updated_at'
-    )
-    .eq('id', params.studentId)
-    .eq('school_id', school.id)
-    .maybeSingle()
+  // Fetch student, finance stats, and recent invoices in parallel
+  const [studentRes, finStatsRes, recentInvRes] = await Promise.all([
+    supabase
+      .from('students')
+      .select('id, admission_number, first_name, last_name, gender, date_of_birth, status, created_at, updated_at')
+      .eq('id', params.studentId)
+      .eq('school_id', school.id)
+      .maybeSingle(),
 
-  if (!student) notFound()
+    supabase
+      .from('student_invoices')
+      .select('total_amount, amount_paid, status, due_date')
+      .eq('student_id', params.studentId)
+      .eq('school_id', school.id)
+      .neq('status', 'cancelled'),
 
-  const s = student as StudentRow
+    supabase
+      .from('student_invoices')
+      .select('id, invoice_number, title, total_amount, amount_paid, status, due_date')
+      .eq('student_id', params.studentId)
+      .eq('school_id', school.id)
+      .order('created_at', { ascending: false })
+      .limit(5),
+  ])
+
+  if (!studentRes.data) notFound()
+  const s = studentRes.data as StudentRow
+
+  type StatRow = { total_amount: number; amount_paid: number; status: string; due_date: string | null }
+  const finInvoices = (finStatsRes.data ?? []) as StatRow[]
+  const recentInvoices = (recentInvRes.data ?? []) as InvoiceRow[]
+
+  const today          = new Date().toISOString().split('T')[0]
+  const totalInvoiced  = finInvoices.reduce((sum, i) => sum + i.total_amount, 0)
+  const totalPaid      = finInvoices.reduce((sum, i) => sum + i.amount_paid, 0)
+  const outstanding    = totalInvoiced - totalPaid
+  const overdueBalance = finInvoices
+    .filter((i) => i.due_date !== null && i.due_date < today && (i.status === 'unpaid' || i.status === 'partial'))
+    .reduce((sum, i) => sum + (i.total_amount - i.amount_paid), 0)
+
+  function isOverdue(inv: InvoiceRow): boolean {
+    return inv.due_date !== null && inv.due_date < today
+      && (inv.status === 'unpaid' || inv.status === 'partial')
+  }
+
   const fullName = `${s.last_name} ${s.first_name}`
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
+
+      {/* ── Breadcrumb ──────────────────────────────────────────────────────── */}
       <nav className="flex flex-wrap items-center gap-y-1 text-sm text-gray-500" aria-label="Fil d'Ariane">
         <a href="/school" className="hover:text-primary-600 hover:underline">Administration</a>
         <span className="mx-2 select-none" aria-hidden="true">/</span>
@@ -106,7 +177,7 @@ export default async function StudentDetailPage({ params }: Props) {
         <span className="truncate max-w-[16rem] font-medium text-gray-900">{fullName}</span>
       </nav>
 
-      {/* Page header */}
+      {/* ── Page header ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{fullName}</h1>
@@ -128,14 +199,12 @@ export default async function StudentDetailPage({ params }: Props) {
         </div>
       </div>
 
-      {/* Detail cards */}
+      {/* ── Detail cards ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* Identity */}
         <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
           <div className="border-b border-sand-100 bg-sand-50 px-5 py-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-              Identité
-            </h2>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Identité</h2>
           </div>
           <dl className="divide-y divide-sand-100">
             <DetailRow label="Prénom"            value={s.first_name} />
@@ -148,9 +217,7 @@ export default async function StudentDetailPage({ params }: Props) {
         {/* Enrollment */}
         <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
           <div className="border-b border-sand-100 bg-sand-50 px-5 py-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-              Scolarité
-            </h2>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Scolarité</h2>
           </div>
           <dl className="divide-y divide-sand-100">
             <DetailRow label="N° d'admission"       value={s.admission_number} mono />
@@ -161,7 +228,112 @@ export default async function StudentDetailPage({ params }: Props) {
         </div>
       </div>
 
-      {/* Back link */}
+      {/* ── Finance section ──────────────────────────────────────────────────── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold text-gray-800">Finance</h2>
+          <a
+            href={`/school/students/${s.id}/finance`}
+            className="text-sm text-primary-600 hover:text-primary-800 hover:underline"
+          >
+            Historique complet →
+          </a>
+        </div>
+
+        {/* Stat strip */}
+        <div className="overflow-hidden rounded-xl grid grid-cols-2 sm:grid-cols-4 shadow-sm mb-4">
+          <div className="bg-primary-600 px-4 py-4 text-center">
+            <p className="text-lg font-bold text-white">{fmt(totalInvoiced)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary-200 mt-0.5">Facturé</p>
+          </div>
+          <div className="bg-emerald-600 px-4 py-4 text-center">
+            <p className="text-lg font-bold text-white">{fmt(totalPaid)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-200 mt-0.5">Encaissé</p>
+          </div>
+          <div className={`px-4 py-4 text-center ${outstanding > 0 ? 'bg-amber-500' : 'bg-gray-500'}`}>
+            <p className="text-lg font-bold text-white">{fmt(outstanding)}</p>
+            <p className={`text-xs font-semibold uppercase tracking-wider mt-0.5 ${outstanding > 0 ? 'text-amber-100' : 'text-gray-300'}`}>
+              Solde
+            </p>
+          </div>
+          <div className={`px-4 py-4 text-center ${overdueBalance > 0 ? 'bg-red-600' : 'bg-gray-400'}`}>
+            <p className="text-lg font-bold text-white">{fmt(overdueBalance)}</p>
+            <p className={`text-xs font-semibold uppercase tracking-wider mt-0.5 ${overdueBalance > 0 ? 'text-red-200' : 'text-gray-200'}`}>
+              En retard
+            </p>
+          </div>
+        </div>
+
+        {/* Recent invoices */}
+        {recentInvoices.length === 0 ? (
+          <div className="rounded-xl border-2 border-dashed border-sand-300 bg-sand-50 py-8 px-6 text-center">
+            <p className="text-sm font-semibold text-gray-600">Aucune facture</p>
+            <p className="mt-1 text-xs text-gray-400">Cet élève n&apos;a pas encore de facture.</p>
+            <a
+              href="/school/finance/invoices/new"
+              className="mt-3 inline-block rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 transition-colors"
+            >
+              Créer une facture
+            </a>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-sand-200 bg-sand-100 text-left">
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">N°</th>
+                  <th className="hidden sm:table-cell px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Titre</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 text-right">Total</th>
+                  <th className="hidden sm:table-cell px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 text-right">Échéance</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 text-center">Statut</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentInvoices.map((inv, idx) => {
+                  const overdue = isOverdue(inv)
+                  return (
+                    <tr
+                      key={inv.id}
+                      className={`border-b border-sand-100 hover:bg-accent-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-sand-50'}`}
+                    >
+                      <td className="px-4 py-3 font-mono text-xs text-gray-500">
+                        <a href={`/school/finance/invoices/${inv.id}`} className="hover:text-primary-700 hover:underline">
+                          {inv.invoice_number}
+                        </a>
+                      </td>
+                      <td className="hidden sm:table-cell px-4 py-3 text-gray-600 max-w-[180px] truncate">
+                        {inv.title}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">
+                        {fmt(inv.total_amount)}
+                      </td>
+                      <td className="hidden sm:table-cell px-4 py-3 text-right whitespace-nowrap">
+                        <span className={overdue ? 'text-red-600 font-medium' : 'text-gray-500'}>
+                          {fmtDate(inv.due_date)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <div className="flex flex-wrap items-center justify-center gap-1">
+                          <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${INV_STATUS_CLASS[inv.status] ?? INV_STATUS_CLASS.unpaid}`}>
+                            {INV_STATUS_LABEL[inv.status] ?? inv.status}
+                          </span>
+                          {overdue && (
+                            <span className="inline-block rounded-full border border-red-400 bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
+                              Retard
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Back link ────────────────────────────────────────────────────────── */}
       <a
         href="/school/students"
         className="inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 hover:underline"
@@ -171,6 +343,7 @@ export default async function StudentDetailPage({ params }: Props) {
         </svg>
         Retour à la liste des élèves
       </a>
+
     </div>
   )
 }

@@ -195,7 +195,7 @@ export default async function FinancePage() {
       </div>
 
       {/* ── Quick actions ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <a href="/school/finance/invoices" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
           <span className="text-lg">📋</span>
           Toutes les factures
@@ -207,6 +207,14 @@ export default async function FinancePage() {
         <a href="/school/finance/payments/new" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
           <span className="text-lg">💳</span>
           Enregistrer paiement
+        </a>
+        <a href="/school/finance/payments" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
+          <span className="text-lg">📒</span>
+          Journal des paiements
+        </a>
+        <a href="/school/finance/reports" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
+          <span className="text-lg">📊</span>
+          Rapport financier
         </a>
         <a href="/school/finance/fees/new" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
           <span className="text-lg">➕</span>
