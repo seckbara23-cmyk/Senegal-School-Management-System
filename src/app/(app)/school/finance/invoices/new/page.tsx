@@ -39,7 +39,7 @@ export default async function NewInvoicePage() {
       .from('academic_years')
       .select('id, name')
       .eq('school_id', schoolId)
-      .order('start_date', { ascending: false }),
+      .order('starts_on', { ascending: false }),
   ])
 
   const students     = (studentsRes.data  ?? []) as { id: string; first_name: string; last_name: string }[]

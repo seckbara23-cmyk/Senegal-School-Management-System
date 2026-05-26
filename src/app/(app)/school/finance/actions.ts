@@ -71,6 +71,15 @@ export type PaymentState = {
   }
 }
 
+export type BulkInvoiceState = {
+  errors?: {
+    class_id?:    string[]
+    fee_items?:   string[]
+    custom_amount?: string[]
+    _form?:       string[]
+  }
+}
+
 // ─── Guard helper ─────────────────────────────────────────────────────────────
 
 async function getSchoolId(
@@ -352,4 +361,88 @@ export async function recordPayment(
     .eq('school_id', schoolId)
 
   redirect(`/school/finance/payments/${paymentId}`)
+}
+
+// ─── createBulkInvoices ───────────────────────────────────────────────────────
+
+export async function createBulkInvoices(
+  _prevState: BulkInvoiceState,
+  formData: FormData
+): Promise<BulkInvoiceState> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { errors: { _form: ['Non autorisé.'] } }
+
+  const schoolId = await getSchoolId(supabase, user.id)
+  if (!schoolId) return { errors: { _form: ['Non autorisé.'] } }
+
+  const classId = formData.get('class_id')
+  if (!classId || String(classId).trim() === '') {
+    return { errors: { class_id: ['Sélectionnez une classe.'] } }
+  }
+
+  // Verify class belongs to school and derive academic_year_id
+  const { data: classRow } = await supabase
+    .from('classes')
+    .select('id, name, section, academic_year_id')
+    .eq('id', String(classId))
+    .eq('school_id', schoolId)
+    .maybeSingle()
+
+  if (!classRow) return { errors: { class_id: ['Classe introuvable.'] } }
+  type ClassRow = { id: string; name: string; section: string | null; academic_year_id: string }
+  const cls = classRow as ClassRow
+
+  // Fee items
+  const feeItemIds = formData.getAll('fee_item_ids').map((v) => String(v)).filter(Boolean)
+  const customDesc      = formData.get('custom_description')
+  const customAmountRaw = formData.get('custom_amount')
+  const hasCustomDesc   = customDesc && String(customDesc).trim() !== ''
+  const customAmount    = hasCustomDesc ? parseInt(String(customAmountRaw), 10) : 0
+
+  if (hasCustomDesc && (isNaN(customAmount) || customAmount <= 0)) {
+    return { errors: { custom_amount: ['Montant invalide pour la ligne personnalisée.'] } }
+  }
+  if (feeItemIds.length === 0 && !hasCustomDesc) {
+    return { errors: { fee_items: ['Sélectionnez au moins un frais ou ajoutez une ligne personnalisée.'] } }
+  }
+
+  // Title: use provided or default
+  const titleRaw = formData.get('title')
+  const title = (titleRaw && String(titleRaw).trim() !== '')
+    ? String(titleRaw).trim()
+    : `Frais – ${[cls.name, cls.section].filter(Boolean).join(' ')}`
+
+  const dueDateRaw = formData.get('due_date')
+  const dueDate    = (dueDateRaw && String(dueDateRaw) !== '') ? String(dueDateRaw) : null
+
+  // Call SECURITY DEFINER RPC — atomically creates all invoices + lines
+  const { data: rpcResult, error: rpcError } = await supabase.rpc('create_bulk_invoices', {
+    p_school_id:        schoolId,
+    p_class_id:         String(classId),
+    p_academic_year_id: cls.academic_year_id,
+    p_title:            title,
+    p_due_date:         dueDate,
+    p_fee_item_ids:     feeItemIds.length > 0 ? feeItemIds : [],
+    p_custom_desc:      hasCustomDesc ? String(customDesc).trim() : null,
+    p_custom_amount:    hasCustomDesc ? customAmount : null,
+    p_created_by:       user.id,
+  })
+
+  if (rpcError) {
+    console.error('[createBulkInvoices] RPC error:', rpcError.message)
+    const msg = rpcError.message.includes('amount')
+      ? 'Le montant total doit être supérieur à 0.'
+      : rpcError.message.includes('fee item')
+      ? 'Un ou plusieurs frais sont invalides ou inactifs.'
+      : 'Erreur lors de la facturation groupée. Veuillez réessayer.'
+    return { errors: { _form: [msg] } }
+  }
+
+  type RpcResult = { created_count: number; skipped_count: number }
+  const result = rpcResult as RpcResult
+  const qs = new URLSearchParams({ created: String(result.created_count) })
+  if (result.skipped_count > 0) qs.set('skipped', String(result.skipped_count))
+
+  redirect(`/school/finance/invoices?${qs.toString()}`)
 }

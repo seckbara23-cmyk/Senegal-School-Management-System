@@ -24,7 +24,7 @@ export default async function NewFeePage() {
     .from('academic_years')
     .select('id, name')
     .eq('school_id', schoolId)
-    .order('start_date', { ascending: false })
+    .order('starts_on', { ascending: false })
 
   const academicYears = (yearsRaw ?? []) as { id: string; name: string }[]
 

@@ -25,10 +25,12 @@ const STATUS_CLASS: Record<string, string> = {
 }
 
 type Props = {
-  searchParams: { status?: string }
+  searchParams: { status?: string; created?: string; skipped?: string }
 }
 
 export default async function InvoicesPage({ searchParams }: Props) {
+  const createdCount = searchParams.created ? parseInt(searchParams.created, 10) : null
+  const skippedCount = searchParams.skipped ? parseInt(searchParams.skipped, 10) : null
   const supabase = createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -96,14 +98,46 @@ export default async function InvoicesPage({ searchParams }: Props) {
               {statusFilter ? ` · ${STATUS_LABEL[statusFilter]}` : ''}
             </p>
           </div>
-          <a
-            href="/school/finance/invoices/new"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
-          >
-            + Nouvelle facture
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href="/school/finance/invoices/new"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
+            >
+              + Nouvelle facture
+            </a>
+            <a
+              href="/school/finance/invoices/bulk"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-accent-400 bg-accent-50 px-4 py-2 text-sm font-semibold text-accent-700 hover:bg-accent-100 transition-colors shadow-sm"
+            >
+              Par classe
+            </a>
+          </div>
         </div>
       </div>
+
+      {/* ── Bulk creation success banner ────────────────────────────────────── */}
+      {createdCount !== null && createdCount > 0 && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+          <p className="text-sm font-semibold text-emerald-800">
+            ✓ {createdCount} facture{createdCount !== 1 ? 's' : ''} créée{createdCount !== 1 ? 's' : ''} avec succès.
+          </p>
+          {skippedCount !== null && skippedCount > 0 && (
+            <p className="text-xs text-emerald-600 mt-0.5">
+              {skippedCount} élève{skippedCount !== 1 ? 's' : ''} ignoré{skippedCount !== 1 ? 's' : ''} (facture existante avec le même titre et la même échéance).
+            </p>
+          )}
+        </div>
+      )}
+      {createdCount === 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-semibold text-amber-800">
+            Aucune facture créée.
+          </p>
+          <p className="text-xs text-amber-600 mt-0.5">
+            Tous les élèves actifs de cette classe avaient déjà une facture avec ce titre et cette échéance.
+          </p>
+        </div>
+      )}
 
       {/* ── Filter tabs ──────────────────────────────────────────────────────── */}
       <div className="flex gap-1 rounded-lg border border-sand-200 bg-sand-50 p-1">

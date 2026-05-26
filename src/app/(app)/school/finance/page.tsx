@@ -99,6 +99,12 @@ export default async function FinancePage() {
               + Nouvelle facture
             </a>
             <a
+              href="/school/finance/invoices/bulk"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-accent-400 bg-accent-50 px-4 py-2 text-sm font-semibold text-accent-700 hover:bg-accent-100 transition-colors shadow-sm"
+            >
+              Facturation par classe
+            </a>
+            <a
               href="/school/finance/fees"
               className="inline-flex items-center gap-1.5 rounded-lg border border-primary-600 bg-primary-700 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-600 transition-colors"
             >
@@ -145,14 +151,18 @@ export default async function FinancePage() {
       </div>
 
       {/* ── Quick actions ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <a href="/school/finance/invoices" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
           <span className="text-lg">📋</span>
           Toutes les factures
         </a>
+        <a href="/school/finance/invoices/bulk" className="flex items-center gap-3 rounded-lg border border-accent-200 bg-accent-50 px-4 py-3 text-sm font-medium text-accent-700 hover:border-accent-400 hover:text-accent-800 transition-colors shadow-sm">
+          <span className="text-lg">🏫</span>
+          Par classe
+        </a>
         <a href="/school/finance/payments/new" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
           <span className="text-lg">💳</span>
-          Enregistrer un paiement
+          Enregistrer paiement
         </a>
         <a href="/school/finance/fees/new" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
           <span className="text-lg">➕</span>
