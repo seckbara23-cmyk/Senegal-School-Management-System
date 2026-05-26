@@ -38,6 +38,8 @@ export default async function NewPaymentPage() {
 
   const schoolId = (membership as { school_id: string }).school_id
 
+  const today = new Date().toISOString().split('T')[0]
+
   // Outstanding invoices (unpaid or partial)
   const { data: rawInvoices } = await supabase
     .from('student_invoices')
@@ -58,6 +60,10 @@ export default async function NewPaymentPage() {
     students: { first_name: string; last_name: string }
   }
   const invoices = (rawInvoices ?? []) as unknown as InvoiceRow[]
+
+  function isOverdue(inv: InvoiceRow): boolean {
+    return inv.due_date !== null && inv.due_date < today
+  }
 
   return (
     <div className="space-y-6">
@@ -102,22 +108,30 @@ export default async function NewPaymentPage() {
           </p>
           <div className="space-y-2">
             {invoices.map((inv) => {
-              const balance = inv.total_amount - inv.amount_paid
+              const balance  = inv.total_amount - inv.amount_paid
+              const overdue  = isOverdue(inv)
               return (
                 <a
                   key={inv.id}
                   href={`/school/finance/invoices/${inv.id}`}
-                  className="flex items-center justify-between gap-4 rounded-xl border border-sand-200 bg-white px-5 py-4 hover:border-primary-300 hover:bg-primary-50 transition-colors shadow-sm"
+                  className={`flex items-center justify-between gap-4 rounded-xl border px-5 py-4 hover:border-primary-300 hover:bg-primary-50 transition-colors shadow-sm ${
+                    overdue ? 'border-red-200 bg-red-50' : 'border-sand-200 bg-white'
+                  }`}
                 >
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
+                    <div className="flex flex-wrap items-center gap-2 mb-0.5">
                       <span className="font-mono text-xs text-gray-400">{inv.invoice_number}</span>
                       <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${STATUS_CLASS[inv.status] ?? STATUS_CLASS.unpaid}`}>
                         {STATUS_LABEL[inv.status] ?? inv.status}
                       </span>
+                      {overdue && (
+                        <span className="rounded-full border border-red-400 bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
+                          En retard
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm font-semibold text-gray-900 truncate">{inv.title}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
+                    <p className={`text-xs mt-0.5 ${overdue ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
                       {inv.students.first_name} {inv.students.last_name} · Échéance : {fmtDate(inv.due_date)}
                     </p>
                   </div>

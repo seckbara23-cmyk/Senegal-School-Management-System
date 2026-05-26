@@ -446,3 +446,77 @@ export async function createBulkInvoices(
 
   redirect(`/school/finance/invoices?${qs.toString()}`)
 }
+
+// ─── cancelInvoice ────────────────────────────────────────────────────────────
+
+const CancelSchema = z.object({
+  invoice_id:          z.string().uuid('Facture invalide.'),
+  cancellation_reason: z.string().min(1, 'Motif requis.').max(500, 'Motif trop long.'),
+})
+
+export type CancelInvoiceState = {
+  errors?: {
+    cancellation_reason?: string[]
+    _form?: string[]
+  }
+}
+
+export async function cancelInvoice(
+  _prevState: CancelInvoiceState,
+  formData: FormData
+): Promise<CancelInvoiceState> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { errors: { _form: ['Non autorisé.'] } }
+
+  const schoolId = await getSchoolId(supabase, user.id)
+  if (!schoolId) return { errors: { _form: ['Non autorisé.'] } }
+
+  const parsed = CancelSchema.safeParse({
+    invoice_id:          formData.get('invoice_id'),
+    cancellation_reason: formData.get('cancellation_reason'),
+  })
+
+  if (!parsed.success) {
+    return { errors: parsed.error.flatten().fieldErrors as CancelInvoiceState['errors'] }
+  }
+
+  const { invoice_id, cancellation_reason } = parsed.data
+
+  const { data: raw } = await supabase
+    .from('student_invoices')
+    .select('id, status')
+    .eq('id', invoice_id)
+    .eq('school_id', schoolId)
+    .maybeSingle()
+
+  if (!raw) return { errors: { _form: ['Facture introuvable.'] } }
+
+  type InvRow = { id: string; status: string }
+  const inv = raw as InvRow
+
+  if (inv.status === 'paid') {
+    return { errors: { _form: ['Une facture réglée ne peut pas être annulée.'] } }
+  }
+  if (inv.status === 'cancelled') {
+    return { errors: { _form: ['Cette facture est déjà annulée.'] } }
+  }
+
+  const { error } = await supabase
+    .from('student_invoices')
+    .update({
+      status:              'cancelled',
+      cancelled_at:        new Date().toISOString(),
+      cancelled_by:        user.id,
+      cancellation_reason: cancellation_reason,
+    })
+    .eq('id', invoice_id)
+    .eq('school_id', schoolId)
+
+  if (error) {
+    console.error('[cancelInvoice]', error.message)
+    return { errors: { _form: ["Erreur lors de l'annulation. Veuillez réessayer."] } }
+  }
+
+  redirect(`/school/finance/invoices/${invoice_id}`)
+}

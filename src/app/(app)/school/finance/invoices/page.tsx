@@ -48,8 +48,10 @@ export default async function InvoicesPage({ searchParams }: Props) {
 
   const schoolId = (membership as { school_id: string }).school_id
 
-  const VALID_STATUSES = ['unpaid', 'partial', 'paid', 'cancelled']
-  const statusFilter = VALID_STATUSES.includes(searchParams.status ?? '') ? searchParams.status! : null
+  const today = new Date().toISOString().split('T')[0]
+
+  const VALID_FILTERS = ['unpaid', 'partial', 'paid', 'cancelled', 'overdue']
+  const statusFilter = VALID_FILTERS.includes(searchParams.status ?? '') ? searchParams.status! : null
 
   let query = supabase
     .from('student_invoices')
@@ -57,7 +59,9 @@ export default async function InvoicesPage({ searchParams }: Props) {
     .eq('school_id', schoolId)
     .order('created_at', { ascending: false })
 
-  if (statusFilter) {
+  if (statusFilter === 'overdue') {
+    query = query.in('status', ['unpaid', 'partial']).lt('due_date', today).not('due_date', 'is', null)
+  } else if (statusFilter) {
     query = query.eq('status', statusFilter)
   }
 
@@ -75,12 +79,24 @@ export default async function InvoicesPage({ searchParams }: Props) {
   }
   const invoices = (rawInvoices ?? []) as unknown as InvoiceRow[]
 
+  function isOverdue(inv: InvoiceRow): boolean {
+    return inv.due_date !== null
+      && inv.due_date < today
+      && (inv.status === 'unpaid' || inv.status === 'partial')
+  }
+
   const FILTERS = [
-    { value: null,        label: 'Toutes' },
-    { value: 'unpaid',   label: 'Impayées' },
-    { value: 'partial',  label: 'Partielles' },
-    { value: 'paid',     label: 'Réglées' },
+    { value: null,         label: 'Toutes' },
+    { value: 'unpaid',    label: 'Impayées' },
+    { value: 'partial',   label: 'Partielles' },
+    { value: 'paid',      label: 'Réglées' },
+    { value: 'overdue',   label: 'En retard' },
+    { value: 'cancelled', label: 'Annulées' },
   ]
+
+  const filterLabel = statusFilter === 'overdue' ? 'En retard'
+    : statusFilter ? STATUS_LABEL[statusFilter]
+    : null
 
   return (
     <div className="space-y-6">
@@ -95,7 +111,7 @@ export default async function InvoicesPage({ searchParams }: Props) {
             <h1 className="text-2xl font-bold text-white tracking-tight">Factures</h1>
             <p className="text-primary-300 text-sm mt-0.5">
               {invoices.length} facture{invoices.length !== 1 ? 's' : ''}
-              {statusFilter ? ` · ${STATUS_LABEL[statusFilter]}` : ''}
+              {filterLabel ? ` · ${filterLabel}` : ''}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -140,7 +156,7 @@ export default async function InvoicesPage({ searchParams }: Props) {
       )}
 
       {/* ── Filter tabs ──────────────────────────────────────────────────────── */}
-      <div className="flex gap-1 rounded-lg border border-sand-200 bg-sand-50 p-1">
+      <div className="flex flex-wrap gap-1 rounded-lg border border-sand-200 bg-sand-50 p-1">
         {FILTERS.map((f) => {
           const href = f.value ? `/school/finance/invoices?status=${f.value}` : '/school/finance/invoices'
           const active = statusFilter === f.value
@@ -148,7 +164,7 @@ export default async function InvoicesPage({ searchParams }: Props) {
             <a
               key={f.label}
               href={href}
-              className={`flex-1 rounded-md px-3 py-2 text-center text-sm font-medium transition-colors ${
+              className={`flex-1 rounded-md px-3 py-2 text-center text-sm font-medium transition-colors whitespace-nowrap ${
                 active
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
@@ -165,8 +181,10 @@ export default async function InvoicesPage({ searchParams }: Props) {
         <div className="rounded-xl border-2 border-dashed border-sand-300 bg-sand-50 py-16 px-6 text-center">
           <h3 className="text-base font-semibold text-gray-900">Aucune facture</h3>
           <p className="mt-1 text-sm text-gray-500">
-            {statusFilter
-              ? `Aucune facture avec le statut « ${STATUS_LABEL[statusFilter]} ».`
+            {statusFilter === 'overdue'
+              ? 'Aucune facture en retard.'
+              : statusFilter
+              ? `Aucune facture avec le statut « ${STATUS_LABEL[statusFilter] ?? statusFilter} ».`
               : 'Créez la première facture pour un élève.'}
           </p>
           {!statusFilter && (
@@ -195,7 +213,8 @@ export default async function InvoicesPage({ searchParams }: Props) {
             </thead>
             <tbody>
               {invoices.map((inv, idx) => {
-                const balance = inv.total_amount - inv.amount_paid
+                const balance  = inv.total_amount - inv.amount_paid
+                const overdue  = isOverdue(inv)
                 return (
                   <tr
                     key={inv.id}
@@ -225,13 +244,22 @@ export default async function InvoicesPage({ searchParams }: Props) {
                         {fmt(balance)}
                       </span>
                     </td>
-                    <td className="hidden sm:table-cell px-4 py-3 text-right text-gray-500 whitespace-nowrap">
-                      {fmtDate(inv.due_date)}
+                    <td className="hidden sm:table-cell px-4 py-3 text-right whitespace-nowrap">
+                      <span className={overdue ? 'text-red-600 font-medium' : 'text-gray-500'}>
+                        {fmtDate(inv.due_date)}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_CLASS[inv.status] ?? STATUS_CLASS.unpaid}`}>
-                        {STATUS_LABEL[inv.status] ?? inv.status}
-                      </span>
+                      <div className="flex flex-wrap items-center justify-center gap-1">
+                        <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_CLASS[inv.status] ?? STATUS_CLASS.unpaid}`}>
+                          {STATUS_LABEL[inv.status] ?? inv.status}
+                        </span>
+                        {overdue && (
+                          <span className="inline-block rounded-full border border-red-400 bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
+                            Retard
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )

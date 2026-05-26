@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import { PaymentForm } from './_payment_form'
+import { CancelInvoiceForm } from './_cancel_form'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,11 +68,11 @@ export default async function InvoiceDetailPage({ params }: Props) {
 
   const schoolId = (membership as { school_id: string }).school_id
 
-  // Fetch invoice with student info
   const { data: rawInvoice } = await supabase
     .from('student_invoices')
     .select(`
       id, invoice_number, title, total_amount, amount_paid, status, due_date, created_at,
+      cancelled_at, cancellation_reason,
       students!student_id(id, first_name, last_name),
       academic_years!academic_year_id(name)
     `)
@@ -90,12 +91,13 @@ export default async function InvoiceDetailPage({ params }: Props) {
     status: string
     due_date: string | null
     created_at: string
+    cancelled_at: string | null
+    cancellation_reason: string | null
     students: { id: string; first_name: string; last_name: string }
     academic_years: { name: string } | null
   }
   const invoice = rawInvoice as unknown as InvoiceDetail
 
-  // Fetch lines and payments in parallel
   const [linesRes, paymentsRes] = await Promise.all([
     supabase
       .from('invoice_lines')
@@ -116,8 +118,14 @@ export default async function InvoiceDetailPage({ params }: Props) {
   const lines    = (linesRes.data    ?? []) as LineRow[]
   const payments = (paymentsRes.data ?? []) as PaymentRow[]
 
-  const balance        = invoice.total_amount - invoice.amount_paid
-  const canAddPayment  = invoice.status !== 'paid' && invoice.status !== 'cancelled'
+  const balance       = invoice.total_amount - invoice.amount_paid
+  const canAddPayment = invoice.status !== 'paid' && invoice.status !== 'cancelled'
+  const canCancel     = invoice.status === 'unpaid' || invoice.status === 'partial'
+
+  const today     = new Date().toISOString().split('T')[0]
+  const isOverdue = invoice.due_date !== null
+    && invoice.due_date < today
+    && (invoice.status === 'unpaid' || invoice.status === 'partial')
 
   return (
     <div className="space-y-6">
@@ -131,11 +139,16 @@ export default async function InvoiceDetailPage({ params }: Props) {
         </div>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="flex items-center gap-3 mb-1">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
               <span className="font-mono text-sm text-primary-300">{invoice.invoice_number}</span>
               <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_CLASS[invoice.status] ?? STATUS_CLASS.unpaid}`}>
                 {STATUS_LABEL[invoice.status] ?? invoice.status}
               </span>
+              {isOverdue && (
+                <span className="rounded-full border border-red-400 bg-red-600 px-2.5 py-0.5 text-xs font-bold text-white">
+                  En retard
+                </span>
+              )}
             </div>
             <h1 className="text-xl font-bold text-white tracking-tight">{invoice.title}</h1>
             <p className="text-primary-300 text-sm mt-0.5">
@@ -152,7 +165,9 @@ export default async function InvoiceDetailPage({ params }: Props) {
           </div>
           <div className="text-right">
             <p className="text-xs text-primary-400">Échéance</p>
-            <p className="text-sm font-medium text-white">{fmtDate(invoice.due_date)}</p>
+            <p className={`text-sm font-medium ${isOverdue ? 'text-red-300' : 'text-white'}`}>
+              {fmtDate(invoice.due_date)}
+            </p>
           </div>
         </div>
       </div>
@@ -275,6 +290,7 @@ export default async function InvoiceDetailPage({ params }: Props) {
         </div>
       )}
 
+      {/* ── Status notices ───────────────────────────────────────────────────── */}
       {invoice.status === 'paid' && (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
           ✓ Cette facture est entièrement réglée.
@@ -282,8 +298,25 @@ export default async function InvoiceDetailPage({ params }: Props) {
       )}
 
       {invoice.status === 'cancelled' && (
-        <div className="rounded-lg border border-gray-200 bg-gray-100 px-4 py-3 text-sm text-gray-500">
-          Cette facture a été annulée.
+        <div className="rounded-lg border border-gray-200 bg-gray-100 px-4 py-4">
+          <p className="text-sm font-semibold text-gray-600 mb-1">Facture annulée</p>
+          {invoice.cancellation_reason && (
+            <p className="text-sm text-gray-600">
+              <span className="font-medium">Motif :</span> {invoice.cancellation_reason}
+            </p>
+          )}
+          {invoice.cancelled_at && (
+            <p className="text-xs text-gray-400 mt-1">
+              le {fmtDateTime(invoice.cancelled_at)}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── Cancel form ─────────────────────────────────────────────────────── */}
+      {canCancel && (
+        <div className="flex justify-end border-t border-sand-200 pt-4">
+          <CancelInvoiceForm invoiceId={invoice.id} />
         </div>
       )}
 

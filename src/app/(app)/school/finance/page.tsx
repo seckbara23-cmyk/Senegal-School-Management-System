@@ -46,28 +46,44 @@ export default async function FinancePage() {
 
   const schoolId = (membership as { school_id: string }).school_id
 
-  // Fetch all non-cancelled invoices for stats
-  const { data: allInvoices } = await supabase
-    .from('student_invoices')
-    .select('total_amount, amount_paid, status')
-    .eq('school_id', schoolId)
-    .neq('status', 'cancelled')
+  const today = new Date().toISOString().split('T')[0]
 
-  const invoices = (allInvoices ?? []) as { total_amount: number; amount_paid: number; status: string }[]
-  const totalInvoiced  = invoices.reduce((s, i) => s + i.total_amount, 0)
-  const totalCollected = invoices.reduce((s, i) => s + i.amount_paid, 0)
+  // Fetch all non-cancelled invoices for stats + overdue query in parallel
+  const [allInvoicesRes, overdueRes, recentRes] = await Promise.all([
+    supabase
+      .from('student_invoices')
+      .select('total_amount, amount_paid, status')
+      .eq('school_id', schoolId)
+      .neq('status', 'cancelled'),
+
+    supabase
+      .from('student_invoices')
+      .select('total_amount, amount_paid')
+      .eq('school_id', schoolId)
+      .in('status', ['unpaid', 'partial'])
+      .lt('due_date', today)
+      .not('due_date', 'is', null),
+
+    supabase
+      .from('student_invoices')
+      .select('id, invoice_number, title, total_amount, amount_paid, status, due_date, students!student_id(first_name, last_name)')
+      .eq('school_id', schoolId)
+      .order('created_at', { ascending: false })
+      .limit(8),
+  ])
+
+  const invoices = (allInvoicesRes.data ?? []) as { total_amount: number; amount_paid: number; status: string }[]
+  const totalInvoiced    = invoices.reduce((s, i) => s + i.total_amount, 0)
+  const totalCollected   = invoices.reduce((s, i) => s + i.amount_paid, 0)
   const totalOutstanding = totalInvoiced - totalCollected
-  const countUnpaid  = invoices.filter((i) => i.status === 'unpaid').length
-  const countPartial = invoices.filter((i) => i.status === 'partial').length
-  const countPaid    = invoices.filter((i) => i.status === 'paid').length
+  const countUnpaid      = invoices.filter((i) => i.status === 'unpaid').length
+  const countPartial     = invoices.filter((i) => i.status === 'partial').length
+  const countPaid        = invoices.filter((i) => i.status === 'paid').length
 
-  // Recent invoices (last 8)
-  const { data: recentRaw } = await supabase
-    .from('student_invoices')
-    .select('id, invoice_number, title, total_amount, amount_paid, status, due_date, students!student_id(first_name, last_name)')
-    .eq('school_id', schoolId)
-    .order('created_at', { ascending: false })
-    .limit(8)
+  type OverdueRow = { total_amount: number; amount_paid: number }
+  const overdueInvoices    = (overdueRes.data ?? []) as OverdueRow[]
+  const countOverdue       = overdueInvoices.length
+  const totalOverdueBalance = overdueInvoices.reduce((s, i) => s + (i.total_amount - i.amount_paid), 0)
 
   type RecentRow = {
     id: string
@@ -79,7 +95,13 @@ export default async function FinancePage() {
     due_date: string | null
     students: { first_name: string; last_name: string }
   }
-  const recentInvoices = (recentRaw ?? []) as unknown as RecentRow[]
+  const recentInvoices = (recentRes.data ?? []) as unknown as RecentRow[]
+
+  function isOverdue(inv: RecentRow): boolean {
+    return inv.due_date !== null
+      && inv.due_date < today
+      && (inv.status === 'unpaid' || inv.status === 'partial')
+  }
 
   return (
     <div className="space-y-6">
@@ -133,6 +155,28 @@ export default async function FinancePage() {
           <p className="text-xs font-semibold uppercase tracking-wider text-sky-200 mt-1">Factures actives</p>
         </div>
       </div>
+
+      {/* ── Overdue alert ────────────────────────────────────────────────────── */}
+      {countOverdue > 0 && (
+        <div className="rounded-lg border-2 border-red-300 bg-red-50 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-red-800">
+                {countOverdue} facture{countOverdue !== 1 ? 's' : ''} en retard
+              </p>
+              <p className="text-xs text-red-600 mt-0.5">
+                Solde impayé : {fmt(totalOverdueBalance)}
+              </p>
+            </div>
+            <a
+              href="/school/finance/invoices?status=overdue"
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
+            >
+              Voir →
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* ── Status breakdown ────────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-3">
@@ -204,37 +248,49 @@ export default async function FinancePage() {
                 </tr>
               </thead>
               <tbody>
-                {recentInvoices.map((inv, idx) => (
-                  <tr
-                    key={inv.id}
-                    className={`border-b border-sand-100 hover:bg-accent-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-sand-50'}`}
-                  >
-                    <td className="px-4 py-3 font-mono text-xs text-gray-500">
-                      <a href={`/school/finance/invoices/${inv.id}`} className="hover:text-primary-700 hover:underline">
-                        {inv.invoice_number}
-                      </a>
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
-                      <a href={`/school/finance/invoices/${inv.id}`} className="hover:text-primary-700 hover:underline">
-                        {inv.students.first_name} {inv.students.last_name}
-                      </a>
-                    </td>
-                    <td className="hidden sm:table-cell px-4 py-3 text-gray-600 max-w-[180px] truncate">
-                      {inv.title}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">
-                      {fmt(inv.total_amount)}
-                    </td>
-                    <td className="hidden sm:table-cell px-4 py-3 text-right text-gray-500 whitespace-nowrap">
-                      {fmtDate(inv.due_date)}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_CLASS[inv.status] ?? STATUS_CLASS.unpaid}`}>
-                        {STATUS_LABEL[inv.status] ?? inv.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {recentInvoices.map((inv, idx) => {
+                  const overdue = isOverdue(inv)
+                  return (
+                    <tr
+                      key={inv.id}
+                      className={`border-b border-sand-100 hover:bg-accent-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-sand-50'}`}
+                    >
+                      <td className="px-4 py-3 font-mono text-xs text-gray-500">
+                        <a href={`/school/finance/invoices/${inv.id}`} className="hover:text-primary-700 hover:underline">
+                          {inv.invoice_number}
+                        </a>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-gray-900">
+                        <a href={`/school/finance/invoices/${inv.id}`} className="hover:text-primary-700 hover:underline">
+                          {inv.students.first_name} {inv.students.last_name}
+                        </a>
+                      </td>
+                      <td className="hidden sm:table-cell px-4 py-3 text-gray-600 max-w-[180px] truncate">
+                        {inv.title}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">
+                        {fmt(inv.total_amount)}
+                      </td>
+                      <td className="hidden sm:table-cell px-4 py-3 text-right whitespace-nowrap">
+                        <span className={overdue ? 'text-red-600 font-medium' : 'text-gray-500'}>
+                          {fmtDate(inv.due_date)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <div className="flex flex-wrap items-center justify-center gap-1">
+                          <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_CLASS[inv.status] ?? STATUS_CLASS.unpaid}`}>
+                            {STATUS_LABEL[inv.status] ?? inv.status}
+                          </span>
+                          {overdue && (
+                            <span className="inline-block rounded-full border border-red-400 bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
+                              Retard
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
