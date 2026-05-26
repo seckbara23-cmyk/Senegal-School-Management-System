@@ -304,22 +304,39 @@ export async function recordPayment(
   if (inv.status === 'cancelled') return { errors: { _form: ['Cette facture est annulée.'] } }
   if (inv.status === 'paid')      return { errors: { _form: ['Cette facture est déjà réglée.'] } }
 
-  // Insert payment
-  const { error: paymentError } = await supabase.from('student_payments').insert({
-    school_id:      schoolId,
-    student_id:     inv.student_id,
-    invoice_id:     invoice_id,
-    amount:         amount,
-    payment_method: payment_method,
-    reference:      reference ?? null,
-    notes:          notes ?? null,
-    created_by:     user.id,
-  })
+  // Generate receipt number: REC-YYYY-NNNNNN (per school per calendar year)
+  const payYear = new Date().getFullYear()
+  const { count: paymentCount } = await supabase
+    .from('student_payments')
+    .select('id', { count: 'exact', head: true })
+    .eq('school_id', schoolId)
+    .gte('paid_at', `${payYear}-01-01T00:00:00.000Z`)
+    .lt('paid_at',  `${payYear + 1}-01-01T00:00:00.000Z`)
+  const receiptNumber = `REC-${payYear}-${String((paymentCount ?? 0) + 1).padStart(6, '0')}`
 
-  if (paymentError) {
-    console.error('[recordPayment]', paymentError.message)
+  // Insert payment
+  const { data: paymentRow, error: paymentError } = await supabase
+    .from('student_payments')
+    .insert({
+      school_id:      schoolId,
+      student_id:     inv.student_id,
+      invoice_id:     invoice_id,
+      amount:         amount,
+      payment_method: payment_method,
+      reference:      reference ?? null,
+      notes:          notes ?? null,
+      receipt_number: receiptNumber,
+      created_by:     user.id,
+    })
+    .select('id')
+    .single()
+
+  if (paymentError || !paymentRow) {
+    console.error('[recordPayment]', paymentError?.message)
     return { errors: { _form: ["Erreur lors de l'enregistrement du paiement."] } }
   }
+
+  const paymentId = (paymentRow as { id: string }).id
 
   // Recompute invoice status
   const newAmountPaid = inv.amount_paid + amount
@@ -334,5 +351,5 @@ export async function recordPayment(
     .eq('id', invoice_id)
     .eq('school_id', schoolId)
 
-  redirect(`/school/finance/invoices/${invoice_id}`)
+  redirect(`/school/finance/payments/${paymentId}`)
 }

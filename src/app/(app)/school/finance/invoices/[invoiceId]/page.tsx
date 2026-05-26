@@ -105,13 +105,13 @@ export default async function InvoiceDetailPage({ params }: Props) {
 
     supabase
       .from('student_payments')
-      .select('id, amount, payment_method, reference, notes, paid_at')
+      .select('id, amount, payment_method, reference, notes, paid_at, receipt_number')
       .eq('invoice_id', invoice.id)
       .order('paid_at', { ascending: false }),
   ])
 
   type LineRow    = { id: string; description: string; amount: number; fee_item_id: string | null }
-  type PaymentRow = { id: string; amount: number; payment_method: string; reference: string | null; notes: string | null; paid_at: string }
+  type PaymentRow = { id: string; amount: number; payment_method: string; reference: string | null; notes: string | null; paid_at: string; receipt_number: string | null }
 
   const lines    = (linesRes.data    ?? []) as LineRow[]
   const payments = (paymentsRes.data ?? []) as PaymentRow[]
@@ -228,6 +228,7 @@ export default async function InvoiceDetailPage({ params }: Props) {
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 text-right">Montant</th>
                   <th className="hidden sm:table-cell px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Mode</th>
                   <th className="hidden md:table-cell px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Référence</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 text-right">Reçu</th>
                 </tr>
               </thead>
               <tbody>
@@ -247,6 +248,14 @@ export default async function InvoiceDetailPage({ params }: Props) {
                     </td>
                     <td className="hidden md:table-cell px-4 py-3 text-gray-400 text-xs">
                       {p.reference ?? '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <a
+                        href={`/school/finance/payments/${p.id}`}
+                        className="text-xs font-medium text-primary-600 hover:text-primary-800 hover:underline"
+                      >
+                        Voir reçu
+                      </a>
                     </td>
                   </tr>
                 ))}
