@@ -61,7 +61,7 @@ function SubmitButton() {
 
 const initialState: CreateClassState = {}
 
-export function ClassNewForm({ academicYears }: { academicYears: AcademicYear[] }) {
+export function ClassNewForm({ academicYears, hasNoActiveYear }: { academicYears: AcademicYear[]; hasNoActiveYear?: boolean }) {
   const [state, formAction] = useFormState(createClass, initialState)
   // Default to 'new' when no years exist, 'existing' otherwise.
   const [yearMode, setYearMode] = useState<'existing' | 'new'>(
@@ -98,6 +98,23 @@ export function ClassNewForm({ academicYears }: { academicYears: AcademicYear[] 
             </button>
           )}
         </div>
+
+        {hasNoActiveYear && (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+            <svg className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+            <div>
+              <p className="text-sm font-medium text-amber-800">Aucune année scolaire active</p>
+              <p className="mt-0.5 text-xs text-amber-700">
+                Créez ou activez une année scolaire avant de créer une classe.{' '}
+                <a href="/school/academic-years" className="font-semibold underline hover:text-amber-900">
+                  Gérer les années scolaires →
+                </a>
+              </p>
+            </div>
+          </div>
+        )}
 
         {yearMode === 'existing' ? (
           /* ── Pick existing year ─────────────────────────────────────────── */

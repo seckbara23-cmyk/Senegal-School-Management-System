@@ -22,11 +22,12 @@ export default async function NewFeePage() {
 
   const { data: yearsRaw } = await supabase
     .from('academic_years')
-    .select('id, name')
+    .select('id, name, is_active')
     .eq('school_id', schoolId)
     .order('starts_on', { ascending: false })
 
-  const academicYears = (yearsRaw ?? []) as { id: string; name: string }[]
+  const academicYears = (yearsRaw ?? []) as { id: string; name: string; is_active: boolean }[]
+  const activeYearId = academicYears.find((y) => y.is_active)?.id
 
   return (
     <div className="space-y-6">
@@ -46,7 +47,7 @@ export default async function NewFeePage() {
 
       {/* ── Form card ───────────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-sand-200 bg-white px-6 py-6 shadow-sm">
-        <FeeItemForm academicYears={academicYears} />
+        <FeeItemForm academicYears={academicYears} activeYearId={activeYearId} />
       </div>
 
     </div>

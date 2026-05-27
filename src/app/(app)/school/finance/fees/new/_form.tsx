@@ -6,6 +6,7 @@ import { createFeeItem, type FeeItemState } from '../../actions'
 export type AcademicYearOption = {
   id: string
   name: string
+  is_active?: boolean
 }
 
 function SubmitButton() {
@@ -23,7 +24,7 @@ function SubmitButton() {
 
 const initialState: FeeItemState = {}
 
-export function FeeItemForm({ academicYears }: { academicYears: AcademicYearOption[] }) {
+export function FeeItemForm({ academicYears, activeYearId }: { academicYears: AcademicYearOption[]; activeYearId?: string }) {
   const [state, formAction] = useFormState(createFeeItem, initialState)
 
   return (
@@ -119,7 +120,7 @@ export function FeeItemForm({ academicYears }: { academicYears: AcademicYearOpti
           <select
             id="academic_year_id"
             name="academic_year_id"
-            defaultValue=""
+            defaultValue={activeYearId ?? ''}
             className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600"
           >
             <option value="">— Toutes années —</option>
