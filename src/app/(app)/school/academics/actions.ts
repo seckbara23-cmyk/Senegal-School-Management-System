@@ -203,3 +203,243 @@ export async function removeSubjectFromClass(formData: FormData): Promise<void> 
 
   redirect('/school/academics/assignments')
 }
+
+// ── Create academic period ────────────────────────────────────────────────────
+
+const PeriodSchema = z.object({
+  academic_year_id: z.string().uuid('Année scolaire invalide.'),
+  name:             z.string().min(1, 'Le nom est requis.').max(100, 'Nom trop long.'),
+  starts_on:        z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
+  ends_on:          z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
+  is_active:        z.preprocess((v) => v === 'on' || v === 'true', z.boolean()),
+})
+
+export type CreatePeriodState = {
+  errors?: { academic_year_id?: string[]; name?: string[]; starts_on?: string[]; ends_on?: string[]; _form?: string[] }
+}
+
+export async function createPeriod(
+  _prevState: CreatePeriodState,
+  formData: FormData,
+): Promise<CreatePeriodState> {
+  const schoolId = await getSchoolId()
+
+  const parsed = PeriodSchema.safeParse({
+    academic_year_id: formData.get('academic_year_id'),
+    name:             formData.get('name'),
+    starts_on:        formData.get('starts_on') || '',
+    ends_on:          formData.get('ends_on') || '',
+    is_active:        formData.get('is_active'),
+  })
+
+  if (!parsed.success) {
+    return { errors: parsed.error.flatten().fieldErrors }
+  }
+
+  const { academic_year_id, name, starts_on, ends_on, is_active } = parsed.data
+  const supabase = createClient()
+
+  // Verify academic_year belongs to this school
+  const { data: year } = await supabase
+    .from('academic_years')
+    .select('id')
+    .eq('id', academic_year_id)
+    .eq('school_id', schoolId)
+    .maybeSingle()
+
+  if (!year) return { errors: { academic_year_id: ['Année scolaire invalide.'] } }
+
+  const { error } = await supabase.from('academic_periods').insert({
+    school_id:        schoolId,
+    academic_year_id,
+    name:             name.trim(),
+    starts_on:        starts_on || null,
+    ends_on:          ends_on   || null,
+    is_active,
+  })
+
+  if (error) {
+    if (error.code === '23505') {
+      return { errors: { name: ['Une période avec ce nom existe déjà pour cette année.'] } }
+    }
+    return { errors: { _form: ['Erreur lors de la création. Réessayez.'] } }
+  }
+
+  redirect('/school/academics/periods')
+}
+
+// ── Create assessment ─────────────────────────────────────────────────────────
+
+const AssessmentSchema = z.object({
+  class_subject_id:   z.string().uuid('Attribution de classe invalide.'),
+  academic_period_id: z.string().uuid('Période invalide.'),
+  title:              z.string().min(1, 'Le titre est requis.').max(200, 'Titre trop long.'),
+  assessment_type:    z.enum(['devoir','composition','examen','participation','autre']),
+  coefficient: z.preprocess(
+    (v) => (v === '' || v === null || v === undefined ? 1 : Number(v)),
+    z.number().min(0.5).max(100),
+  ),
+  max_score: z.preprocess(
+    (v) => (v === '' || v === null || v === undefined ? 20 : Number(v)),
+    z.number().min(1).max(1000),
+  ),
+  assessment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
+})
+
+export type CreateAssessmentState = {
+  errors?: {
+    class_subject_id?: string[]
+    academic_period_id?: string[]
+    title?: string[]
+    assessment_type?: string[]
+    coefficient?: string[]
+    max_score?: string[]
+    assessment_date?: string[]
+    _form?: string[]
+  }
+}
+
+export async function createAssessment(
+  _prevState: CreateAssessmentState,
+  formData: FormData,
+): Promise<CreateAssessmentState> {
+  const schoolId = await getSchoolId()
+
+  const parsed = AssessmentSchema.safeParse({
+    class_subject_id:   formData.get('class_subject_id'),
+    academic_period_id: formData.get('academic_period_id'),
+    title:              formData.get('title'),
+    assessment_type:    formData.get('assessment_type'),
+    coefficient:        formData.get('coefficient'),
+    max_score:          formData.get('max_score'),
+    assessment_date:    formData.get('assessment_date') || '',
+  })
+
+  if (!parsed.success) {
+    return { errors: parsed.error.flatten().fieldErrors }
+  }
+
+  const { class_subject_id, academic_period_id, title, assessment_type, coefficient, max_score, assessment_date } = parsed.data
+  const supabase = createClient()
+
+  // Verify class_subject and period both belong to this school
+  const [csRes, periodRes] = await Promise.all([
+    supabase.from('class_subjects').select('id').eq('id', class_subject_id).eq('school_id', schoolId).maybeSingle(),
+    supabase.from('academic_periods').select('id').eq('id', academic_period_id).eq('school_id', schoolId).maybeSingle(),
+  ])
+
+  if (!csRes.data)     return { errors: { class_subject_id:   ['Attribution invalide.'] } }
+  if (!periodRes.data) return { errors: { academic_period_id: ['Période invalide.']     } }
+
+  const { data: newAssessment, error } = await supabase
+    .from('assessments')
+    .insert({
+      school_id:          schoolId,
+      class_subject_id,
+      academic_period_id,
+      title:              title.trim(),
+      assessment_type,
+      coefficient,
+      max_score,
+      assessment_date:    assessment_date || null,
+    })
+    .select('id')
+    .single()
+
+  if (error || !newAssessment) {
+    return { errors: { _form: ['Erreur lors de la création. Réessayez.'] } }
+  }
+
+  redirect(`/school/academics/assessments/${newAssessment.id}`)
+}
+
+// ── Save grades ───────────────────────────────────────────────────────────────
+
+export async function saveGrades(formData: FormData): Promise<void> {
+  const schoolId = await getSchoolId()
+
+  const assessmentId = z.string().uuid().safeParse(formData.get('assessment_id'))
+  if (!assessmentId.success) redirect('/school/academics/assessments?error=invalid')
+
+  const supabase = createClient()
+
+  // Verify assessment belongs to school; get max_score and class_id
+  const { data: assessment } = await supabase
+    .from('assessments')
+    .select('id, max_score, class_subject_id, class_subjects!class_subject_id(class_id)')
+    .eq('id', assessmentId.data)
+    .eq('school_id', schoolId)
+    .maybeSingle()
+
+  if (!assessment) redirect('/school/academics/assessments?error=invalid')
+
+  type AssessmentMeta = {
+    id: string
+    max_score: number
+    class_subject_id: string
+    class_subjects: { class_id: string }
+  }
+  const meta = assessment as unknown as AssessmentMeta
+  const classId  = meta.class_subjects.class_id
+  const maxScore = meta.max_score
+
+  // Get active enrolled students for the class — security: only valid student IDs accepted
+  const { data: enrollments } = await supabase
+    .from('student_class_enrollments')
+    .select('student_id')
+    .eq('class_id', classId)
+    .eq('school_id', schoolId)
+    .eq('status', 'active')
+
+  const validStudentIds = new Set(
+    ((enrollments ?? []) as { student_id: string }[]).map((e) => e.student_id)
+  )
+
+  // Parse grade inputs: score_<studentId> and comment_<studentId>
+  type GradeInput = { assessment_id: string; student_id: string; school_id: string; score: number; comment: string | null; updated_at: string }
+  const toUpsert: GradeInput[] = []
+  const toDelete: string[] = []
+
+  for (const studentId of Array.from(validStudentIds)) {
+    const rawScore   = (formData.get(`score_${studentId}`) as string | null)?.trim() ?? ''
+    const rawComment = (formData.get(`comment_${studentId}`) as string | null)?.trim() ?? ''
+
+    if (rawScore === '') {
+      toDelete.push(studentId)
+      continue
+    }
+
+    const score = parseFloat(rawScore)
+    if (isNaN(score) || score < 0 || score > maxScore) {
+      redirect(`/school/academics/assessments/${assessmentId.data}?error=invalid_score`)
+    }
+
+    toUpsert.push({
+      assessment_id: assessmentId.data,
+      student_id:    studentId,
+      school_id:     schoolId,
+      score,
+      comment:       rawComment || null,
+      updated_at:    new Date().toISOString(),
+    })
+  }
+
+  // Delete cleared grades
+  if (toDelete.length > 0) {
+    await supabase
+      .from('grades')
+      .delete()
+      .eq('assessment_id', assessmentId.data)
+      .eq('school_id', schoolId)
+      .in('student_id', toDelete)
+  }
+
+  // Upsert new/updated grades
+  if (toUpsert.length > 0) {
+    await supabase
+      .from('grades')
+      .upsert(toUpsert, { onConflict: 'assessment_id,student_id' })
+  }
+
+  redirect(`/school/academics/assessments/${assessmentId.data}?saved=1`)
+}
