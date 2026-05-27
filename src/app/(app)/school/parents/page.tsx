@@ -10,6 +10,8 @@ type ParentRow = {
   phone: string | null
   email: string | null
   occupation: string | null
+  status: string
+  profile_id: string | null
   parent_student_links: { id: string }[]
 }
 
@@ -42,16 +44,18 @@ export default async function ParentsPage({ searchParams }: Props) {
 
   if (!user) redirect('/login')
 
-  const { data: memberships } = await supabase
+  const { data: adminMembership } = await supabase
     .from('school_memberships')
     .select('school_id, schools(id, name)')
     .eq('user_id', user.id)
     .eq('role', 'school_admin')
     .eq('status', 'active')
+    .maybeSingle()
 
-  if (!memberships || memberships.length === 0) redirect('/dashboard')
+  if (!adminMembership) redirect('/school')
 
-  const school = memberships[0].schools as unknown as { id: string; name: string }
+  const schoolId = (adminMembership as { school_id: string }).school_id
+  const school = (adminMembership as unknown as { schools: { name: string } }).schools
 
   const rawQ    = Array.isArray(searchParams.q) ? searchParams.q[0] : searchParams.q
   const rawPage = Array.isArray(searchParams.page) ? searchParams.page[0] : searchParams.page
@@ -64,18 +68,17 @@ export default async function ParentsPage({ searchParams }: Props) {
   let query = supabase
     .from('parents')
     .select(
-      'id, first_name, last_name, phone, email, occupation, parent_student_links!parent_id(id)',
+      'id, first_name, last_name, phone, email, occupation, status, profile_id, parent_student_links!parent_id(id)',
       { count: 'exact' }
     )
-    .eq('school_id', school.id)
-    .eq('status', 'active')
+    .eq('school_id', schoolId)
     .order('last_name')
     .order('first_name')
     .range(from, to)
 
   if (q) {
     query = query.or(
-      `first_name.ilike.%${q}%,last_name.ilike.%${q}%,phone.ilike.%${q}%`
+      `first_name.ilike.%${q}%,last_name.ilike.%${q}%,phone.ilike.%${q}%,email.ilike.%${q}%`
     )
   }
 
@@ -217,6 +220,12 @@ export default async function ParentsPage({ searchParams }: Props) {
                   <th scope="col" className="hidden px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 md:table-cell">
                     Profession
                   </th>
+                  <th scope="col" className="hidden px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 lg:table-cell">
+                    Compte
+                  </th>
+                  <th scope="col" className="hidden px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 lg:table-cell">
+                    Statut
+                  </th>
                   <th scope="col" className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
                     Élèves liés
                   </th>
@@ -249,6 +258,20 @@ export default async function ParentsPage({ searchParams }: Props) {
                       </td>
                       <td className="hidden px-5 py-3.5 whitespace-nowrap md:table-cell">
                         <span className="text-sm text-gray-500">{p.occupation ?? '—'}</span>
+                      </td>
+                      <td className="hidden px-5 py-3.5 whitespace-nowrap lg:table-cell">
+                        {p.profile_id ? (
+                          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                            Compte lié
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
+                      </td>
+                      <td className="hidden px-5 py-3.5 whitespace-nowrap lg:table-cell">
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${p.status === 'active' ? 'bg-primary-50 text-primary-700' : 'bg-stone-100 text-stone-500'}`}>
+                          {p.status === 'active' ? 'Actif' : 'Inactif'}
+                        </span>
                       </td>
                       <td className="px-5 py-3.5">
                         {childCount > 0 ? (

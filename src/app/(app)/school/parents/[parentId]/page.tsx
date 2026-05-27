@@ -1,8 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
-import { unlinkStudent } from '../actions'
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { setParentStatus, unlinkStudent } from '../actions'
 
 type LinkedStudent = {
   id: string
@@ -25,10 +23,9 @@ type ParentDetail = {
   address: string | null
   occupation: string | null
   status: string
+  profile_id: string | null
   parent_student_links: LinkedStudent[]
 }
-
-// ─── Constants ────────────────────────────────────────────────────────────────
 
 const RELATIONSHIP_LABEL: Record<string, string> = {
   father:   'Père',
@@ -36,8 +33,6 @@ const RELATIONSHIP_LABEL: Record<string, string> = {
   guardian: 'Tuteur / Tutrice',
   other:    'Autre',
 }
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
 
 type Props = {
   params: { parentId: string }
@@ -52,46 +47,57 @@ export default async function ParentDetailPage({ params }: Props) {
 
   if (!user) redirect('/login')
 
-  const { data: memberships } = await supabase
+  const { data: adminMembership } = await supabase
     .from('school_memberships')
     .select('school_id, schools(id, name)')
     .eq('user_id', user.id)
     .eq('role', 'school_admin')
     .eq('status', 'active')
+    .maybeSingle()
 
-  if (!memberships || memberships.length === 0) redirect('/dashboard')
+  if (!adminMembership) redirect('/school')
 
-  const school = memberships[0].schools as unknown as { id: string; name: string }
+  const schoolId = (adminMembership as { school_id: string }).school_id
+  const school = (adminMembership as unknown as { schools: { name: string } }).schools
 
   const { data: raw } = await supabase
     .from('parents')
     .select(
-      'id, first_name, last_name, phone, email, address, occupation, status, ' +
+      'id, first_name, last_name, phone, email, address, occupation, status, profile_id, ' +
       'parent_student_links!parent_id(' +
       '  id, relationship, is_primary_contact, ' +
       '  students!student_id(id, first_name, last_name, admission_number)' +
       ')'
     )
     .eq('id', params.parentId)
-    .eq('school_id', school.id)
+    .eq('school_id', schoolId)
     .maybeSingle()
 
   if (!raw) notFound()
 
   const parent = raw as unknown as ParentDetail
 
+  let linkedProfile: { full_name: string | null; email: string | null } | null = null
+  if (parent.profile_id) {
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('full_name, email')
+      .eq('id', parent.profile_id)
+      .maybeSingle()
+    linkedProfile = profileData as { full_name: string | null; email: string | null } | null
+  }
+
   const links = [...parent.parent_student_links].sort((a, b) => {
-    // Primary contacts first, then alphabetically
     if (a.is_primary_contact !== b.is_primary_contact) return a.is_primary_contact ? -1 : 1
     return a.students.last_name.localeCompare(b.students.last_name, 'fr')
   })
 
   const fullName = `${parent.last_name} ${parent.first_name}`
+  const isActive = parent.status === 'active'
+  const newStatus = isActive ? 'inactive' : 'active'
 
   return (
-    <div className="space-y-5">
-
-      {/* ── Header band ─────────────────────────────────────────────────────── */}
+    <div className="space-y-5 pb-8">
       <div className="rounded-xl bg-primary-800 px-6 py-5">
         <nav className="flex items-center text-sm text-primary-300 mb-3" aria-label="Fil d'Ariane">
           <a href="/school" className="hover:text-white transition-colors">Administration</a>
@@ -104,20 +110,37 @@ export default async function ParentDetailPage({ params }: Props) {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-white tracking-tight">{fullName}</h1>
-            <p className="text-primary-300 text-sm mt-0.5">{school.name}</p>
+            <p className="text-primary-300 text-sm mt-0.5">{school?.name ?? ''}</p>
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${isActive ? 'bg-emerald-500/20 text-emerald-100' : 'bg-red-500/20 text-red-200'}`}>
+                {isActive ? 'Actif' : 'Inactif'}
+              </span>
+              {parent.profile_id && (
+                <span className="rounded-full bg-sky-500/20 px-2.5 py-0.5 text-xs font-semibold text-sky-100">
+                  Compte lié
+                </span>
+              )}
+            </div>
           </div>
-          <a
-            href={`/school/parents/${parent.id}/link`}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
-            </svg>
-            Lier un élève
-          </a>
+          <div className="flex flex-wrap justify-end gap-2">
+            <a
+              href={`/school/parents/${parent.id}/edit`}
+              className="inline-flex items-center rounded-lg bg-white/15 px-3 py-2 text-sm font-semibold text-white hover:bg-white/25 transition-colors"
+            >
+              Modifier
+            </a>
+            <a
+              href={`/school/parents/${parent.id}/link`}
+              className="inline-flex items-center gap-2 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+              </svg>
+              Lier un élève
+            </a>
+          </div>
         </div>
 
-        {/* Contact chips */}
         <div className="mt-4 pt-4 border-t border-primary-700 flex flex-wrap gap-3">
           {parent.phone ? (
             <a
@@ -146,7 +169,6 @@ export default async function ParentDetailPage({ params }: Props) {
         </div>
       </div>
 
-      {/* ── Contact dossier ──────────────────────────────────────────────────── */}
       {(parent.occupation || parent.address) && (
         <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
           <div className="border-b border-sand-200 bg-sand-100 px-5 py-3">
@@ -175,12 +197,48 @@ export default async function ParentDetailPage({ params }: Props) {
         </div>
       )}
 
-      {/* ── Linked children ──────────────────────────────────────────────────── */}
-      <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
+      <div className="rounded-xl border border-sand-200 bg-white shadow-sm overflow-hidden">
+        <div className="border-b border-sand-200 bg-sand-50 px-5 py-3">
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Compte portail</p>
+        </div>
+        <div className="px-5 py-4">
+          {parent.profile_id ? (
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">{linkedProfile?.full_name ?? 'Compte lié'}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{linkedProfile?.email ?? '-'}</p>
+                <p className="text-xs text-emerald-600 mt-1">Accès au portail parent actif</p>
+              </div>
+              <a
+                href={`/school/users/${parent.profile_id}`}
+                className="shrink-0 rounded-lg border border-primary-200 px-3 py-1.5 text-xs font-semibold text-primary-600 hover:bg-primary-50 transition-colors"
+              >
+                Gerer le compte
+              </a>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm text-gray-500">Aucun compte portail lie.</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Le parent n&apos;a pas encore acces au portail parent.
+                </p>
+              </div>
+              <a
+                href="/school/users/new?role=parent"
+                className="shrink-0 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700 transition-colors"
+              >
+                Créer un compte
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
 
+      <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
         <div className="border-b border-sand-200 bg-sand-100 px-5 py-3 flex items-center justify-between">
           <p className="text-xs font-bold uppercase tracking-widest text-gray-500">
-            Enfants liés
+            Enfants lies
           </p>
           {links.length > 0 && (
             <span className="text-xs text-gray-400">
@@ -198,7 +256,7 @@ export default async function ParentDetailPage({ params }: Props) {
               href={`/school/parents/${parent.id}/link`}
               className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 hover:underline"
             >
-              Lier un premier élève →
+              Lier un premier élève
             </a>
           </div>
         ) : (
@@ -209,7 +267,7 @@ export default async function ParentDetailPage({ params }: Props) {
                   Élève
                 </th>
                 <th scope="col" className="hidden px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 sm:table-cell">
-                  N° Adm.
+                  No Adm.
                 </th>
                 <th scope="col" className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
                   Lien
@@ -249,16 +307,11 @@ export default async function ParentDetailPage({ params }: Props) {
                   </td>
                   <td className="px-5 py-3.5 text-right">
                     <form action={unlinkStudent} className="inline">
-                      <input type="hidden" name="link_id"   value={lnk.id} />
+                      <input type="hidden" name="link_id" value={lnk.id} />
                       <input type="hidden" name="parent_id" value={parent.id} />
                       <button
                         type="submit"
                         className="text-sm font-medium text-red-500 hover:text-red-700 hover:underline"
-                        onClick={(e) => {
-                          if (!confirm(`Retirer ${lnk.students.last_name} ${lnk.students.first_name} de ce dossier ?`)) {
-                            e.preventDefault()
-                          }
-                        }}
                       >
                         Retirer
                       </button>
@@ -271,6 +324,39 @@ export default async function ParentDetailPage({ params }: Props) {
         )}
       </div>
 
+      <div className="rounded-xl border border-red-100 bg-white shadow-sm overflow-hidden">
+        <div className="border-b border-red-100 bg-red-50 px-5 py-3">
+          <p className="text-xs font-bold uppercase tracking-widest text-red-500">
+            Gestion du dossier
+          </p>
+        </div>
+        <div className="px-5 py-4 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">
+              {isActive ? 'Désactiver le dossier parent' : 'Réactiver le dossier parent'}
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {isActive
+                ? 'Le dossier est conservé, mais il passe en statut inactif.'
+                : "Le dossier sera de nouveau actif dans l'établissement."}
+            </p>
+          </div>
+          <form action={setParentStatus}>
+            <input type="hidden" name="parent_id" value={parent.id} />
+            <input type="hidden" name="new_status" value={newStatus} />
+            <button
+              type="submit"
+              className={`shrink-0 rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${
+                isActive
+                  ? 'border-red-200 text-red-600 hover:bg-red-50'
+                  : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+              }`}
+            >
+              {isActive ? 'Désactiver' : 'Réactiver'}
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
   )
 }

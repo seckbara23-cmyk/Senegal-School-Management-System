@@ -21,7 +21,7 @@ const ParentSchema = z.object({
 
 // ─── State types ──────────────────────────────────────────────────────────────
 
-export type CreateParentState = {
+export type ParentFormState = {
   errors?: {
     first_name?:  string[]
     last_name?:   string[]
@@ -32,6 +32,8 @@ export type CreateParentState = {
     _form?:       string[]
   }
 }
+
+export type CreateParentState = ParentFormState
 
 export type LinkStudentsState = {
   errors?: { _form?: string[] }
@@ -49,7 +51,22 @@ async function getSchoolId(
     .eq('user_id', userId)
     .eq('role', 'school_admin')
     .eq('status', 'active')
-  return (data?.[0]?.school_id as string) ?? null
+    .maybeSingle()
+  return (data as { school_id: string } | null)?.school_id ?? null
+}
+
+async function resolveSchoolAdmin() {
+  const supabase = createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) redirect('/login')
+
+  const schoolId = await getSchoolId(supabase, user.id)
+  if (!schoolId) redirect('/school')
+
+  return { supabase, schoolId }
 }
 
 // ─── createParent ─────────────────────────────────────────────────────────────
@@ -58,16 +75,7 @@ export async function createParent(
   _prevState: CreateParentState,
   formData: FormData
 ): Promise<CreateParentState> {
-  const supabase = createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) return { errors: { _form: ['Non autorisé.'] } }
-
-  const schoolId = await getSchoolId(supabase, user.id)
-  if (!schoolId) return { errors: { _form: ['Non autorisé.'] } }
+  const { supabase, schoolId } = await resolveSchoolAdmin()
 
   const parsed = ParentSchema.safeParse({
     first_name:  formData.get('first_name'),
@@ -100,6 +108,11 @@ export async function createParent(
     .single()
 
   if (error || !parent) {
+    if (error?.code === '23505') {
+      return {
+        errors: { _form: ['Un dossier similaire existe déjà dans cet établissement.'] },
+      }
+    }
     console.error('[createParent] insert error:', error?.message)
     return {
       errors: { _form: ['Erreur lors de la création du dossier. Veuillez réessayer.'] },
@@ -107,6 +120,79 @@ export async function createParent(
   }
 
   redirect(`/school/parents/${parent.id}`)
+}
+
+// ─── updateParent ─────────────────────────────────────────────────────────────
+
+export async function updateParent(
+  _prevState: ParentFormState,
+  formData: FormData
+): Promise<ParentFormState> {
+  const { supabase, schoolId } = await resolveSchoolAdmin()
+
+  const parentId = z.string().uuid().safeParse(formData.get('parent_id'))
+  if (!parentId.success) {
+    return { errors: { _form: ['Identifiant parent invalide.'] } }
+  }
+
+  const parsed = ParentSchema.safeParse({
+    first_name:  formData.get('first_name'),
+    last_name:   formData.get('last_name'),
+    phone:       formData.get('phone'),
+    email:       formData.get('email'),
+    address:     formData.get('address'),
+    occupation:  formData.get('occupation'),
+  })
+
+  if (!parsed.success) {
+    return {
+      errors: parsed.error.flatten().fieldErrors as ParentFormState['errors'],
+    }
+  }
+
+  const { error } = await supabase
+    .from('parents')
+    .update({
+      first_name:  parsed.data.first_name,
+      last_name:   parsed.data.last_name,
+      phone:       parsed.data.phone      ?? null,
+      email:       parsed.data.email      ?? null,
+      address:     parsed.data.address    ?? null,
+      occupation:  parsed.data.occupation ?? null,
+    })
+    .eq('id', parentId.data)
+    .eq('school_id', schoolId)
+
+  if (error) {
+    if (error.code === '23505') {
+      return {
+        errors: { _form: ['Un dossier similaire existe déjà dans cet établissement.'] },
+      }
+    }
+    return {
+      errors: { _form: ['Erreur lors de la mise à jour. Veuillez réessayer.'] },
+    }
+  }
+
+  redirect(`/school/parents/${parentId.data}`)
+}
+
+// ─── setParentStatus ──────────────────────────────────────────────────────────
+
+export async function setParentStatus(formData: FormData) {
+  const { supabase, schoolId } = await resolveSchoolAdmin()
+
+  const parentId = z.string().uuid().safeParse(formData.get('parent_id'))
+  const newStatus = z.enum(['active', 'inactive']).safeParse(formData.get('new_status'))
+  if (!parentId.success || !newStatus.success) redirect('/school/parents')
+
+  await supabase
+    .from('parents')
+    .update({ status: newStatus.data })
+    .eq('id', parentId.data)
+    .eq('school_id', schoolId)
+
+  redirect(`/school/parents/${parentId.data}`)
 }
 
 // ─── linkStudentsToParent ─────────────────────────────────────────────────────
@@ -202,7 +288,8 @@ export async function unlinkStudent(formData: FormData): Promise<void> {
   const schoolId = await getSchoolId(supabase, user.id)
   if (!schoolId) return
 
-  const linkId = (formData.get('link_id') as string | null)?.trim()
+  const linkId   = (formData.get('link_id')   as string | null)?.trim()
+  const parentId = (formData.get('parent_id') as string | null)?.trim()
   if (!linkId) return
 
   await supabase
@@ -210,4 +297,6 @@ export async function unlinkStudent(formData: FormData): Promise<void> {
     .delete()
     .eq('id', linkId)
     .eq('school_id', schoolId)
+
+  redirect(parentId ? `/school/parents/${parentId}` : '/school/parents')
 }
