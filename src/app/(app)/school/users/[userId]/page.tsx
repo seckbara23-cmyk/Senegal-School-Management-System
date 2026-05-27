@@ -6,6 +6,7 @@ import {
   linkEntityToUser,
   unlinkEntityFromUser,
 } from '../actions'
+import { ResetPasswordForm } from '../_reset_form'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -430,6 +431,23 @@ export default async function SchoolUserDetailPage({ params, searchParams }: Pro
           </div>
         </div>
       )}
+
+      {/* ── Accès et sécurité ───────────────────────────────────────────────── */}
+      <div className="rounded-xl border border-sand-200 bg-white shadow-sm overflow-hidden">
+        <div className="border-b border-sand-200 bg-sand-50 px-5 py-3">
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-500">
+            Accès et sécurité
+          </p>
+        </div>
+        <div className="px-5 py-4">
+          <p className="text-sm font-semibold text-gray-900 mb-1">Réinitialisation du mot de passe</p>
+          <p className="text-xs text-gray-500 mb-3">
+            Génère un lien à usage unique. Transmettez-le directement à l&apos;utilisateur — il ne sera
+            valable que pour une seule utilisation.
+          </p>
+          <ResetPasswordForm userId={params.userId} />
+        </div>
+      </div>
 
       {/* ── Danger zone ──────────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-red-100 bg-white shadow-sm overflow-hidden">

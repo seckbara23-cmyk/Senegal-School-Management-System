@@ -10,8 +10,6 @@ import { z }                 from 'zod'
 const VALID_ROLES = ['school_admin', 'teacher', 'finance_officer', 'parent', 'student'] as const
 type ValidRole = typeof VALID_ROLES[number]
 
-const ENTITY_ROLES: ValidRole[] = ['teacher', 'parent', 'student']
-
 function entityTable(role: ValidRole): 'teachers' | 'parents' | 'students' | null {
   if (role === 'teacher') return 'teachers'
   if (role === 'parent')  return 'parents'
@@ -37,7 +35,35 @@ async function resolveSchoolAdmin() {
     .maybeSingle()
 
   if (!membership) redirect('/school')
-  return { supabase, schoolId: (membership as { school_id: string }).school_id }
+  return {
+    supabase,
+    schoolId: (membership as { school_id: string }).school_id,
+    actor: user,
+  }
+}
+
+// ─── Audit helper ──────────────────────────────────────────────────────────────
+
+type AdminClient = ReturnType<typeof createAdminClient>
+
+async function logAudit(
+  adminClient: AdminClient,
+  actorId: string,
+  actorEmail: string,
+  action: string,
+  resourceId: string,
+  schoolId: string,
+  metadata: Record<string, unknown>,
+) {
+  await adminClient.rpc('log_audit_event', {
+    p_actor_id:      actorId,
+    p_actor_email:   actorEmail,
+    p_action:        action,
+    p_resource_type: 'user',
+    p_resource_id:   resourceId,
+    p_school_id:     schoolId,
+    p_metadata:      metadata,
+  })
 }
 
 // ─── Create school user ────────────────────────────────────────────────────────
@@ -74,7 +100,7 @@ export async function createSchoolUser(
   _prevState: CreateSchoolUserState,
   formData: FormData,
 ): Promise<CreateSchoolUserState> {
-  const { supabase, schoolId } = await resolveSchoolAdmin()
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
   const parsed = CreateUserSchema.safeParse({
     email:     formData.get('email'),
@@ -153,6 +179,25 @@ export async function createSchoolUser(
       .eq('school_id', schoolId)
   }
 
+  // Audit
+  await logAudit(adminClient, actor.id, actor.email ?? '', 'user_created', newUserId, schoolId, {
+    target_user_id: newUserId,
+    target_email:   email,
+    role,
+    school_id:      schoolId,
+    actor_id:       actor.id,
+  })
+  if (entity_id && table) {
+    await logAudit(adminClient, actor.id, actor.email ?? '', 'role_linked', newUserId, schoolId, {
+      target_user_id: newUserId,
+      target_email:   email,
+      role,
+      entity_id,
+      school_id:      schoolId,
+      actor_id:       actor.id,
+    })
+  }
+
   redirect(`/school/users/${newUserId}`)
 }
 
@@ -160,7 +205,7 @@ export async function createSchoolUser(
 // Updates ALL memberships for userId in this school (handles multi-role accounts).
 
 export async function setMembershipStatus(formData: FormData) {
-  const { supabase, schoolId } = await resolveSchoolAdmin()
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
   const userId    = z.string().uuid().safeParse(formData.get('user_id'))
   const newStatus = z.enum(['active', 'inactive']).safeParse(formData.get('new_status'))
@@ -172,13 +217,31 @@ export async function setMembershipStatus(formData: FormData) {
     .eq('user_id', userId.data)
     .eq('school_id', schoolId)
 
+  // Fetch target email for audit log
+  const { data: profileData } = await supabase
+    .from('profiles')
+    .select('email')
+    .eq('id', userId.data)
+    .maybeSingle()
+  const targetEmail = (profileData as { email: string | null } | null)?.email ?? ''
+
+  const auditAction = newStatus.data === 'inactive' ? 'user_deactivated' : 'user_reactivated'
+  const adminClient = createAdminClient()
+  await logAudit(adminClient, actor.id, actor.email ?? '', auditAction, userId.data, schoolId, {
+    target_user_id: userId.data,
+    target_email:   targetEmail,
+    new_status:     newStatus.data,
+    school_id:      schoolId,
+    actor_id:       actor.id,
+  })
+
   redirect(`/school/users/${userId.data}`)
 }
 
 // ─── Link entity to user ───────────────────────────────────────────────────────
 
 export async function linkEntityToUser(formData: FormData) {
-  const { supabase, schoolId } = await resolveSchoolAdmin()
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
   const userId   = z.string().uuid().safeParse(formData.get('user_id'))
   const entityId = z.string().uuid().safeParse(formData.get('entity_id'))
@@ -204,13 +267,31 @@ export async function linkEntityToUser(formData: FormData) {
     .eq('id', entityId.data)
     .eq('school_id', schoolId)
 
+  // Fetch target email for audit log
+  const { data: profileData } = await supabase
+    .from('profiles')
+    .select('email')
+    .eq('id', userId.data)
+    .maybeSingle()
+  const targetEmail = (profileData as { email: string | null } | null)?.email ?? ''
+
+  const adminClient = createAdminClient()
+  await logAudit(adminClient, actor.id, actor.email ?? '', 'role_linked', userId.data, schoolId, {
+    target_user_id: userId.data,
+    target_email:   targetEmail,
+    role:           role.data,
+    entity_id:      entityId.data,
+    school_id:      schoolId,
+    actor_id:       actor.id,
+  })
+
   redirect(`/school/users/${userId.data}`)
 }
 
 // ─── Unlink entity from user ───────────────────────────────────────────────────
 
 export async function unlinkEntityFromUser(formData: FormData) {
-  const { supabase, schoolId } = await resolveSchoolAdmin()
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
   const userId = z.string().uuid().safeParse(formData.get('user_id'))
   const role   = z.enum(['teacher', 'parent', 'student']).safeParse(formData.get('role'))
@@ -224,6 +305,97 @@ export async function unlinkEntityFromUser(formData: FormData) {
     .eq('profile_id', userId.data)
     .eq('school_id', schoolId)
 
+  // Fetch target email for audit log
+  const { data: profileData } = await supabase
+    .from('profiles')
+    .select('email')
+    .eq('id', userId.data)
+    .maybeSingle()
+  const targetEmail = (profileData as { email: string | null } | null)?.email ?? ''
+
+  const adminClient = createAdminClient()
+  await logAudit(adminClient, actor.id, actor.email ?? '', 'role_unlinked', userId.data, schoolId, {
+    target_user_id: userId.data,
+    target_email:   targetEmail,
+    role:           role.data,
+    school_id:      schoolId,
+    actor_id:       actor.id,
+  })
+
   redirect(`/school/users/${userId.data}`)
 }
 
+// ─── Generate password reset link ─────────────────────────────────────────────
+
+export type GenerateResetLinkState = {
+  link?:   string
+  errors?: { _form?: string[] }
+}
+
+export async function generatePasswordResetLink(
+  _prevState: GenerateResetLinkState,
+  formData: FormData,
+): Promise<GenerateResetLinkState> {
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
+
+  const userId = z.string().uuid().safeParse(formData.get('user_id'))
+  if (!userId.success) {
+    return { errors: { _form: ['Identifiant utilisateur invalide.'] } }
+  }
+
+  // Verify target user belongs to this school
+  const { data: membership } = await supabase
+    .from('school_memberships')
+    .select('user_id')
+    .eq('user_id', userId.data)
+    .eq('school_id', schoolId)
+    .maybeSingle()
+
+  if (!membership) {
+    return { errors: { _form: ['Utilisateur introuvable dans cet établissement.'] } }
+  }
+
+  // Fetch target email
+  const { data: profileData } = await supabase
+    .from('profiles')
+    .select('email')
+    .eq('id', userId.data)
+    .maybeSingle()
+
+  const targetEmail = (profileData as { email: string | null } | null)?.email
+  if (!targetEmail) {
+    return { errors: { _form: ["Adresse email introuvable pour cet utilisateur."] } }
+  }
+
+  // Generate recovery link via Admin API
+  const adminClient = createAdminClient()
+  const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+    type:  'recovery',
+    email: targetEmail,
+  })
+
+  if (linkError || !linkData?.properties?.action_link) {
+    return {
+      errors: {
+        _form: [`Erreur lors de la génération du lien : ${linkError?.message ?? 'inconnu'}`],
+      },
+    }
+  }
+
+  await logAudit(
+    adminClient,
+    actor.id,
+    actor.email ?? '',
+    'password_reset_link_generated',
+    userId.data,
+    schoolId,
+    {
+      target_user_id: userId.data,
+      target_email:   targetEmail,
+      school_id:      schoolId,
+      actor_id:       actor.id,
+    },
+  )
+
+  return { link: linkData.properties.action_link }
+}
