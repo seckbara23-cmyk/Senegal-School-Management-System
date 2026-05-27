@@ -1,0 +1,229 @@
+'use server'
+
+import { createClient }      from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { redirect }          from 'next/navigation'
+import { z }                 from 'zod'
+
+// ─── Valid roles ───────────────────────────────────────────────────────────────
+
+const VALID_ROLES = ['school_admin', 'teacher', 'finance_officer', 'parent', 'student'] as const
+type ValidRole = typeof VALID_ROLES[number]
+
+const ENTITY_ROLES: ValidRole[] = ['teacher', 'parent', 'student']
+
+function entityTable(role: ValidRole): 'teachers' | 'parents' | 'students' | null {
+  if (role === 'teacher') return 'teachers'
+  if (role === 'parent')  return 'parents'
+  if (role === 'student') return 'students'
+  return null
+}
+
+// ─── Auth helper ───────────────────────────────────────────────────────────────
+
+async function resolveSchoolAdmin() {
+  const supabase = createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const { data: membership } = await supabase
+    .from('school_memberships')
+    .select('school_id')
+    .eq('user_id', user.id)
+    .eq('role', 'school_admin')
+    .eq('status', 'active')
+    .maybeSingle()
+
+  if (!membership) redirect('/school')
+  return { supabase, schoolId: (membership as { school_id: string }).school_id }
+}
+
+// ─── Create school user ────────────────────────────────────────────────────────
+// Security invariants:
+//   1. school_id resolved from authenticated admin session — never from form
+//   2. entity_id ownership verified against school before linking
+//   3. Auth user created via service-role Admin API — never via anon client
+//   4. profile row auto-created by handle_new_user() trigger
+//   5. Cleanup: auth user deleted if membership insert fails (orphan prevention)
+
+const CreateUserSchema = z.object({
+  email:     z.string().email('Adresse email invalide.'),
+  full_name: z.string().min(2, 'Nom complet requis (2 caractères min.).').max(100),
+  role:      z.enum(VALID_ROLES, { error: 'Rôle invalide.' }),
+  password:  z.string().min(8, 'Mot de passe minimum 8 caractères.').max(72),
+  entity_id: z.preprocess(
+    (v) => (v === '' || v === null || v === undefined ? undefined : v),
+    z.string().uuid().optional()
+  ),
+})
+
+export type CreateSchoolUserState = {
+  errors?: {
+    email?:     string[]
+    full_name?: string[]
+    role?:      string[]
+    password?:  string[]
+    entity_id?: string[]
+    _form?:     string[]
+  }
+}
+
+export async function createSchoolUser(
+  _prevState: CreateSchoolUserState,
+  formData: FormData,
+): Promise<CreateSchoolUserState> {
+  const { supabase, schoolId } = await resolveSchoolAdmin()
+
+  const parsed = CreateUserSchema.safeParse({
+    email:     formData.get('email'),
+    full_name: formData.get('full_name'),
+    role:      formData.get('role'),
+    password:  formData.get('password'),
+    entity_id: formData.get('entity_id'),
+  })
+
+  if (!parsed.success) {
+    return { errors: parsed.error.flatten().fieldErrors as CreateSchoolUserState['errors'] }
+  }
+
+  const { email, full_name, role, password, entity_id } = parsed.data
+  const table = entityTable(role)
+
+  // Verify entity ownership and that it is not already linked
+  if (entity_id) {
+    if (!table) {
+      return { errors: { entity_id: ['Aucun dossier à lier pour ce rôle.'] } }
+    }
+    const { data: entity } = await supabase
+      .from(table)
+      .select('id, profile_id')
+      .eq('id', entity_id)
+      .eq('school_id', schoolId)
+      .maybeSingle()
+
+    if (!entity) {
+      return { errors: { entity_id: ['Dossier introuvable dans cet établissement.'] } }
+    }
+    if ((entity as { profile_id: string | null }).profile_id) {
+      return { errors: { entity_id: ['Ce dossier est déjà lié à un compte.'] } }
+    }
+  }
+
+  // Create auth user via Admin API (service role — bypasses RLS)
+  const adminClient = createAdminClient()
+  const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true, // skip email verification — school-controlled onboarding
+    user_metadata: { full_name },
+  })
+
+  if (authError || !authData.user) {
+    const msg = authError?.message ?? ''
+    if (
+      msg.toLowerCase().includes('already') ||
+      (authError as unknown as { status?: number })?.status === 422
+    ) {
+      return { errors: { email: ['Un compte avec cet email existe déjà.'] } }
+    }
+    return { errors: { _form: [`Erreur lors de la création du compte : ${msg}`] } }
+  }
+
+  const newUserId = authData.user.id
+
+  // Create school_membership with anon client (RLS enforces school_admin ownership)
+  const { error: memberError } = await supabase
+    .from('school_memberships')
+    .insert({ user_id: newUserId, school_id: schoolId, role, status: 'active' })
+
+  if (memberError) {
+    // Best-effort cleanup: remove orphaned auth user (and cascaded profile)
+    await adminClient.auth.admin.deleteUser(newUserId)
+    return { errors: { _form: ["Erreur lors de l'attribution du rôle. Veuillez réessayer."] } }
+  }
+
+  // Link profile_id to domain entity (teacher / parent / student)
+  if (entity_id && table) {
+    await supabase
+      .from(table)
+      .update({ profile_id: newUserId })
+      .eq('id', entity_id)
+      .eq('school_id', schoolId)
+  }
+
+  redirect(`/school/users/${newUserId}`)
+}
+
+// ─── Set membership status ─────────────────────────────────────────────────────
+// Updates ALL memberships for userId in this school (handles multi-role accounts).
+
+export async function setMembershipStatus(formData: FormData) {
+  const { supabase, schoolId } = await resolveSchoolAdmin()
+
+  const userId    = z.string().uuid().safeParse(formData.get('user_id'))
+  const newStatus = z.enum(['active', 'inactive']).safeParse(formData.get('new_status'))
+  if (!userId.success || !newStatus.success) redirect('/school/users')
+
+  await supabase
+    .from('school_memberships')
+    .update({ status: newStatus.data })
+    .eq('user_id', userId.data)
+    .eq('school_id', schoolId)
+
+  redirect(`/school/users/${userId.data}`)
+}
+
+// ─── Link entity to user ───────────────────────────────────────────────────────
+
+export async function linkEntityToUser(formData: FormData) {
+  const { supabase, schoolId } = await resolveSchoolAdmin()
+
+  const userId   = z.string().uuid().safeParse(formData.get('user_id'))
+  const entityId = z.string().uuid().safeParse(formData.get('entity_id'))
+  const role     = z.enum(['teacher', 'parent', 'student']).safeParse(formData.get('role'))
+  if (!userId.success || !entityId.success || !role.success) redirect('/school/users')
+
+  const table = entityTable(role.data)!
+
+  const { data: entity } = await supabase
+    .from(table)
+    .select('id, profile_id')
+    .eq('id', entityId.data)
+    .eq('school_id', schoolId)
+    .maybeSingle()
+
+  if (!entity || (entity as { profile_id: string | null }).profile_id) {
+    redirect(`/school/users/${userId.data}?error=entity`)
+  }
+
+  await supabase
+    .from(table)
+    .update({ profile_id: userId.data })
+    .eq('id', entityId.data)
+    .eq('school_id', schoolId)
+
+  redirect(`/school/users/${userId.data}`)
+}
+
+// ─── Unlink entity from user ───────────────────────────────────────────────────
+
+export async function unlinkEntityFromUser(formData: FormData) {
+  const { supabase, schoolId } = await resolveSchoolAdmin()
+
+  const userId = z.string().uuid().safeParse(formData.get('user_id'))
+  const role   = z.enum(['teacher', 'parent', 'student']).safeParse(formData.get('role'))
+  if (!userId.success || !role.success) redirect('/school/users')
+
+  const table = entityTable(role.data)!
+
+  await supabase
+    .from(table)
+    .update({ profile_id: null })
+    .eq('profile_id', userId.data)
+    .eq('school_id', schoolId)
+
+  redirect(`/school/users/${userId.data}`)
+}
+
