@@ -32,19 +32,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .is('read_at', null)
 
   return (
-    <div className="flex min-h-screen bg-sand-100">
-      <Sidebar
-        schoolName={schoolName}
-        userEmail={user.email ?? ''}
-        unreadCount={unreadCount ?? 0}
-      />
+    <div className="flex min-h-screen bg-sand-100 print:bg-white">
+      <div className="print:hidden">
+        <Sidebar
+          schoolName={schoolName}
+          userEmail={user.email ?? ''}
+          unreadCount={unreadCount ?? 0}
+        />
+      </div>
 
       {/*
         pt-14 clears the fixed mobile header rendered inside <Sidebar>.
         On lg+ the mobile header is hidden so no top offset is needed.
+        print:pt-0 removes that offset when printing.
       */}
-      <main className="flex-1 pt-14 lg:pt-0">
-        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="flex-1 pt-14 lg:pt-0 print:pt-0">
+        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8 print:max-w-none print:p-0">
           {children}
         </div>
       </main>
