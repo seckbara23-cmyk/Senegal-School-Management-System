@@ -21,7 +21,8 @@ const P = {
   bars:     'M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5',
   x:        'M6 18L18 6M6 6l12 12',
   signout:  'M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75',
-  building: 'M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21',
+  building:  'M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21',
+  calendar:  'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 16.5v2.25',
 }
 
 function Icon({ path, className = 'h-5 w-5 shrink-0' }: { path: string; className?: string }) {
@@ -54,6 +55,7 @@ const MAIN_NAV: NavItem[] = [
   { label: 'Enseignants',          href: '/school/teachers',  iconPath: P.teachers },
   { label: 'Parents',          href: '/school/parents',       iconPath: P.parents  },
   { label: 'Comptes',          href: '/school/users',         iconPath: P.key      },
+  { label: 'Années scolaires', href: '/school/academic-years', iconPath: P.calendar },
   { label: 'Classes',          href: '/school/classes',      iconPath: P.classes  },
   { label: 'Présences',        href: '/school/attendance',   iconPath: P.clock      },
   { label: 'Annonces',         href: '/school/announcements', iconPath: P.megaphone  },
