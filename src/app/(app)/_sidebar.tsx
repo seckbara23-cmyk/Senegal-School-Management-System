@@ -51,7 +51,7 @@ type NavItem = {
 const MAIN_NAV: NavItem[] = [
   { label: 'Tableau de bord', href: '/school',               iconPath: P.home     },
   { label: 'Élèves',          href: '/school/students',      iconPath: P.students },
-  { label: 'Enseignants',                                    iconPath: P.teachers, soon: true },
+  { label: 'Enseignants',          href: '/school/teachers',  iconPath: P.teachers },
   { label: 'Parents',          href: '/school/parents',       iconPath: P.parents  },
   { label: 'Comptes',          href: '/school/users',         iconPath: P.key      },
   { label: 'Classes',          href: '/school/classes',      iconPath: P.classes  },
