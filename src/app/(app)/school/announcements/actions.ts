@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { formatServerActionError } from '@/lib/errors'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -220,9 +221,14 @@ export async function createAnnouncement(
     .single()
 
   if (error || !announcement) {
-    console.error('[createAnnouncement] insert error:', error?.message)
     return {
-      errors: { _form: ["Erreur lors de la publication de l'annonce. Veuillez réessayer."] },
+      errors: formatServerActionError(error, {
+        action: 'createAnnouncement',
+        schoolId,
+        userId: user.id,
+        entityIds: { audience_type },
+        fallback: "Erreur lors de la publication de l'annonce. Veuillez réessayer.",
+      }) as CreateAnnouncementState['errors'],
     }
   }
 

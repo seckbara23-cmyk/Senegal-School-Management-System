@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -132,8 +133,15 @@ export async function createFeeItem(
   })
 
   if (error) {
-    console.error('[createFeeItem]', error.message)
-    return { errors: { _form: ['Erreur lors de la création. Veuillez réessayer.'] } }
+    return {
+      errors: formatServerActionError(error, {
+        action: 'createFeeItem',
+        schoolId,
+        userId: user.id,
+        entityIds: { name: parsed.data.name },
+        fallback: 'Erreur lors de la création. Veuillez réessayer.',
+      }) as FeeItemState['errors'],
+    }
   }
 
   redirect('/school/finance/fees')
@@ -238,8 +246,20 @@ export async function createInvoice(
     .single()
 
   if (invoiceError || !invoice) {
-    console.error('[createInvoice] invoice insert:', invoiceError?.message)
-    return { errors: { _form: ['Erreur lors de la création de la facture.'] } }
+    // invoice_number is generated from a COUNT and can collide under concurrency.
+    if (invoiceError?.code === '23505') {
+      logSupabaseError(invoiceError, { action: 'createInvoice', schoolId, userId: user.id, entityIds: { invoiceNumber } })
+      return { errors: { _form: ['Numéro de facture déjà utilisé. Veuillez réessayer.'] } }
+    }
+    return {
+      errors: formatServerActionError(invoiceError, {
+        action: 'createInvoice',
+        schoolId,
+        userId: user.id,
+        entityIds: { studentId: String(studentId), invoiceNumber },
+        fallback: 'Erreur lors de la création de la facture.',
+      }) as InvoiceState['errors'],
+    }
   }
 
   const invoiceId = (invoice as { id: string }).id
@@ -264,7 +284,12 @@ export async function createInvoice(
 
   const { error: linesError } = await supabase.from('invoice_lines').insert(lines)
   if (linesError) {
-    console.error('[createInvoice] lines insert:', linesError.message)
+    logSupabaseError(linesError, {
+      action: 'createInvoice:lines',
+      schoolId,
+      userId: user.id,
+      entityIds: { invoiceId, lineCount: lines.length },
+    })
   }
 
   redirect(`/school/finance/invoices/${invoiceId}`)
@@ -341,8 +366,20 @@ export async function recordPayment(
     .single()
 
   if (paymentError || !paymentRow) {
-    console.error('[recordPayment]', paymentError?.message)
-    return { errors: { _form: ["Erreur lors de l'enregistrement du paiement."] } }
+    // receipt_number is generated from a COUNT and can collide under concurrency.
+    if (paymentError?.code === '23505') {
+      logSupabaseError(paymentError, { action: 'recordPayment', schoolId, userId: user.id, entityIds: { invoice_id, receiptNumber } })
+      return { errors: { _form: ['Numéro de reçu déjà utilisé. Veuillez réessayer.'] } }
+    }
+    return {
+      errors: formatServerActionError(paymentError, {
+        action: 'recordPayment',
+        schoolId,
+        userId: user.id,
+        entityIds: { invoice_id, receiptNumber },
+        fallback: "Erreur lors de l'enregistrement du paiement.",
+      }) as PaymentState['errors'],
+    }
   }
 
   const paymentId = (paymentRow as { id: string }).id
@@ -430,7 +467,12 @@ export async function createBulkInvoices(
   })
 
   if (rpcError) {
-    console.error('[createBulkInvoices] RPC error:', rpcError.message)
+    logSupabaseError(rpcError, {
+      action: 'createBulkInvoices',
+      schoolId,
+      userId: user.id,
+      entityIds: { classId: String(classId) },
+    })
     const msg = rpcError.message.includes('amount')
       ? 'Le montant total doit être supérieur à 0.'
       : rpcError.message.includes('fee item')
@@ -514,8 +556,15 @@ export async function cancelInvoice(
     .eq('school_id', schoolId)
 
   if (error) {
-    console.error('[cancelInvoice]', error.message)
-    return { errors: { _form: ["Erreur lors de l'annulation. Veuillez réessayer."] } }
+    return {
+      errors: formatServerActionError(error, {
+        action: 'cancelInvoice',
+        schoolId,
+        userId: user.id,
+        entityIds: { invoice_id },
+        fallback: "Erreur lors de l'annulation. Veuillez réessayer.",
+      }) as CancelInvoiceState['errors'],
+    }
   }
 
   redirect(`/school/finance/invoices/${invoice_id}`)

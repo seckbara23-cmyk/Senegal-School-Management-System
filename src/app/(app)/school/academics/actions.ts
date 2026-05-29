@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -65,10 +66,17 @@ export async function createSubject(
   })
 
   if (error) {
-    if (error.code === '23505') {
-      return { errors: { name: ['Une matière avec ce nom existe déjà.'] } }
+    return {
+      errors: formatServerActionError(error, {
+        action: 'createSubject',
+        schoolId,
+        entityIds: { name },
+        constraints: {
+          subjects_school_name_unique: { field: 'name', message: 'Une matière avec ce nom existe déjà.' },
+        },
+        fallback: 'Erreur lors de la création. Réessayez.',
+      }) as CreateSubjectState['errors'],
     }
-    return { errors: { _form: ['Erreur lors de la création. Réessayez.'] } }
   }
 
   redirect('/school/academics/subjects')
@@ -113,6 +121,7 @@ export async function assignSubjectToClass(formData: FormData): Promise<void> {
 
   if (error) {
     if (error.code === '23505') redirect('/school/academics/assignments?error=duplicate')
+    logSupabaseError(error, { action: 'assignSubjectToClass', schoolId, entityIds: { class_id, subject_id } })
     redirect('/school/academics/assignments?error=server')
   }
 
@@ -259,10 +268,20 @@ export async function createPeriod(
   })
 
   if (error) {
-    if (error.code === '23505') {
-      return { errors: { name: ['Une période avec ce nom existe déjà pour cette année.'] } }
+    return {
+      errors: formatServerActionError(error, {
+        action: 'createPeriod',
+        schoolId,
+        entityIds: { academic_year_id, name },
+        constraints: {
+          academic_periods_school_year_name_unique: {
+            field: 'name',
+            message: 'Une période avec ce nom existe déjà pour cette année.',
+          },
+        },
+        fallback: 'Erreur lors de la création. Réessayez.',
+      }) as CreatePeriodState['errors'],
     }
-    return { errors: { _form: ['Erreur lors de la création. Réessayez.'] } }
   }
 
   redirect('/school/academics/periods')
@@ -347,7 +366,14 @@ export async function createAssessment(
     .single()
 
   if (error || !newAssessment) {
-    return { errors: { _form: ['Erreur lors de la création. Réessayez.'] } }
+    return {
+      errors: formatServerActionError(error, {
+        action: 'createAssessment',
+        schoolId,
+        entityIds: { class_subject_id, academic_period_id, title },
+        fallback: 'Erreur lors de la création. Réessayez.',
+      }) as CreateAssessmentState['errors'],
+    }
   }
 
   redirect(`/school/academics/assessments/${newAssessment.id}`)

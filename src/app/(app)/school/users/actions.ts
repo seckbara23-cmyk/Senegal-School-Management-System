@@ -4,6 +4,7 @@ import { createClient }      from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect }          from 'next/navigation'
 import { z }                 from 'zod'
+import { logSupabaseError }  from '@/lib/errors'
 
 // ─── Valid roles ───────────────────────────────────────────────────────────────
 
@@ -154,7 +155,8 @@ export async function createSchoolUser(
     ) {
       return { errors: { email: ['Un compte avec cet email existe déjà.'] } }
     }
-    return { errors: { _form: [`Erreur lors de la création du compte : ${msg}`] } }
+    logSupabaseError(authError, { action: 'createSchoolUser:auth', schoolId, userId: actor.id, entityIds: { email } })
+    return { errors: { _form: ['Erreur lors de la création du compte. Veuillez réessayer.'] } }
   }
 
   const newUserId = authData.user.id
@@ -165,6 +167,12 @@ export async function createSchoolUser(
     .insert({ user_id: newUserId, school_id: schoolId, role, status: 'active' })
 
   if (memberError) {
+    logSupabaseError(memberError, {
+      action: 'createSchoolUser:membership',
+      schoolId,
+      userId: actor.id,
+      entityIds: { newUserId, role },
+    })
     // Best-effort cleanup: remove orphaned auth user (and cascaded profile)
     await adminClient.auth.admin.deleteUser(newUserId)
     return { errors: { _form: ["Erreur lors de l'attribution du rôle. Veuillez réessayer."] } }
@@ -375,10 +383,14 @@ export async function generatePasswordResetLink(
   })
 
   if (linkError || !linkData?.properties?.action_link) {
+    logSupabaseError(linkError, {
+      action: 'generatePasswordResetLink',
+      schoolId,
+      userId: actor.id,
+      entityIds: { targetUserId: userId.data },
+    })
     return {
-      errors: {
-        _form: [`Erreur lors de la génération du lien : ${linkError?.message ?? 'inconnu'}`],
-      },
+      errors: { _form: ['Erreur lors de la génération du lien. Veuillez réessayer.'] },
     }
   }
 

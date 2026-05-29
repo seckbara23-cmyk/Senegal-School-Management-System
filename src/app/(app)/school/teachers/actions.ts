@@ -3,6 +3,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect }     from 'next/navigation'
 import { z }            from 'zod'
+import { formatServerActionError } from '@/lib/errors'
+
+// Unique-constraint name → friendly field message (see migration 002).
+const TEACHER_CONSTRAINTS = {
+  teachers_school_employee_unique: {
+    field: 'employee_number',
+    message: 'Ce matricule est déjà utilisé dans cet établissement.',
+  },
+}
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -87,10 +96,15 @@ export async function createTeacher(
     .single()
 
   if (error || !teacher) {
-    if (error?.code === '23505') {
-      return { errors: { employee_number: ['Ce matricule est déjà utilisé dans cet établissement.'] } }
+    return {
+      errors: formatServerActionError(error, {
+        action: 'createTeacher',
+        schoolId,
+        entityIds: { employee_number: parsed.data.employee_number },
+        constraints: TEACHER_CONSTRAINTS,
+        fallback: 'Erreur lors de la création. Veuillez réessayer.',
+      }) as TeacherFormState['errors'],
     }
-    return { errors: { _form: ['Erreur lors de la création. Veuillez réessayer.'] } }
   }
 
   redirect(`/school/teachers/${(teacher as { id: string }).id}`)
@@ -134,10 +148,15 @@ export async function updateTeacher(
     .eq('school_id', schoolId)
 
   if (error) {
-    if (error.code === '23505') {
-      return { errors: { employee_number: ['Ce matricule est déjà utilisé dans cet établissement.'] } }
+    return {
+      errors: formatServerActionError(error, {
+        action: 'updateTeacher',
+        schoolId,
+        entityIds: { teacherId: teacherId.data, employee_number: parsed.data.employee_number },
+        constraints: TEACHER_CONSTRAINTS,
+        fallback: 'Erreur lors de la mise à jour. Veuillez réessayer.',
+      }) as TeacherFormState['errors'],
     }
-    return { errors: { _form: ['Erreur lors de la mise à jour. Veuillez réessayer.'] } }
   }
 
   redirect(`/school/teachers/${teacherId.data}`)

@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { formatServerActionError } from '@/lib/errors'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -116,16 +117,19 @@ export async function createClass(
       .single()
 
     if (yearError || !newYear) {
-      console.error('[createClass] academic year insert error:', yearError?.message)
-      if (yearError?.code === '23505') {
-        return {
-          errors: {
-            year_name: ['Une année scolaire avec ce nom existe déjà.'],
-          },
-        }
-      }
       return {
-        errors: { _form: ["Erreur lors de la création de l'année scolaire."] },
+        errors: formatServerActionError(yearError, {
+          action: 'createClass:academicYear',
+          schoolId,
+          entityIds: { year_name: y.year_name },
+          constraints: {
+            academic_years_school_name_unique: {
+              field: 'year_name',
+              message: 'Une année scolaire avec ce nom existe déjà.',
+            },
+          },
+          fallback: "Erreur lors de la création de l'année scolaire.",
+        }) as CreateClassState['errors'],
       }
     }
 
@@ -175,9 +179,13 @@ export async function createClass(
     .single()
 
   if (classError || !newClass) {
-    console.error('[createClass] class insert error:', classError?.message)
     return {
-      errors: { _form: ['Erreur lors de la création de la classe. Veuillez réessayer.'] },
+      errors: formatServerActionError(classError, {
+        action: 'createClass',
+        schoolId,
+        entityIds: { academicYearId, name: classParsed.data.name },
+        fallback: 'Erreur lors de la création de la classe. Veuillez réessayer.',
+      }) as CreateClassState['errors'],
     }
   }
 
@@ -273,9 +281,14 @@ export async function enrollStudents(
     .upsert(records, { onConflict: 'student_id,class_id,academic_year_id' })
 
   if (upsertError) {
-    console.error('[enrollStudents] upsert error:', upsertError.message)
     return {
-      errors: { _form: ["Erreur lors de l'inscription. Veuillez réessayer."] },
+      errors: formatServerActionError(upsertError, {
+        action: 'enrollStudents',
+        schoolId,
+        userId: user.id,
+        entityIds: { classId, studentCount: studentIds.length },
+        fallback: "Erreur lors de l'inscription. Veuillez réessayer.",
+      }) as EnrollStudentsState['errors'],
     }
   }
 

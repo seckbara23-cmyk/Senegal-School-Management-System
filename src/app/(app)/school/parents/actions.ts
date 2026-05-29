@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { formatServerActionError } from '@/lib/errors'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -108,14 +109,13 @@ export async function createParent(
     .single()
 
   if (error || !parent) {
-    if (error?.code === '23505') {
-      return {
-        errors: { _form: ['Un dossier similaire existe déjà dans cet établissement.'] },
-      }
-    }
-    console.error('[createParent] insert error:', error?.message)
     return {
-      errors: { _form: ['Erreur lors de la création du dossier. Veuillez réessayer.'] },
+      errors: formatServerActionError(error, {
+        action: 'createParent',
+        schoolId,
+        entityIds: { email: parsed.data.email },
+        fallback: 'Erreur lors de la création du dossier. Veuillez réessayer.',
+      }) as CreateParentState['errors'],
     }
   }
 
@@ -164,13 +164,13 @@ export async function updateParent(
     .eq('school_id', schoolId)
 
   if (error) {
-    if (error.code === '23505') {
-      return {
-        errors: { _form: ['Un dossier similaire existe déjà dans cet établissement.'] },
-      }
-    }
     return {
-      errors: { _form: ['Erreur lors de la mise à jour. Veuillez réessayer.'] },
+      errors: formatServerActionError(error, {
+        action: 'updateParent',
+        schoolId,
+        entityIds: { parentId: parentId.data },
+        fallback: 'Erreur lors de la mise à jour. Veuillez réessayer.',
+      }) as ParentFormState['errors'],
     }
   }
 
@@ -265,9 +265,14 @@ export async function linkStudentsToParent(
     .upsert(records, { onConflict: 'parent_id,student_id' })
 
   if (error) {
-    console.error('[linkStudentsToParent] upsert error:', error.message)
     return {
-      errors: { _form: ['Erreur lors de la liaison des élèves. Veuillez réessayer.'] },
+      errors: formatServerActionError(error, {
+        action: 'linkStudentsToParent',
+        schoolId,
+        userId: user.id,
+        entityIds: { parentId, studentCount: validIds.length },
+        fallback: 'Erreur lors de la liaison des élèves. Veuillez réessayer.',
+      }) as LinkStudentsState['errors'],
     }
   }
 

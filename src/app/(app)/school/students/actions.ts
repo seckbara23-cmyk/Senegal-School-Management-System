@@ -3,6 +3,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { formatServerActionError } from '@/lib/errors'
+
+// Unique-constraint name → friendly field message (see migration 002).
+const STUDENT_CONSTRAINTS = {
+  students_school_admission_unique: {
+    field: 'admission_number',
+    message: "Ce numéro d'admission est déjà utilisé par un autre élève.",
+  },
+}
 
 // ─── Validation schema (shared by create and update) ─────────────────────────
 
@@ -117,11 +126,15 @@ export async function createStudent(
     .single()
 
   if (insertError || !newStudent) {
-    console.error('[createStudent] insert error:', insertError?.message)
     return {
-      errors: {
-        _form: ["Une erreur est survenue lors de l'enregistrement. Veuillez réessayer."],
-      },
+      errors: formatServerActionError(insertError, {
+        action: 'createStudent',
+        schoolId,
+        userId: user.id,
+        entityIds: { admission_number: parsed.data.admission_number },
+        constraints: STUDENT_CONSTRAINTS,
+        fallback: "Une erreur est survenue lors de l'enregistrement. Veuillez réessayer.",
+      }) as CreateStudentState['errors'],
     }
   }
 
@@ -210,22 +223,15 @@ export async function updateStudent(
     .eq('school_id', schoolId)
 
   if (updateError) {
-    console.error('[updateStudent] update error:', updateError.message)
-
-    if (updateError.code === '23505') {
-      return {
-        errors: {
-          admission_number: [
-            "Ce numéro d'admission est déjà utilisé par un autre élève.",
-          ],
-        },
-      }
-    }
-
     return {
-      errors: {
-        _form: ['Une erreur est survenue lors de la mise à jour. Veuillez réessayer.'],
-      },
+      errors: formatServerActionError(updateError, {
+        action: 'updateStudent',
+        schoolId,
+        userId: user.id,
+        entityIds: { studentId, admission_number: parsed.data.admission_number },
+        constraints: STUDENT_CONSTRAINTS,
+        fallback: 'Une erreur est survenue lors de la mise à jour. Veuillez réessayer.',
+      }) as UpdateStudentState['errors'],
     }
   }
 

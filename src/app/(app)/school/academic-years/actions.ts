@@ -3,6 +3,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect }     from 'next/navigation'
 import { z }            from 'zod'
+import { formatServerActionError } from '@/lib/errors'
+
+// Unique-constraint name → friendly field message (see migration 008).
+const ACADEMIC_YEAR_CONSTRAINTS = {
+  academic_years_school_name_unique: {
+    field: 'name',
+    message: 'Une année portant ce nom existe déjà dans cet établissement.',
+  },
+}
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -88,11 +97,15 @@ export async function createAcademicYear(
     .single()
 
   if (error || !year) {
-    if (error?.code === '23505') {
-      return { errors: { name: ["Une année portant ce nom existe déjà dans cet établissement."] } }
+    return {
+      errors: formatServerActionError(error, {
+        action: 'createAcademicYear',
+        schoolId,
+        entityIds: { name: parsed.data.name },
+        constraints: ACADEMIC_YEAR_CONSTRAINTS,
+        fallback: 'Erreur lors de la création. Veuillez réessayer.',
+      }) as AcademicYearFormState['errors'],
     }
-    console.error('[createAcademicYear]', error?.message)
-    return { errors: { _form: ['Erreur lors de la création. Veuillez réessayer.'] } }
   }
 
   redirect(`/school/academic-years/${(year as { id: string }).id}`)
@@ -141,10 +154,15 @@ export async function updateAcademicYear(
     .eq('school_id', schoolId)
 
   if (error) {
-    if (error.code === '23505') {
-      return { errors: { name: ["Une année portant ce nom existe déjà dans cet établissement."] } }
+    return {
+      errors: formatServerActionError(error, {
+        action: 'updateAcademicYear',
+        schoolId,
+        entityIds: { yearId: yearId.data, name: parsed.data.name },
+        constraints: ACADEMIC_YEAR_CONSTRAINTS,
+        fallback: 'Erreur lors de la mise à jour. Veuillez réessayer.',
+      }) as AcademicYearFormState['errors'],
     }
-    return { errors: { _form: ['Erreur lors de la mise à jour. Veuillez réessayer.'] } }
   }
 
   redirect(`/school/academic-years/${yearId.data}`)

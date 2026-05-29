@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -140,8 +141,8 @@ export async function createAttendanceSession(
     .single()
 
   if (sessionError || !session) {
-    console.error('[createAttendanceSession] session insert error:', sessionError?.message)
     if (sessionError?.code === '23505') {
+      logSupabaseError(sessionError, { action: 'createAttendanceSession', schoolId, userId: user.id, entityIds: { class_id, session_date } })
       return {
         errors: {
           _form: [
@@ -151,7 +152,13 @@ export async function createAttendanceSession(
       }
     }
     return {
-      errors: { _form: ['Erreur lors de la création de la séance. Veuillez réessayer.'] },
+      errors: formatServerActionError(sessionError, {
+        action: 'createAttendanceSession',
+        schoolId,
+        userId: user.id,
+        entityIds: { class_id, session_date },
+        fallback: 'Erreur lors de la création de la séance. Veuillez réessayer.',
+      }) as CreateAttendanceState['errors'],
     }
   }
 
@@ -172,7 +179,12 @@ export async function createAttendanceSession(
     .insert(records)
 
   if (recordsError) {
-    console.error('[createAttendanceSession] records insert error:', recordsError.message)
+    logSupabaseError(recordsError, {
+      action: 'createAttendanceSession:records',
+      schoolId,
+      userId: user.id,
+      entityIds: { sessionId: session.id, recordCount: records.length },
+    })
     // Best-effort cleanup: delete the orphaned session so the UNIQUE constraint
     // doesn't block a retry on the same class+date.
     await supabase.from('attendance_sessions').delete().eq('id', session.id)
