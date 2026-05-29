@@ -21,6 +21,41 @@ function mentionClass(avg: number): string {
   return 'border-red-200 bg-red-50 text-red-600'
 }
 
+type Trend = 'up' | 'down' | 'flat' | null
+
+// Average delta: positive = improvement
+function avgTrend(delta: number | null): Trend {
+  if (delta === null) return null
+  if (delta > 0) return 'up'
+  if (delta < 0) return 'down'
+  return 'flat'
+}
+
+// Rank delta: a *lower* rank number is better, so a decrease is an improvement
+function rankTrend(delta: number | null): Trend {
+  if (delta === null) return null
+  if (delta < 0) return 'up'
+  if (delta > 0) return 'down'
+  return 'flat'
+}
+
+function TrendBadge({ trend, children }: { trend: Trend; children: React.ReactNode }) {
+  if (trend === null) {
+    return <span className="text-xs text-gray-300">—</span>
+  }
+  const cls =
+    trend === 'up'   ? 'text-emerald-700' :
+    trend === 'down' ? 'text-red-600' :
+                       'text-gray-400'
+  const arrow = trend === 'up' ? '▲' : trend === 'down' ? '▼' : '—'
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold ${cls}`}>
+      <span aria-hidden="true">{arrow}</span>
+      {children}
+    </span>
+  )
+}
+
 type Props = {
   searchParams: { period_id?: string; class_id?: string }
 }
@@ -46,8 +81,9 @@ export default async function RankingsPage({ searchParams }: Props) {
   const [periodsRes, classesRes] = await Promise.all([
     supabase
       .from('academic_periods')
-      .select('id, name, academic_year_id, academic_years!academic_year_id(id, name)')
+      .select('id, name, starts_on, academic_year_id, academic_years!academic_year_id(id, name)')
       .eq('school_id', schoolId)
+      .order('starts_on', { ascending: true, nullsFirst: false })
       .order('name', { ascending: true }),
 
     supabase
@@ -57,7 +93,7 @@ export default async function RankingsPage({ searchParams }: Props) {
       .order('name', { ascending: true }),
   ])
 
-  type PeriodRow = { id: string; name: string; academic_year_id: string; academic_years: { id: string; name: string } }
+  type PeriodRow = { id: string; name: string; starts_on: string | null; academic_year_id: string; academic_years: { id: string; name: string } }
   type ClassRow  = { id: string; name: string; level: string | null; academic_year_id: string }
 
   const periods = (periodsRes.data ?? []) as unknown as PeriodRow[]
@@ -74,12 +110,21 @@ export default async function RankingsPage({ searchParams }: Props) {
   const selectedPeriod = selectedPeriodId ? periods.find((p) => p.id === selectedPeriodId) ?? null : null
   const selectedClass  = selectedClassId  ? classes.find((c) => c.id === selectedClassId)  ?? null : null
 
+  // The immediately preceding chronological period within the same academic year
+  let previousPeriod: PeriodRow | null = null
+  if (selectedPeriod) {
+    const yearPeriods = periods.filter((p) => p.academic_year_id === selectedPeriod.academic_year_id)
+    const idx = yearPeriods.findIndex((p) => p.id === selectedPeriod.id)
+    previousPeriod = idx > 0 ? yearPeriods[idx - 1] : null
+  }
+
   type RankRow = {
     studentId:        string
     firstName:        string
     lastName:         string
     admissionNumber:  string
     overallAvg:       number | null
+    prevAvg:          number | null
     missingGrades:    number
     totalAssessments: number
   }
@@ -100,20 +145,21 @@ export default async function RankingsPage({ searchParams }: Props) {
     const classSubjects = (csData ?? []) as unknown as CSRow[]
     const csIds = classSubjects.map((cs) => cs.id)
 
-    // Assessments of those subjects within the selected period
+    // Assessments of those subjects, for the selected period and its predecessor
+    const periodIds = previousPeriod ? [selectedPeriod.id, previousPeriod.id] : [selectedPeriod.id]
     const { data: assessData } = csIds.length > 0
       ? await supabase
           .from('assessments')
-          .select('id, class_subject_id, coefficient, max_score')
+          .select('id, class_subject_id, academic_period_id, coefficient, max_score')
           .eq('school_id', schoolId)
-          .eq('academic_period_id', selectedPeriod.id)
+          .in('academic_period_id', periodIds)
           .in('class_subject_id', csIds)
       : { data: [] }
 
-    type AssessRow = { id: string; class_subject_id: string; coefficient: number; max_score: number }
+    type AssessRow = { id: string; class_subject_id: string; academic_period_id: string; coefficient: number; max_score: number }
     const assessments = (assessData ?? []) as AssessRow[]
     const assessIds = assessments.map((a) => a.id)
-    totalAssessments = assessments.length
+    totalAssessments = assessments.filter((a) => a.academic_period_id === selectedPeriod.id).length
 
     // Active enrolled students of the class + every grade for those assessments
     const [enrollRes, gradesRes] = await Promise.all([
@@ -150,22 +196,23 @@ export default async function RankingsPage({ searchParams }: Props) {
       gradeIndex.get(g.assessment_id)!.set(g.student_id, g.score)
     }
 
-    // Index: class_subject_id → assessments
-    const assessByCS = new Map<string, AssessRow[]>()
+    // Index per period: class_subject_id → assessments
+    const assessByCS     = new Map<string, AssessRow[]>()
+    const assessByCSPrev = new Map<string, AssessRow[]>()
     for (const a of assessments) {
-      if (!assessByCS.has(a.class_subject_id)) assessByCS.set(a.class_subject_id, [])
-      assessByCS.get(a.class_subject_id)!.push(a)
+      const target = a.academic_period_id === selectedPeriod.id ? assessByCS : assessByCSPrev
+      if (!target.has(a.class_subject_id)) target.set(a.class_subject_id, [])
+      target.get(a.class_subject_id)!.push(a)
     }
 
-    // Per-student overall average — same logic as the bulletin
-    for (const enr of enrollments) {
-      const sid = enr.student_id
+    // Overall weighted average of one student in one period — same logic as the bulletin
+    const avgFor = (sid: string, byCS: Map<string, AssessRow[]>): { avg: number | null; graded: number } => {
       let weightedSum = 0
       let totalWeight = 0
       let graded = 0
 
       for (const cs of classSubjects) {
-        const csAssessments = assessByCS.get(cs.id) ?? []
+        const csAssessments = byCS.get(cs.id) ?? []
         let csWeightedSum = 0
         let csTotalWeight = 0
 
@@ -186,12 +233,21 @@ export default async function RankingsPage({ searchParams }: Props) {
         }
       }
 
+      return { avg: totalWeight > 0 ? round2(weightedSum / totalWeight) : null, graded }
+    }
+
+    for (const enr of enrollments) {
+      const sid = enr.student_id
+      const { avg, graded } = avgFor(sid, assessByCS)
+      const prev = previousPeriod ? avgFor(sid, assessByCSPrev).avg : null
+
       rows.push({
         studentId:        sid,
         firstName:        enr.students.first_name,
         lastName:         enr.students.last_name,
         admissionNumber:  enr.students.admission_number,
-        overallAvg:       totalWeight > 0 ? round2(weightedSum / totalWeight) : null,
+        overallAvg:       avg,
+        prevAvg:          prev,
         missingGrades:    totalAssessments - graded,
         totalAssessments,
       })
@@ -207,6 +263,23 @@ export default async function RankingsPage({ searchParams }: Props) {
   }
 
   const hasSelection = !!(selectedPeriod && selectedClass)
+  const hasPrevious  = !!previousPeriod
+
+  // ── Competition ranks (1 + students strictly above) for both periods ───────
+  const currentAvgs = rows.map((r) => r.overallAvg).filter((a): a is number => a !== null)
+  const prevAvgs    = rows.map((r) => r.prevAvg).filter((a): a is number => a !== null)
+  function rankOf(avg: number, pool: number[]): number {
+    return 1 + pool.filter((a) => a > avg).length
+  }
+
+  type ComputedRow = RankRow & { rank: number | null; avgDelta: number | null; rankDelta: number | null }
+  const computed: ComputedRow[] = rows.map((r) => {
+    const rank     = r.overallAvg !== null ? rankOf(r.overallAvg, currentAvgs) : null
+    const prevRank = r.prevAvg    !== null ? rankOf(r.prevAvg, prevAvgs)        : null
+    const avgDelta  = r.overallAvg !== null && r.prevAvg !== null ? round2(r.overallAvg - r.prevAvg) : null
+    const rankDelta = rank !== null && prevRank !== null ? rank - prevRank : null
+    return { ...r, rank, avgDelta, rankDelta }
+  })
 
   // ── Performance summary ────────────────────────────────────────────────────
   const ranked      = rows.filter((r) => r.overallAvg !== null) as (RankRow & { overallAvg: number })[]
@@ -336,95 +409,118 @@ export default async function RankingsPage({ searchParams }: Props) {
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-primary-200">Élève</th>
                     <th className="hidden sm:table-cell px-4 py-3 text-xs font-bold uppercase tracking-wider text-primary-200">N° matricule</th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-primary-200 text-right">Moyenne</th>
+                    {hasPrevious && (
+                      <th className="hidden sm:table-cell px-4 py-3 text-xs font-bold uppercase tracking-wider text-primary-200 text-right">Évol. moy.</th>
+                    )}
+                    {hasPrevious && (
+                      <th className="hidden md:table-cell px-4 py-3 text-xs font-bold uppercase tracking-wider text-primary-200 text-center">Évol. rang</th>
+                    )}
                     <th className="hidden sm:table-cell px-4 py-3 text-xs font-bold uppercase tracking-wider text-primary-200">Mention</th>
                     <th className="hidden md:table-cell px-4 py-3 text-xs font-bold uppercase tracking-wider text-primary-200 text-center">Notes manquantes</th>
                     <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r, idx) => {
-                    const rank = r.overallAvg !== null ? idx + 1 : null
-                    return (
-                      <tr
-                        key={r.studentId}
-                        className={`border-b border-sand-200 transition-colors hover:bg-accent-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-sand-50'}`}
-                      >
-                        {/* Rank */}
-                        <td className="px-4 py-3 text-center">
-                          {rank !== null ? (
-                            rank <= 3 ? (
-                              <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${
-                                rank === 1 ? 'bg-accent-300 text-accent-700'
-                                : rank === 2 ? 'bg-sand-300 text-gray-700'
-                                : 'bg-accent-50 text-accent-700 border border-accent-300'
-                              }`}>
-                                {rank}
-                              </span>
-                            ) : (
-                              <span className="font-mono text-sm font-semibold text-gray-500">{rank}</span>
-                            )
-                          ) : (
-                            <span className="text-gray-300">—</span>
-                          )}
-                        </td>
-
-                        {/* Student */}
-                        <td className="px-4 py-3">
-                          <p className="font-semibold text-gray-900">{r.lastName} {r.firstName}</p>
-                          <p className="sm:hidden text-xs font-mono text-gray-400">{r.admissionNumber}</p>
-                        </td>
-
-                        {/* Admission number */}
-                        <td className="hidden sm:table-cell px-4 py-3 font-mono text-xs text-gray-500">{r.admissionNumber}</td>
-
-                        {/* Overall average */}
-                        <td className="px-4 py-3 text-right">
-                          {r.overallAvg !== null ? (
-                            <span className={`text-base font-bold ${r.overallAvg >= 10 ? 'text-primary-800' : 'text-red-600'}`}>
-                              {r.overallAvg}
-                              <span className="text-xs font-normal text-gray-300">/20</span>
+                  {computed.map((r, idx) => (
+                    <tr
+                      key={r.studentId}
+                      className={`border-b border-sand-200 transition-colors hover:bg-accent-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-sand-50'}`}
+                    >
+                      {/* Rank */}
+                      <td className="px-4 py-3 text-center">
+                        {r.rank !== null ? (
+                          r.rank <= 3 ? (
+                            <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${
+                              r.rank === 1 ? 'bg-accent-300 text-accent-700'
+                              : r.rank === 2 ? 'bg-sand-300 text-gray-700'
+                              : 'bg-accent-50 text-accent-700 border border-accent-300'
+                            }`}>
+                              {r.rank}
                             </span>
                           ) : (
-                            <span className="text-sm text-gray-300">—</span>
-                          )}
-                        </td>
+                            <span className="font-mono text-sm font-semibold text-gray-500">{r.rank}</span>
+                          )
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
 
-                        {/* Mention */}
-                        <td className="hidden sm:table-cell px-4 py-3">
-                          {r.overallAvg !== null ? (
-                            <span className={`inline-block rounded border px-2 py-0.5 text-xs font-semibold ${mentionClass(r.overallAvg)}`}>
-                              {mention(r.overallAvg)}
-                            </span>
-                          ) : (
-                            <span className="text-xs italic text-gray-300">Non noté</span>
-                          )}
-                        </td>
+                      {/* Student */}
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-gray-900">{r.lastName} {r.firstName}</p>
+                        <p className="sm:hidden text-xs font-mono text-gray-400">{r.admissionNumber}</p>
+                      </td>
 
-                        {/* Missing grades */}
+                      {/* Admission number */}
+                      <td className="hidden sm:table-cell px-4 py-3 font-mono text-xs text-gray-500">{r.admissionNumber}</td>
+
+                      {/* Overall average */}
+                      <td className="px-4 py-3 text-right">
+                        {r.overallAvg !== null ? (
+                          <span className={`text-base font-bold ${r.overallAvg >= 10 ? 'text-primary-800' : 'text-red-600'}`}>
+                            {r.overallAvg}
+                            <span className="text-xs font-normal text-gray-300">/20</span>
+                          </span>
+                        ) : (
+                          <span className="text-sm text-gray-300">—</span>
+                        )}
+                      </td>
+
+                      {/* Average evolution */}
+                      {hasPrevious && (
+                        <td className="hidden sm:table-cell px-4 py-3 text-right">
+                          <TrendBadge trend={avgTrend(r.avgDelta)}>
+                            {r.avgDelta !== null ? `${r.avgDelta > 0 ? '+' : ''}${r.avgDelta}` : null}
+                          </TrendBadge>
+                        </td>
+                      )}
+
+                      {/* Rank evolution */}
+                      {hasPrevious && (
                         <td className="hidden md:table-cell px-4 py-3 text-center">
-                          {totalAssessments === 0 ? (
-                            <span className="text-xs text-gray-300">—</span>
-                          ) : r.missingGrades > 0 ? (
-                            <span className="inline-block rounded-full border border-accent-300 bg-accent-50 px-2 py-0.5 text-xs font-medium text-accent-700">
-                              {r.missingGrades} / {r.totalAssessments}
-                            </span>
-                          ) : (
-                            <span className="text-xs font-medium text-emerald-600">Complet</span>
-                          )}
+                          <TrendBadge trend={rankTrend(r.rankDelta)}>
+                            {r.rankDelta !== null && r.rankDelta !== 0
+                              ? `${Math.abs(r.rankDelta)} place${Math.abs(r.rankDelta) > 1 ? 's' : ''}`
+                              : r.rankDelta === 0 ? 'stable' : null}
+                          </TrendBadge>
                         </td>
+                      )}
 
-                        {/* Bulletin link */}
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
-                          <a
-                            href={`/school/academics/bulletins/${r.studentId}?period_id=${selectedPeriodId}`}
-                            className="text-xs font-medium text-primary-600 hover:text-primary-800 hover:underline"
-                          >
-                            Bulletin →
-                          </a>
-                        </td>
-                      </tr>
-                    )
-                  })}
+                      {/* Mention */}
+                      <td className="hidden sm:table-cell px-4 py-3">
+                        {r.overallAvg !== null ? (
+                          <span className={`inline-block rounded border px-2 py-0.5 text-xs font-semibold ${mentionClass(r.overallAvg)}`}>
+                            {mention(r.overallAvg)}
+                          </span>
+                        ) : (
+                          <span className="text-xs italic text-gray-300">Non noté</span>
+                        )}
+                      </td>
+
+                      {/* Missing grades */}
+                      <td className="hidden md:table-cell px-4 py-3 text-center">
+                        {totalAssessments === 0 ? (
+                          <span className="text-xs text-gray-300">—</span>
+                        ) : r.missingGrades > 0 ? (
+                          <span className="inline-block rounded-full border border-accent-300 bg-accent-50 px-2 py-0.5 text-xs font-medium text-accent-700">
+                            {r.missingGrades} / {r.totalAssessments}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-medium text-emerald-600">Complet</span>
+                        )}
+                      </td>
+
+                      {/* Bulletin link */}
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <a
+                          href={`/school/academics/bulletins/${r.studentId}?period_id=${selectedPeriodId}`}
+                          className="text-xs font-medium text-primary-600 hover:text-primary-800 hover:underline"
+                        >
+                          Bulletin →
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -432,6 +528,9 @@ export default async function RankingsPage({ searchParams }: Props) {
 
           <p className="text-center text-xs text-gray-400">
             Classement établi sur la moyenne générale pondérée par coefficient. Les élèves sans note figurent en fin de registre.
+            {hasPrevious
+              ? ` Évolution calculée par rapport à ${previousPeriod!.name}. ▲ progression · ▼ recul · — stable.`
+              : ' Aucune période antérieure : l’évolution n’est pas affichée.'}
           </p>
         </>
       )}
