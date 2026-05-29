@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
+import Link from 'next/link'
 
 // ─── SVG icon paths (Heroicons outline, 24px viewBox) ────────────────────────
 
@@ -105,7 +106,7 @@ function NavRow({
   }
 
   return (
-    <a
+    <Link
       href={item.href!}
       onClick={onClick}
       className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
@@ -121,7 +122,7 @@ function NavRow({
           {unreadCount > 99 ? '99+' : unreadCount}
         </span>
       )}
-    </a>
+    </Link>
   )
 }
 
@@ -240,7 +241,7 @@ export function Sidebar({ schoolName, userEmail, unreadCount }: SidebarProps) {
           {displayName}
         </span>
 
-        <a
+        <Link
           href="/notifications"
           aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount})` : ''}`}
           className="relative rounded-md p-2 text-gray-600 hover:bg-sand-100 hover:text-gray-900"
@@ -249,7 +250,7 @@ export function Sidebar({ schoolName, userEmail, unreadCount }: SidebarProps) {
           {unreadCount > 0 && (
             <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-accent-400" />
           )}
-        </a>
+        </Link>
       </header>
 
       {/* ── Mobile: overlay + slide-in drawer ─────────────────────────────── */}
