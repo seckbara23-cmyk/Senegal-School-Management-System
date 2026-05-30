@@ -26,7 +26,7 @@ export type ErrorLogContext = {
   schoolId?: string | null
   userId?: string | null
   /** Any relevant business identifiers (admission_number, invoice_id, …). */
-  entityIds?: Record<string, string | number | null | undefined>
+  entityIds?: Record<string, string | number | boolean | null | undefined>
 }
 
 /** Generic, safe fallback shown when no specific mapping applies. */

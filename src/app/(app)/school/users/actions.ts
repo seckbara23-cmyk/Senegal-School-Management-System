@@ -219,11 +219,16 @@ export async function setMembershipStatus(formData: FormData) {
   const newStatus = z.enum(['active', 'inactive']).safeParse(formData.get('new_status'))
   if (!userId.success || !newStatus.success) redirect('/school/users')
 
-  await supabase
+  const { error: statusError } = await supabase
     .from('school_memberships')
     .update({ status: newStatus.data })
     .eq('user_id', userId.data)
     .eq('school_id', schoolId)
+
+  if (statusError) {
+    logSupabaseError(statusError, { action: 'setMembershipStatus', schoolId, userId: actor.id, entityIds: { targetUserId: userId.data, newStatus: newStatus.data } })
+    redirect(`/school/users/${userId.data}?error=status`)
+  }
 
   // Fetch target email for audit log
   const { data: profileData } = await supabase
@@ -269,11 +274,16 @@ export async function linkEntityToUser(formData: FormData) {
     redirect(`/school/users/${userId.data}?error=entity`)
   }
 
-  await supabase
+  const { error: linkError } = await supabase
     .from(table)
     .update({ profile_id: userId.data })
     .eq('id', entityId.data)
     .eq('school_id', schoolId)
+
+  if (linkError) {
+    logSupabaseError(linkError, { action: 'linkEntityToUser', schoolId, userId: actor.id, entityIds: { targetUserId: userId.data, entityId: entityId.data, role: role.data } })
+    redirect(`/school/users/${userId.data}?error=link`)
+  }
 
   // Fetch target email for audit log
   const { data: profileData } = await supabase
@@ -307,11 +317,16 @@ export async function unlinkEntityFromUser(formData: FormData) {
 
   const table = entityTable(role.data)!
 
-  await supabase
+  const { error: unlinkError } = await supabase
     .from(table)
     .update({ profile_id: null })
     .eq('profile_id', userId.data)
     .eq('school_id', schoolId)
+
+  if (unlinkError) {
+    logSupabaseError(unlinkError, { action: 'unlinkEntityFromUser', schoolId, userId: actor.id, entityIds: { targetUserId: userId.data, role: role.data } })
+    redirect(`/school/users/${userId.data}?error=unlink`)
+  }
 
   // Fetch target email for audit log
   const { data: profileData } = await supabase

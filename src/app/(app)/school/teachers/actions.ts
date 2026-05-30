@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect }     from 'next/navigation'
 import { z }            from 'zod'
-import { formatServerActionError } from '@/lib/errors'
+import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 
 // Unique-constraint name → friendly field message (see migration 002).
 const TEACHER_CONSTRAINTS = {
@@ -171,11 +171,16 @@ export async function setTeacherStatus(formData: FormData) {
   const newStatus = z.enum(['active', 'inactive']).safeParse(formData.get('new_status'))
   if (!teacherId.success || !newStatus.success) redirect('/school/teachers')
 
-  await supabase
+  const { error } = await supabase
     .from('teachers')
     .update({ status: newStatus.data })
     .eq('id', teacherId.data)
     .eq('school_id', schoolId)
+
+  if (error) {
+    logSupabaseError(error, { action: 'setTeacherStatus', schoolId, entityIds: { teacherId: teacherId.data, newStatus: newStatus.data } })
+    redirect(`/school/teachers/${teacherId.data}?error=status`)
+  }
 
   redirect(`/school/teachers/${teacherId.data}`)
 }

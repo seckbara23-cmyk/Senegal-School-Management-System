@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
-import { formatServerActionError } from '@/lib/errors'
+import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -323,11 +323,16 @@ export async function withdrawEnrollment(formData: FormData): Promise<void> {
 
   // Update WHERE id = enrollmentId AND school_id = schoolId — prevents
   // withdrawing enrollments that belong to a different school.
-  await supabase
+  const { error } = await supabase
     .from('student_class_enrollments')
     .update({ status: 'withdrawn' })
     .eq('id', enrollmentId)
     .eq('school_id', schoolId)
+
+  if (error) {
+    logSupabaseError(error, { action: 'withdrawEnrollment', schoolId, userId: user.id, entityIds: { enrollmentId, classId } })
+    redirect(`/school/classes/${classId}?error=withdraw`)
+  }
 
   redirect(`/school/classes/${classId}`)
 }

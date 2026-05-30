@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect }     from 'next/navigation'
 import { z }            from 'zod'
-import { formatServerActionError } from '@/lib/errors'
+import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 
 // Unique-constraint name → friendly field message (see migration 008).
 const ACADEMIC_YEAR_CONSTRAINTS = {
@@ -185,11 +185,16 @@ export async function setYearActive(formData: FormData): Promise<void> {
       .neq('id', yearId)
   }
 
-  await supabase
+  const { error } = await supabase
     .from('academic_years')
     .update({ is_active: newActive })
     .eq('id', yearId)
     .eq('school_id', schoolId)
+
+  if (error) {
+    logSupabaseError(error, { action: 'setYearActive', schoolId, entityIds: { yearId, newActive } })
+    redirect(`/school/academic-years/${yearId}?error=status`)
+  }
 
   redirect(`/school/academic-years/${yearId}`)
 }

@@ -122,6 +122,17 @@ export async function createFeeItem(
     return { errors: parsed.error.flatten().fieldErrors as FeeItemState['errors'] }
   }
 
+  // Ownership: an academic_year_id from the form must belong to this school.
+  if (parsed.data.academic_year_id) {
+    const { data: year } = await supabase
+      .from('academic_years')
+      .select('id')
+      .eq('id', parsed.data.academic_year_id)
+      .eq('school_id', schoolId)
+      .maybeSingle()
+    if (!year) return { errors: { _form: ['Année scolaire invalide.'] } }
+  }
+
   const { error } = await supabase.from('fee_items').insert({
     school_id:        schoolId,
     name:             parsed.data.name,
@@ -182,6 +193,17 @@ export async function createInvoice(
     .eq('school_id', schoolId)
     .maybeSingle()
   if (!student) return { errors: { student_id: ["Élève introuvable."] } }
+
+  // Ownership: an academic_year_id from the form must belong to this school.
+  if (academicYearId && String(academicYearId) !== '') {
+    const { data: year } = await supabase
+      .from('academic_years')
+      .select('id')
+      .eq('id', String(academicYearId))
+      .eq('school_id', schoolId)
+      .maybeSingle()
+    if (!year) return { errors: { _form: ['Année scolaire invalide.'] } }
+  }
 
   // Collect selected fee item IDs
   const feeItemIds = formData.getAll('fee_item_ids').map((v) => String(v)).filter(Boolean)
@@ -284,12 +306,18 @@ export async function createInvoice(
 
   const { error: linesError } = await supabase.from('invoice_lines').insert(lines)
   if (linesError) {
-    logSupabaseError(linesError, {
-      action: 'createInvoice:lines',
-      schoolId,
-      userId: user.id,
-      entityIds: { invoiceId, lineCount: lines.length },
-    })
+    // Roll back the header so we never leave an invoice with a total but no
+    // line items. Both id and school_id are matched to stay within the tenant.
+    await supabase.from('student_invoices').delete().eq('id', invoiceId).eq('school_id', schoolId)
+    return {
+      errors: formatServerActionError(linesError, {
+        action: 'createInvoice:lines',
+        schoolId,
+        userId: user.id,
+        entityIds: { invoiceId, lineCount: lines.length },
+        fallback: 'Erreur lors de la création des lignes de facture. Veuillez réessayer.',
+      }) as InvoiceState['errors'],
+    }
   }
 
   redirect(`/school/finance/invoices/${invoiceId}`)

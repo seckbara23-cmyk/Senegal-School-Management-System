@@ -158,13 +158,15 @@ export async function assignTeacher(formData: FormData): Promise<void> {
 
   if (!cs) redirect('/school/academics/assignments?error=invalid')
 
+  let opError: { code?: string | null; message?: string | null; details?: string | null; hint?: string | null } | null = null
   if (!teacher_id) {
     // Remove assignment
-    await supabase
+    const { error } = await supabase
       .from('teacher_subject_assignments')
       .delete()
       .eq('class_subject_id', class_subject_id)
       .eq('school_id', schoolId)
+    opError = error
   } else {
     // Verify teacher belongs to this school
     const { data: teacher } = await supabase
@@ -176,10 +178,16 @@ export async function assignTeacher(formData: FormData): Promise<void> {
 
     if (!teacher) redirect('/school/academics/assignments?error=invalid')
 
-    await supabase.from('teacher_subject_assignments').upsert(
+    const { error } = await supabase.from('teacher_subject_assignments').upsert(
       { school_id: schoolId, teacher_id, class_subject_id },
       { onConflict: 'class_subject_id' },
     )
+    opError = error
+  }
+
+  if (opError) {
+    logSupabaseError(opError, { action: 'assignTeacher', schoolId, entityIds: { class_subject_id, teacher_id: teacher_id ?? null } })
+    redirect('/school/academics/assignments?error=server')
   }
 
   redirect('/school/academics/assignments')
@@ -208,7 +216,10 @@ export async function removeSubjectFromClass(formData: FormData): Promise<void> 
     .eq('id', parsed.data.class_subject_id)
     .eq('school_id', schoolId)
 
-  if (error) redirect('/school/academics/assignments?error=server')
+  if (error) {
+    logSupabaseError(error, { action: 'removeSubjectFromClass', schoolId, entityIds: { class_subject_id: parsed.data.class_subject_id } })
+    redirect('/school/academics/assignments?error=server')
+  }
 
   redirect('/school/academics/assignments')
 }

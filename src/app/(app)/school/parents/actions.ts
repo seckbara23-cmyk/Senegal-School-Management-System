@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
-import { formatServerActionError } from '@/lib/errors'
+import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -186,11 +186,16 @@ export async function setParentStatus(formData: FormData) {
   const newStatus = z.enum(['active', 'inactive']).safeParse(formData.get('new_status'))
   if (!parentId.success || !newStatus.success) redirect('/school/parents')
 
-  await supabase
+  const { error } = await supabase
     .from('parents')
     .update({ status: newStatus.data })
     .eq('id', parentId.data)
     .eq('school_id', schoolId)
+
+  if (error) {
+    logSupabaseError(error, { action: 'setParentStatus', schoolId, entityIds: { parentId: parentId.data, newStatus: newStatus.data } })
+    redirect(`/school/parents/${parentId.data}?error=status`)
+  }
 
   redirect(`/school/parents/${parentId.data}`)
 }
@@ -297,11 +302,16 @@ export async function unlinkStudent(formData: FormData): Promise<void> {
   const parentId = (formData.get('parent_id') as string | null)?.trim()
   if (!linkId) return
 
-  await supabase
+  const { error } = await supabase
     .from('parent_student_links')
     .delete()
     .eq('id', linkId)
     .eq('school_id', schoolId)
+
+  if (error) {
+    logSupabaseError(error, { action: 'unlinkStudent', schoolId, userId: user.id, entityIds: { linkId, parentId } })
+    redirect(parentId ? `/school/parents/${parentId}?error=unlink` : '/school/parents?error=unlink')
+  }
 
   redirect(parentId ? `/school/parents/${parentId}` : '/school/parents')
 }
