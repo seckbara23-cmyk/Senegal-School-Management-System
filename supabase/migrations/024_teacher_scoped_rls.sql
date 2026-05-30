@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 018: Teacher-scoped write RLS
+-- Migration 024: Teacher-scoped write RLS
 -- -----------------------------------------------------------------------------
 -- Grants TEACHERS the ability to INSERT/UPDATE (never DELETE) attendance and
 -- grading data, but ONLY for the classes / class_subjects they are actually
