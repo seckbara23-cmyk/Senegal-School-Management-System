@@ -50,9 +50,14 @@ export default async function SuperAdminPage() {
       <div className="bg-white shadow rounded-lg p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-medium text-gray-900">Schools</h2>
-          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm">
-            Add School
-          </button>
+          <div className="flex items-center gap-2">
+            <a href="/super-admin/schools" className="text-indigo-600 hover:text-indigo-900 text-sm font-medium">
+              Tout gérer
+            </a>
+            <a href="/super-admin/schools/new" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm">
+              Add School
+            </a>
+          </div>
         </div>
 
         {schoolsError && (
@@ -75,9 +80,9 @@ export default async function SuperAdminPage() {
                   }`}>
                     {school.subscription_status}
                   </span>
-                  <button className="text-indigo-600 hover:text-indigo-900 text-sm">
+                  <a href={`/super-admin/schools/${school.id}`} className="text-indigo-600 hover:text-indigo-900 text-sm">
                     Manage
-                  </button>
+                  </a>
                 </div>
               </div>
             ))}
