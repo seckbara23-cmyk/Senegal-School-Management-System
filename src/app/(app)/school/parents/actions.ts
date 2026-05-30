@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
+import { logAuditEvent } from '@/lib/audit'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -67,7 +68,7 @@ async function resolveSchoolAdmin() {
   const schoolId = await getSchoolId(supabase, user.id)
   if (!schoolId) redirect('/school')
 
-  return { supabase, schoolId }
+  return { supabase, schoolId, actor: user }
 }
 
 // ─── createParent ─────────────────────────────────────────────────────────────
@@ -76,7 +77,7 @@ export async function createParent(
   _prevState: CreateParentState,
   formData: FormData
 ): Promise<CreateParentState> {
-  const { supabase, schoolId } = await resolveSchoolAdmin()
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
   const parsed = ParentSchema.safeParse({
     first_name:  formData.get('first_name'),
@@ -119,6 +120,12 @@ export async function createParent(
     }
   }
 
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'parent_created', resourceType: 'parent', resourceId: parent.id,
+    metadata: { first_name: parsed.data.first_name, last_name: parsed.data.last_name, email: parsed.data.email ?? null },
+  })
+
   redirect(`/school/parents/${parent.id}`)
 }
 
@@ -128,7 +135,7 @@ export async function updateParent(
   _prevState: ParentFormState,
   formData: FormData
 ): Promise<ParentFormState> {
-  const { supabase, schoolId } = await resolveSchoolAdmin()
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
   const parentId = z.string().uuid().safeParse(formData.get('parent_id'))
   if (!parentId.success) {
@@ -174,17 +181,32 @@ export async function updateParent(
     }
   }
 
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'parent_updated', resourceType: 'parent', resourceId: parentId.data,
+    metadata: { first_name: parsed.data.first_name, last_name: parsed.data.last_name },
+  })
+
   redirect(`/school/parents/${parentId.data}`)
 }
 
 // ─── setParentStatus ──────────────────────────────────────────────────────────
 
 export async function setParentStatus(formData: FormData) {
-  const { supabase, schoolId } = await resolveSchoolAdmin()
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
   const parentId = z.string().uuid().safeParse(formData.get('parent_id'))
   const newStatus = z.enum(['active', 'inactive']).safeParse(formData.get('new_status'))
   if (!parentId.success || !newStatus.success) redirect('/school/parents')
+
+  // Capture the previous status for the audit trail.
+  const { data: before } = await supabase
+    .from('parents')
+    .select('status')
+    .eq('id', parentId.data)
+    .eq('school_id', schoolId)
+    .maybeSingle()
+  const oldStatus = (before as { status: string } | null)?.status ?? null
 
   const { error } = await supabase
     .from('parents')
@@ -196,6 +218,12 @@ export async function setParentStatus(formData: FormData) {
     logSupabaseError(error, { action: 'setParentStatus', schoolId, entityIds: { parentId: parentId.data, newStatus: newStatus.data } })
     redirect(`/school/parents/${parentId.data}?error=status`)
   }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'parent_status_changed', resourceType: 'parent', resourceId: parentId.data,
+    metadata: { old_status: oldStatus, new_status: newStatus.data },
+  })
 
   redirect(`/school/parents/${parentId.data}`)
 }
@@ -281,6 +309,12 @@ export async function linkStudentsToParent(
     }
   }
 
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'parent_student_linked', resourceType: 'parent', resourceId: parentId,
+    metadata: { student_ids: validIds, relationship, is_primary_contact: isPrimaryContact, count: validIds.length },
+  })
+
   redirect(`/school/parents/${parentId}`)
 }
 
@@ -312,6 +346,12 @@ export async function unlinkStudent(formData: FormData): Promise<void> {
     logSupabaseError(error, { action: 'unlinkStudent', schoolId, userId: user.id, entityIds: { linkId, parentId } })
     redirect(parentId ? `/school/parents/${parentId}?error=unlink` : '/school/parents?error=unlink')
   }
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'parent_student_unlinked', resourceType: 'parent', resourceId: parentId ?? linkId!,
+    metadata: { link_id: linkId, parent_id: parentId ?? null },
+  })
 
   redirect(parentId ? `/school/parents/${parentId}` : '/school/parents')
 }

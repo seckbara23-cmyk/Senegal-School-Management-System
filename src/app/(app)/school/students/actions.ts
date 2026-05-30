@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError } from '@/lib/errors'
+import { logAuditEvent } from '@/lib/audit'
 
 // Unique-constraint name → friendly field message (see migration 002).
 const STUDENT_CONSTRAINTS = {
@@ -138,6 +139,12 @@ export async function createStudent(
     }
   }
 
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'student_created', resourceType: 'student', resourceId: newStudent.id,
+    metadata: { admission_number: parsed.data.admission_number, first_name: parsed.data.first_name, last_name: parsed.data.last_name, status: parsed.data.status },
+  })
+
   // redirect() throws NEXT_REDIRECT — must be called outside try/catch.
   redirect(`/school/students/${newStudent.id}`)
 }
@@ -234,6 +241,12 @@ export async function updateStudent(
       }) as UpdateStudentState['errors'],
     }
   }
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'student_updated', resourceType: 'student', resourceId: studentId,
+    metadata: { admission_number: parsed.data.admission_number, status: parsed.data.status },
+  })
 
   redirect(`/school/students/${studentId}`)
 }

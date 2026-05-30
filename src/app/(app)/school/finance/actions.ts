@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
+import { logAuditEvent } from '@/lib/audit'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ export async function createFeeItem(
     if (!year) return { errors: { _form: ['Année scolaire invalide.'] } }
   }
 
-  const { error } = await supabase.from('fee_items').insert({
+  const { data: feeItem, error } = await supabase.from('fee_items').insert({
     school_id:        schoolId,
     name:             parsed.data.name,
     description:      parsed.data.description ?? null,
@@ -142,8 +143,10 @@ export async function createFeeItem(
     academic_year_id: parsed.data.academic_year_id ?? null,
     is_active:        parsed.data.is_active,
   })
+    .select('id')
+    .single()
 
-  if (error) {
+  if (error || !feeItem) {
     return {
       errors: formatServerActionError(error, {
         action: 'createFeeItem',
@@ -154,6 +157,12 @@ export async function createFeeItem(
       }) as FeeItemState['errors'],
     }
   }
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'fee_item_created', resourceType: 'fee_item', resourceId: (feeItem as { id: string }).id,
+    metadata: { name: parsed.data.name, amount: parsed.data.amount, academic_year_id: parsed.data.academic_year_id ?? null },
+  })
 
   redirect('/school/finance/fees')
 }
@@ -320,6 +329,12 @@ export async function createInvoice(
     }
   }
 
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'invoice_created', resourceType: 'invoice', resourceId: invoiceId,
+    metadata: { invoice_number: invoiceNumber, student_id: String(studentId), total_amount: totalAmount, due_date: (dueDate && String(dueDate) !== '') ? String(dueDate) : null },
+  })
+
   redirect(`/school/finance/invoices/${invoiceId}`)
 }
 
@@ -425,6 +440,12 @@ export async function recordPayment(
     .eq('id', invoice_id)
     .eq('school_id', schoolId)
 
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'payment_recorded', resourceType: 'payment', resourceId: paymentId,
+    metadata: { receipt_number: receiptNumber, invoice_id, amount, payment_method, invoice_new_status: newStatus, student_id: inv.student_id },
+  })
+
   redirect(`/school/finance/payments/${paymentId}`)
 }
 
@@ -511,6 +532,13 @@ export async function createBulkInvoices(
 
   type RpcResult = { created_count: number; skipped_count: number }
   const result = rpcResult as RpcResult
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'bulk_invoices_created', resourceType: 'class', resourceId: String(classId),
+    metadata: { class_id: String(classId), title, created_count: result.created_count, skipped_count: result.skipped_count },
+  })
+
   const qs = new URLSearchParams({ created: String(result.created_count) })
   if (result.skipped_count > 0) qs.set('skipped', String(result.skipped_count))
 
@@ -594,6 +622,12 @@ export async function cancelInvoice(
       }) as CancelInvoiceState['errors'],
     }
   }
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'invoice_cancelled', resourceType: 'invoice', resourceId: invoice_id,
+    metadata: { previous_status: inv.status, cancellation_reason },
+  })
 
   redirect(`/school/finance/invoices/${invoice_id}`)
 }

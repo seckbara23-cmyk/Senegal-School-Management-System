@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect }     from 'next/navigation'
 import { z }            from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
+import { logAuditEvent } from '@/lib/audit'
 
 // Unique-constraint name → friendly field message (see migration 002).
 const TEACHER_CONSTRAINTS = {
@@ -58,7 +59,7 @@ async function resolveSchoolAdmin() {
     .maybeSingle()
 
   if (!membership) redirect('/school')
-  return { supabase, schoolId: (membership as { school_id: string }).school_id }
+  return { supabase, schoolId: (membership as { school_id: string }).school_id, actor: user }
 }
 
 // ─── createTeacher ────────────────────────────────────────────────────────────
@@ -67,7 +68,7 @@ export async function createTeacher(
   _prevState: TeacherFormState,
   formData: FormData,
 ): Promise<TeacherFormState> {
-  const { supabase, schoolId } = await resolveSchoolAdmin()
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
   const parsed = TeacherSchema.safeParse({
     first_name:      formData.get('first_name'),
@@ -107,7 +108,14 @@ export async function createTeacher(
     }
   }
 
-  redirect(`/school/teachers/${(teacher as { id: string }).id}`)
+  const teacherId = (teacher as { id: string }).id
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'teacher_created', resourceType: 'teacher', resourceId: teacherId,
+    metadata: { employee_number: parsed.data.employee_number, first_name: parsed.data.first_name, last_name: parsed.data.last_name },
+  })
+
+  redirect(`/school/teachers/${teacherId}`)
 }
 
 // ─── updateTeacher ────────────────────────────────────────────────────────────
@@ -116,7 +124,7 @@ export async function updateTeacher(
   _prevState: TeacherFormState,
   formData: FormData,
 ): Promise<TeacherFormState> {
-  const { supabase, schoolId } = await resolveSchoolAdmin()
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
   const teacherId = z.string().uuid().safeParse(formData.get('teacher_id'))
   if (!teacherId.success) {
@@ -159,17 +167,32 @@ export async function updateTeacher(
     }
   }
 
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'teacher_updated', resourceType: 'teacher', resourceId: teacherId.data,
+    metadata: { employee_number: parsed.data.employee_number },
+  })
+
   redirect(`/school/teachers/${teacherId.data}`)
 }
 
 // ─── setTeacherStatus ─────────────────────────────────────────────────────────
 
 export async function setTeacherStatus(formData: FormData) {
-  const { supabase, schoolId } = await resolveSchoolAdmin()
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
   const teacherId = z.string().uuid().safeParse(formData.get('teacher_id'))
   const newStatus = z.enum(['active', 'inactive']).safeParse(formData.get('new_status'))
   if (!teacherId.success || !newStatus.success) redirect('/school/teachers')
+
+  // Capture the previous status for the audit trail.
+  const { data: before } = await supabase
+    .from('teachers')
+    .select('status')
+    .eq('id', teacherId.data)
+    .eq('school_id', schoolId)
+    .maybeSingle()
+  const oldStatus = (before as { status: string } | null)?.status ?? null
 
   const { error } = await supabase
     .from('teachers')
@@ -181,6 +204,12 @@ export async function setTeacherStatus(formData: FormData) {
     logSupabaseError(error, { action: 'setTeacherStatus', schoolId, entityIds: { teacherId: teacherId.data, newStatus: newStatus.data } })
     redirect(`/school/teachers/${teacherId.data}?error=status`)
   }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'teacher_status_changed', resourceType: 'teacher', resourceId: teacherId.data,
+    metadata: { old_status: oldStatus, new_status: newStatus.data },
+  })
 
   redirect(`/school/teachers/${teacherId.data}`)
 }
