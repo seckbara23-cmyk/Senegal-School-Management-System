@@ -4,10 +4,11 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
+import { logAuditEvent } from '@/lib/audit'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async function getSchoolId(): Promise<string> {
+async function getSchoolId() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -21,7 +22,7 @@ async function getSchoolId(): Promise<string> {
     .maybeSingle()
 
   if (!membership) redirect('/school')
-  return (membership as { school_id: string }).school_id
+  return { schoolId: (membership as { school_id: string }).school_id, actor: user }
 }
 
 // ── Create subject ────────────────────────────────────────────────────────────
@@ -43,7 +44,7 @@ export async function createSubject(
   _prevState: CreateSubjectState,
   formData: FormData,
 ): Promise<CreateSubjectState> {
-  const schoolId = await getSchoolId()
+  const { schoolId, actor } = await getSchoolId()
 
   const parsed = SubjectSchema.safeParse({
     name:        formData.get('name'),
@@ -58,14 +59,16 @@ export async function createSubject(
   const { name, code, coefficient } = parsed.data
   const supabase = createClient()
 
-  const { error } = await supabase.from('subjects').insert({
+  const { data: subject, error } = await supabase.from('subjects').insert({
     school_id:   schoolId,
     name:        name.trim(),
     code:        code?.trim() || null,
     coefficient: coefficient ?? null,
   })
+    .select('id')
+    .single()
 
-  if (error) {
+  if (error || !subject) {
     return {
       errors: formatServerActionError(error, {
         action: 'createSubject',
@@ -79,6 +82,12 @@ export async function createSubject(
     }
   }
 
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'subject_created', resourceType: 'subject', resourceId: (subject as { id: string }).id,
+    metadata: { name: name.trim(), code: code?.trim() || null, coefficient: coefficient ?? null },
+  })
+
   redirect('/school/academics/subjects')
 }
 
@@ -90,7 +99,7 @@ const AssignSubjectSchema = z.object({
 })
 
 export async function assignSubjectToClass(formData: FormData): Promise<void> {
-  const schoolId = await getSchoolId()
+  const { schoolId, actor } = await getSchoolId()
 
   const parsed = AssignSubjectSchema.safeParse({
     class_id:   formData.get('class_id'),
@@ -112,18 +121,26 @@ export async function assignSubjectToClass(formData: FormData): Promise<void> {
 
   const academic_year_id = (classRes.data as { id: string; academic_year_id: string }).academic_year_id
 
-  const { error } = await supabase.from('class_subjects').insert({
+  const { data: newLink, error } = await supabase.from('class_subjects').insert({
     school_id:        schoolId,
     class_id,
     subject_id,
     academic_year_id,
   })
+    .select('id')
+    .single()
 
-  if (error) {
-    if (error.code === '23505') redirect('/school/academics/assignments?error=duplicate')
+  if (error || !newLink) {
+    if (error?.code === '23505') redirect('/school/academics/assignments?error=duplicate')
     logSupabaseError(error, { action: 'assignSubjectToClass', schoolId, entityIds: { class_id, subject_id } })
     redirect('/school/academics/assignments?error=server')
   }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'subject_assigned_to_class', resourceType: 'class_subject', resourceId: (newLink as { id: string }).id,
+    metadata: { class_id, subject_id, academic_year_id },
+  })
 
   redirect('/school/academics/assignments')
 }
@@ -136,7 +153,7 @@ const AssignTeacherSchema = z.object({
 })
 
 export async function assignTeacher(formData: FormData): Promise<void> {
-  const schoolId = await getSchoolId()
+  const { schoolId, actor } = await getSchoolId()
 
   const parsed = AssignTeacherSchema.safeParse({
     class_subject_id: formData.get('class_subject_id'),
@@ -190,6 +207,12 @@ export async function assignTeacher(formData: FormData): Promise<void> {
     redirect('/school/academics/assignments?error=server')
   }
 
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'teacher_assigned_to_subject', resourceType: 'class_subject', resourceId: class_subject_id,
+    metadata: { class_subject_id, teacher_id: teacher_id ?? null, unassigned: !teacher_id },
+  })
+
   redirect('/school/academics/assignments')
 }
 
@@ -200,7 +223,7 @@ const RemoveSubjectSchema = z.object({
 })
 
 export async function removeSubjectFromClass(formData: FormData): Promise<void> {
-  const schoolId = await getSchoolId()
+  const { schoolId, actor } = await getSchoolId()
 
   const parsed = RemoveSubjectSchema.safeParse({
     class_subject_id: formData.get('class_subject_id'),
@@ -220,6 +243,12 @@ export async function removeSubjectFromClass(formData: FormData): Promise<void> 
     logSupabaseError(error, { action: 'removeSubjectFromClass', schoolId, entityIds: { class_subject_id: parsed.data.class_subject_id } })
     redirect('/school/academics/assignments?error=server')
   }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'subject_removed_from_class', resourceType: 'class_subject', resourceId: parsed.data.class_subject_id,
+    metadata: { class_subject_id: parsed.data.class_subject_id },
+  })
 
   redirect('/school/academics/assignments')
 }
@@ -242,7 +271,7 @@ export async function createPeriod(
   _prevState: CreatePeriodState,
   formData: FormData,
 ): Promise<CreatePeriodState> {
-  const schoolId = await getSchoolId()
+  const { schoolId, actor } = await getSchoolId()
 
   const parsed = PeriodSchema.safeParse({
     academic_year_id: formData.get('academic_year_id'),
@@ -269,7 +298,7 @@ export async function createPeriod(
 
   if (!year) return { errors: { academic_year_id: ['Année scolaire invalide.'] } }
 
-  const { error } = await supabase.from('academic_periods').insert({
+  const { data: period, error } = await supabase.from('academic_periods').insert({
     school_id:        schoolId,
     academic_year_id,
     name:             name.trim(),
@@ -277,8 +306,10 @@ export async function createPeriod(
     ends_on:          ends_on   || null,
     is_active,
   })
+    .select('id')
+    .single()
 
-  if (error) {
+  if (error || !period) {
     return {
       errors: formatServerActionError(error, {
         action: 'createPeriod',
@@ -294,6 +325,12 @@ export async function createPeriod(
       }) as CreatePeriodState['errors'],
     }
   }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'academic_period_created', resourceType: 'academic_period', resourceId: (period as { id: string }).id,
+    metadata: { academic_year_id, name: name.trim(), starts_on: starts_on || null, ends_on: ends_on || null, is_active },
+  })
 
   redirect('/school/academics/periods')
 }
@@ -333,7 +370,7 @@ export async function createAssessment(
   _prevState: CreateAssessmentState,
   formData: FormData,
 ): Promise<CreateAssessmentState> {
-  const schoolId = await getSchoolId()
+  const { schoolId, actor } = await getSchoolId()
 
   const parsed = AssessmentSchema.safeParse({
     class_subject_id:   formData.get('class_subject_id'),
@@ -387,13 +424,19 @@ export async function createAssessment(
     }
   }
 
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'assessment_created', resourceType: 'assessment', resourceId: newAssessment.id,
+    metadata: { class_subject_id, academic_period_id, title: title.trim(), assessment_type, coefficient, max_score },
+  })
+
   redirect(`/school/academics/assessments/${newAssessment.id}`)
 }
 
 // ── Save grades ───────────────────────────────────────────────────────────────
 
 export async function saveGrades(formData: FormData): Promise<void> {
-  const schoolId = await getSchoolId()
+  const { schoolId, actor } = await getSchoolId()
 
   const assessmentId = z.string().uuid().safeParse(formData.get('assessment_id'))
   if (!assessmentId.success) redirect('/school/academics/assessments?error=invalid')
@@ -477,6 +520,12 @@ export async function saveGrades(formData: FormData): Promise<void> {
       .from('grades')
       .upsert(toUpsert, { onConflict: 'assessment_id,student_id' })
   }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'grades_saved', resourceType: 'assessment', resourceId: assessmentId.data,
+    metadata: { assessment_id: assessmentId.data, class_id: classId, saved_count: toUpsert.length, cleared_count: toDelete.length, changed_count: toUpsert.length + toDelete.length },
+  })
 
   redirect(`/school/academics/assessments/${assessmentId.data}?saved=1`)
 }

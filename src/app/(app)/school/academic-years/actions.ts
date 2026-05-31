@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect }     from 'next/navigation'
 import { z }            from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
+import { logAuditEvent } from '@/lib/audit'
 
 // Unique-constraint name → friendly field message (see migration 008).
 const ACADEMIC_YEAR_CONSTRAINTS = {
@@ -56,7 +57,7 @@ async function resolveSchoolAdmin() {
     .maybeSingle()
 
   if (!membership) redirect('/school')
-  return { supabase, schoolId: (membership as { school_id: string }).school_id }
+  return { supabase, schoolId: (membership as { school_id: string }).school_id, actor: user }
 }
 
 // ─── createAcademicYear ───────────────────────────────────────────────────────
@@ -65,7 +66,7 @@ export async function createAcademicYear(
   _prev: AcademicYearFormState,
   formData: FormData
 ): Promise<AcademicYearFormState> {
-  const { supabase, schoolId } = await resolveSchoolAdmin()
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
   const parsed = AcademicYearSchema.safeParse({
     name:      formData.get('name'),
@@ -108,7 +109,14 @@ export async function createAcademicYear(
     }
   }
 
-  redirect(`/school/academic-years/${(year as { id: string }).id}`)
+  const yearId = (year as { id: string }).id
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'academic_year_created', resourceType: 'academic_year', resourceId: yearId,
+    metadata: { name: parsed.data.name, starts_on: parsed.data.starts_on, ends_on: parsed.data.ends_on, is_active: parsed.data.is_active },
+  })
+
+  redirect(`/school/academic-years/${yearId}`)
 }
 
 // ─── updateAcademicYear ───────────────────────────────────────────────────────
@@ -117,7 +125,7 @@ export async function updateAcademicYear(
   _prev: AcademicYearFormState,
   formData: FormData
 ): Promise<AcademicYearFormState> {
-  const { supabase, schoolId } = await resolveSchoolAdmin()
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
   const yearId = z.string().uuid().safeParse(formData.get('year_id'))
   if (!yearId.success) {
@@ -165,13 +173,19 @@ export async function updateAcademicYear(
     }
   }
 
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'academic_year_updated', resourceType: 'academic_year', resourceId: yearId.data,
+    metadata: { name: parsed.data.name, starts_on: parsed.data.starts_on, ends_on: parsed.data.ends_on, is_active: parsed.data.is_active },
+  })
+
   redirect(`/school/academic-years/${yearId.data}`)
 }
 
 // ─── setYearActive ────────────────────────────────────────────────────────────
 
 export async function setYearActive(formData: FormData): Promise<void> {
-  const { supabase, schoolId } = await resolveSchoolAdmin()
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
   const yearId    = (formData.get('year_id')   as string | null)?.trim()
   const newActive = formData.get('is_active') === 'true'
@@ -195,6 +209,12 @@ export async function setYearActive(formData: FormData): Promise<void> {
     logSupabaseError(error, { action: 'setYearActive', schoolId, entityIds: { yearId, newActive } })
     redirect(`/school/academic-years/${yearId}?error=status`)
   }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'academic_year_status_changed', resourceType: 'academic_year', resourceId: yearId,
+    metadata: { is_active: newActive },
+  })
 
   redirect(`/school/academic-years/${yearId}`)
 }

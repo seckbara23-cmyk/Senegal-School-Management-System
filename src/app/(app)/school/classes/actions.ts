@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
+import { logAuditEvent } from '@/lib/audit'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -189,6 +190,12 @@ export async function createClass(
     }
   }
 
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'class_created', resourceType: 'class', resourceId: newClass.id,
+    metadata: { name: classParsed.data.name, academic_year_id: academicYearId, level: classParsed.data.level ?? null, section: classParsed.data.section ?? null },
+  })
+
   redirect(`/school/classes/${newClass.id}`)
 }
 
@@ -292,6 +299,12 @@ export async function enrollStudents(
     }
   }
 
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'students_enrolled', resourceType: 'class', resourceId: cls.id as string,
+    metadata: { class_id: cls.id, academic_year_id: cls.academic_year_id, student_ids: studentIds, count: studentIds.length },
+  })
+
   redirect(`/school/classes/${classId}`)
 }
 
@@ -333,6 +346,12 @@ export async function withdrawEnrollment(formData: FormData): Promise<void> {
     logSupabaseError(error, { action: 'withdrawEnrollment', schoolId, userId: user.id, entityIds: { enrollmentId, classId } })
     redirect(`/school/classes/${classId}?error=withdraw`)
   }
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'enrollment_withdrawn', resourceType: 'enrollment', resourceId: enrollmentId,
+    metadata: { enrollment_id: enrollmentId, class_id: classId },
+  })
 
   redirect(`/school/classes/${classId}`)
 }

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError } from '@/lib/errors'
+import { logAuditEvent } from '@/lib/audit'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -231,6 +232,12 @@ export async function createAnnouncement(
       }) as CreateAnnouncementState['errors'],
     }
   }
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'announcement_published', resourceType: 'announcement', resourceId: announcement.id as string,
+    metadata: { title, audience_type, class_id: audience_type === 'class' ? (class_id ?? null) : null },
+  })
 
   // Fan-out notifications (non-blocking)
   await dispatchNotifications(supabase, {
