@@ -60,6 +60,8 @@ export type Database = {
           email:               string | null
           address:             string | null
           subscription_status: string
+          subscription_plan:   string
+          trial_ends_at:       string | null
           created_at:          string
           updated_at:          string
         }
@@ -71,6 +73,8 @@ export type Database = {
           email?:               string | null
           address?:             string | null
           subscription_status?: string
+          subscription_plan?:   string
+          trial_ends_at?:       string | null
           created_at?:          string
           updated_at?:          string
         }
@@ -82,6 +86,8 @@ export type Database = {
           email?:               string | null
           address?:             string | null
           subscription_status?: string
+          subscription_plan?:   string
+          trial_ends_at?:       string | null
           created_at?:          string
           updated_at?:          string
         }

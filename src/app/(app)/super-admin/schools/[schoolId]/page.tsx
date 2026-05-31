@@ -15,6 +15,10 @@ const STATUS_LABEL: Record<string, string> = {
   active: 'Active', inactive: 'Inactive', suspended: 'Suspendue', archived: 'Archivée',
 }
 
+const PLAN_LABEL: Record<string, string> = {
+  starter: 'Starter', standard: 'Standard', premium: 'Premium',
+}
+
 const ERROR_MESSAGES: Record<string, string> = {
   last_admin: "Impossible : une école doit conserver au moins un administrateur actif.",
   status:     "Erreur lors de la mise à jour du statut. Veuillez réessayer.",
@@ -61,7 +65,7 @@ export default async function SuperAdminSchoolDetailPage({ params, searchParams 
 
   const { data: schoolData } = await supabase
     .from('schools')
-    .select('id, name, slug, address, phone, email, subscription_status, created_at')
+    .select('id, name, slug, address, phone, email, subscription_status, subscription_plan, trial_ends_at, created_at')
     .eq('id', params.schoolId)
     .maybeSingle()
 
@@ -69,7 +73,8 @@ export default async function SuperAdminSchoolDetailPage({ params, searchParams 
 
   type SchoolRow = {
     id: string; name: string; slug: string; address: string | null; phone: string | null
-    email: string | null; subscription_status: string; created_at: string
+    email: string | null; subscription_status: string; subscription_plan: string
+    trial_ends_at: string | null; created_at: string
   }
   const school = schoolData as SchoolRow
 
@@ -126,9 +131,18 @@ export default async function SuperAdminSchoolDetailPage({ params, searchParams 
           <h1 className="text-2xl font-bold text-gray-900">{school.name}</h1>
           <p className="mt-0.5 font-mono text-sm text-gray-500">{school.slug}</p>
         </div>
-        <span className={`inline-block rounded-full border px-3 py-1 text-sm font-semibold ${STATUS_BADGE[school.subscription_status] ?? STATUS_BADGE.inactive}`}>
-          {STATUS_LABEL[school.subscription_status] ?? school.subscription_status}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className={`inline-block rounded-full border px-3 py-1 text-sm font-semibold ${STATUS_BADGE[school.subscription_status] ?? STATUS_BADGE.inactive}`}>
+            {STATUS_LABEL[school.subscription_status] ?? school.subscription_status}
+          </span>
+          <Link
+            href={`/super-admin/schools/${school.id}/edit`}
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" /></svg>
+            Modifier
+          </Link>
+        </div>
       </div>
 
       {/* Error banner */}
@@ -152,6 +166,18 @@ export default async function SuperAdminSchoolDetailPage({ params, searchParams 
             {school.subscription_status === 'inactive' && 'Inactif.'}
           </p>
         </div>
+      </div>
+
+      {/* Subscription */}
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="border-b border-gray-100 bg-gray-50 px-5 py-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Abonnement</h2>
+        </div>
+        <dl className="divide-y divide-gray-100">
+          <Field label="Formule" value={PLAN_LABEL[school.subscription_plan] ?? school.subscription_plan} />
+          <Field label="Statut" value={STATUS_LABEL[school.subscription_status] ?? school.subscription_status} />
+          <Field label="Fin de période d'essai" value={school.trial_ends_at ? fmtDate(school.trial_ends_at) : null} />
+        </dl>
       </div>
 
       {/* Counts */}

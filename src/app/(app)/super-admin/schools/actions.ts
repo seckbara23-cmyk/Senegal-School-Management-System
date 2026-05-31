@@ -201,6 +201,142 @@ export async function createSchoolWithAdmin(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// SCHOOL PROFILE + SUBSCRIPTION EDITING
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Super-admin editing of a tenant's profile fields and subscription foundation
+// (plan + optional trial end date). subscription_STATUS is intentionally NOT
+// editable here — lifecycle transitions stay in the dedicated suspend /
+// reactivate / archive actions (with their last-admin safeguards and
+// per-transition audit events). Service-role writes only; school_id comes from
+// a hidden field and is never used for authorisation (super admins may edit any
+// school).
+
+export const SUBSCRIPTION_PLANS = ['starter', 'standard', 'premium'] as const
+
+const UpdateSchoolSchema = z.object({
+  school_id: z.string().uuid('École invalide.'),
+  name: z.string().min(2, "Le nom de l'école est requis (2 caractères min.).").max(200),
+  slug: z.string()
+    .min(2, 'Identifiant requis (2 caractères min.).')
+    .max(100, 'Identifiant trop long.')
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Identifiant invalide : lettres minuscules, chiffres et tirets uniquement.'),
+  address: z.preprocess((v) => (v === '' || v == null ? undefined : v),
+    z.string().max(300, 'Adresse trop longue.').optional()),
+  phone: z.preprocess((v) => (v === '' || v == null ? undefined : v),
+    z.string().max(30, 'Téléphone trop long.').optional()),
+  email: z.preprocess((v) => (v === '' || v == null ? undefined : v),
+    z.string().email("Email de l'école invalide.").max(200).optional()),
+  subscription_plan: z.preprocess((v) => (!v || v === '' ? 'starter' : v),
+    z.enum(SUBSCRIPTION_PLANS)),
+  trial_ends_at: z.preprocess((v) => (v === '' || v == null ? undefined : v),
+    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format de date invalide (AAAA-MM-JJ).').optional()),
+})
+
+export type EditSchoolState = {
+  errors?: {
+    name?: string[]; slug?: string[]; address?: string[]; phone?: string[]; email?: string[]
+    subscription_plan?: string[]; trial_ends_at?: string[]; _form?: string[]
+  }
+}
+
+export async function updateSchool(
+  _prevState: EditSchoolState,
+  formData: FormData,
+): Promise<EditSchoolState> {
+  const actor = await resolveSuperAdmin()
+  if (!actor) return { errors: { _form: ['Non autorisé.'] } }
+
+  const parsed = UpdateSchoolSchema.safeParse({
+    school_id:         formData.get('school_id'),
+    name:              formData.get('name'),
+    slug:              formData.get('slug'),
+    address:           formData.get('address'),
+    phone:             formData.get('phone'),
+    email:             formData.get('email'),
+    subscription_plan: formData.get('subscription_plan'),
+    trial_ends_at:     formData.get('trial_ends_at'),
+  })
+
+  if (!parsed.success) {
+    return { errors: parsed.error.flatten().fieldErrors as EditSchoolState['errors'] }
+  }
+
+  const d = parsed.data
+  const admin = createAdminClient()
+
+  // Snapshot the current values for change detection + audit metadata.
+  const { data: before } = await admin
+    .from('schools')
+    .select('name, slug, address, phone, email, subscription_plan, trial_ends_at')
+    .eq('id', d.school_id)
+    .maybeSingle()
+
+  if (!before) return { errors: { _form: ['École introuvable.'] } }
+  type SchoolSnapshot = {
+    name: string; slug: string; address: string | null; phone: string | null
+    email: string | null; subscription_plan: string; trial_ends_at: string | null
+  }
+  const prev = before as SchoolSnapshot
+
+  const next: SchoolSnapshot = {
+    name:              d.name.trim(),
+    slug:              d.slug.trim(),
+    address:           d.address ?? null,
+    phone:             d.phone ?? null,
+    email:             d.email ?? null,
+    subscription_plan: d.subscription_plan,
+    trial_ends_at:     d.trial_ends_at ?? null,
+  }
+
+  const { error } = await admin
+    .from('schools')
+    .update(next)
+    .eq('id', d.school_id)
+
+  if (error) {
+    if (error.code === '23505') {
+      return { errors: { slug: ['Cet identifiant est déjà utilisé par une autre école.'] } }
+    }
+    logSupabaseError(error, { action: 'updateSchool', userId: actor.id, entityIds: { schoolId: d.school_id } })
+    return { errors: { _form: ["Erreur lors de l'enregistrement. Veuillez réessayer."] } }
+  }
+
+  // ── Audit (best-effort) ──────────────────────────────────────────────────
+  // Profile change → school_updated; subscription change → school_subscription_updated.
+  const profileFields = ['name', 'slug', 'address', 'phone', 'email'] as const
+  const changedProfile = profileFields.filter((f) => prev[f] !== next[f])
+  const subChanged =
+    prev.subscription_plan !== next.subscription_plan ||
+    prev.trial_ends_at !== next.trial_ends_at
+
+  if (changedProfile.length > 0) {
+    const changes: Record<string, { old: unknown; new: unknown }> = {}
+    for (const f of changedProfile) changes[f] = { old: prev[f], new: next[f] }
+    await logAuditEvent(admin, {
+      actorId: actor.id, actorEmail: actor.email, schoolId: d.school_id,
+      action: 'school_updated', resourceType: 'school', resourceId: d.school_id,
+      metadata: { name: next.name, slug: next.slug, changes },
+    })
+  }
+
+  if (subChanged) {
+    await logAuditEvent(admin, {
+      actorId: actor.id, actorEmail: actor.email, schoolId: d.school_id,
+      action: 'school_subscription_updated', resourceType: 'school', resourceId: d.school_id,
+      metadata: {
+        old_plan:          prev.subscription_plan,
+        new_plan:          next.subscription_plan,
+        old_trial_ends_at: prev.trial_ends_at,
+        new_trial_ends_at: next.trial_ends_at,
+      },
+    })
+  }
+
+  redirect(`/super-admin/schools/${d.school_id}`)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // PART 1 — SCHOOL LIFECYCLE
 // ═══════════════════════════════════════════════════════════════════════════
 //

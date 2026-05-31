@@ -60,6 +60,8 @@ export const ACTION_LABELS: Record<string, string> = {
   password_reset_link_generated: 'Lien de réinitialisation généré',
   // Plateforme
   school_created:                'École créée',
+  school_updated:                'École modifiée',
+  school_subscription_updated:   'Abonnement modifié',
   school_admin_created:          'Administrateur d’école créé',
   school_suspended:              'École suspendue',
   school_reactivated:            'École réactivée',
@@ -83,7 +85,7 @@ export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Présences (admin)',    actions: ['admin_attendance_session_created', 'admin_attendance_records_saved'] },
   { label: 'Portail enseignant',   actions: ['teacher_attendance_session_created', 'teacher_attendance_records_saved', 'teacher_assessment_created', 'teacher_grades_saved'] },
   { label: 'Comptes & rôles',      actions: ['user_created', 'role_linked', 'role_unlinked', 'user_deactivated', 'user_reactivated', 'password_reset_link_generated'] },
-  { label: 'Plateforme',           actions: ['school_created', 'school_admin_created'] },
+  { label: 'Plateforme',           actions: ['school_created', 'school_updated', 'school_subscription_updated', 'school_admin_created'] },
   { label: 'Cycle de vie tenant',  actions: ['school_suspended', 'school_reactivated', 'school_archived'] },
   { label: 'Admins d’école',       actions: ['school_admin_added', 'school_admin_removed', 'school_admin_deactivated', 'school_admin_reactivated', 'school_admin_password_reset_generated'] },
 ]
