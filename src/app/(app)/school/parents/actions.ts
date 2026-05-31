@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -79,6 +80,10 @@ export async function createParent(
 ): Promise<CreateParentState> {
   const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
   const parsed = ParentSchema.safeParse({
     first_name:  formData.get('first_name'),
     last_name:   formData.get('last_name'),
@@ -142,6 +147,10 @@ export async function updateParent(
     return { errors: { _form: ['Identifiant parent invalide.'] } }
   }
 
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
   const parsed = ParentSchema.safeParse({
     first_name:  formData.get('first_name'),
     last_name:   formData.get('last_name'),
@@ -199,6 +208,10 @@ export async function setParentStatus(formData: FormData) {
   const newStatus = z.enum(['active', 'inactive']).safeParse(formData.get('new_status'))
   if (!parentId.success || !newStatus.success) redirect('/school/parents')
 
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(`/school/parents/${parentId.data}?error=readonly`)
+  }
+
   // Capture the previous status for the audit trail.
   const { data: before } = await supabase
     .from('parents')
@@ -252,6 +265,10 @@ export async function linkStudentsToParent(
 
   const schoolId = await getSchoolId(supabase, user.id)
   if (!schoolId) return { errors: { _form: ['Non autorisé.'] } }
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
 
   const parentId        = (formData.get('parent_id') as string | null)?.trim() ?? ''
   const relationship    = sanitiseRelationship(formData.get('relationship'))
@@ -335,6 +352,10 @@ export async function unlinkStudent(formData: FormData): Promise<void> {
   const linkId   = (formData.get('link_id')   as string | null)?.trim()
   const parentId = (formData.get('parent_id') as string | null)?.trim()
   if (!linkId) return
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(parentId ? `/school/parents/${parentId}?error=readonly` : '/school/parents?error=readonly')
+  }
 
   const { error } = await supabase
     .from('parent_student_links')

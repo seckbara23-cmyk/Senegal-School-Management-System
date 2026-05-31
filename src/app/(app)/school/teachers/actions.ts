@@ -5,6 +5,7 @@ import { redirect }     from 'next/navigation'
 import { z }            from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 
 // Unique-constraint name → friendly field message (see migration 002).
 const TEACHER_CONSTRAINTS = {
@@ -70,6 +71,10 @@ export async function createTeacher(
 ): Promise<TeacherFormState> {
   const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
   const parsed = TeacherSchema.safeParse({
     first_name:      formData.get('first_name'),
     last_name:       formData.get('last_name'),
@@ -131,6 +136,10 @@ export async function updateTeacher(
     return { errors: { _form: ['Identifiant enseignant invalide.'] } }
   }
 
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
   const parsed = TeacherSchema.safeParse({
     first_name:      formData.get('first_name'),
     last_name:       formData.get('last_name'),
@@ -184,6 +193,10 @@ export async function setTeacherStatus(formData: FormData) {
   const teacherId = z.string().uuid().safeParse(formData.get('teacher_id'))
   const newStatus = z.enum(['active', 'inactive']).safeParse(formData.get('new_status'))
   if (!teacherId.success || !newStatus.success) redirect('/school/teachers')
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(`/school/teachers/${teacherId.data}?error=readonly`)
+  }
 
   // Capture the previous status for the audit trail.
   const { data: before } = await supabase

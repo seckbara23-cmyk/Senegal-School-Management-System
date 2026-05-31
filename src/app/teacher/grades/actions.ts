@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { logAuditEvent } from '@/lib/audit'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 
 // Resolve teacher context for server actions — never reads teacher_id from
 // form data; always resolves via auth.uid() → school_memberships → teachers.
@@ -73,6 +74,10 @@ export async function createTeacherAssessment(
   formData: FormData,
 ): Promise<CreateTeacherAssessmentState> {
   const { supabase, userId, userEmail, schoolId, teacherId } = await resolveTeacher()
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
 
   const parsed = AssessmentSchema.safeParse({
     class_subject_id:   formData.get('class_subject_id'),
@@ -150,6 +155,10 @@ export async function createTeacherAssessment(
 //   3. valid student IDs are whitelisted through student_class_enrollments
 export async function saveTeacherGrades(formData: FormData): Promise<void> {
   const { supabase, userId, userEmail, schoolId, teacherId } = await resolveTeacher()
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect('/teacher/grades?error=readonly')
+  }
 
   const assessmentId = z.string().uuid().safeParse(formData.get('assessment_id'))
   if (!assessmentId.success) redirect('/teacher/grades?error=invalid')

@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -80,6 +81,10 @@ export async function createClass(
   }
 
   const schoolId = memberships[0].school_id as string
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
 
   // ── Resolve academic year ──────────────────────────────────────────────────
   const rawYearId = (formData.get('academic_year_id') as string | null)?.trim()
@@ -233,6 +238,10 @@ export async function enrollStudents(
 
   const schoolId = memberships[0].school_id as string
 
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
   // Verify class belongs to this school — classId from form is NOT trusted for auth,
   // only for query lookup combined with the server-side schoolId.
   const classId = (formData.get('classId') as string | null)?.trim()
@@ -333,6 +342,10 @@ export async function withdrawEnrollment(formData: FormData): Promise<void> {
   const classId      = (formData.get('classId')      as string | null)?.trim()
 
   if (!enrollmentId || !classId) return
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(`/school/classes/${classId}?error=readonly`)
+  }
 
   // Update WHERE id = enrollmentId AND school_id = schoolId — prevents
   // withdrawing enrollments that belong to a different school.

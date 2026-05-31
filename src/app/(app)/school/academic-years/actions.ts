@@ -5,6 +5,7 @@ import { redirect }     from 'next/navigation'
 import { z }            from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 
 // Unique-constraint name → friendly field message (see migration 008).
 const ACADEMIC_YEAR_CONSTRAINTS = {
@@ -67,6 +68,10 @@ export async function createAcademicYear(
   formData: FormData
 ): Promise<AcademicYearFormState> {
   const { supabase, schoolId, actor } = await resolveSchoolAdmin()
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
 
   const parsed = AcademicYearSchema.safeParse({
     name:      formData.get('name'),
@@ -132,6 +137,10 @@ export async function updateAcademicYear(
     return { errors: { _form: ['Identifiant invalide.'] } }
   }
 
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
   const parsed = AcademicYearSchema.safeParse({
     name:      formData.get('name'),
     starts_on: formData.get('starts_on'),
@@ -190,6 +199,10 @@ export async function setYearActive(formData: FormData): Promise<void> {
   const yearId    = (formData.get('year_id')   as string | null)?.trim()
   const newActive = formData.get('is_active') === 'true'
   if (!yearId) return
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(`/school/academic-years/${yearId}?error=readonly`)
+  }
 
   if (newActive && formData.get('deactivate_others') === 'on') {
     await supabase

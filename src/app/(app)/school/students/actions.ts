@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 
 // Unique-constraint name → friendly field message (see migration 002).
 const STUDENT_CONSTRAINTS = {
@@ -92,6 +93,10 @@ export async function createStudent(
   }
 
   const schoolId = memberships[0].school_id as string
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
 
   // ── Input validation ───────────────────────────────────────────────────────
   const parsed = StudentSchema.safeParse({
@@ -196,6 +201,10 @@ export async function updateStudent(
   // reach a student from another school.
   const studentId = (formData.get('studentId') as string | null)?.trim()
   if (!studentId) return { errors: { _form: ['Identifiant élève manquant.'] } }
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
 
   // ── Input validation ───────────────────────────────────────────────────────
   const parsed = StudentSchema.safeParse({

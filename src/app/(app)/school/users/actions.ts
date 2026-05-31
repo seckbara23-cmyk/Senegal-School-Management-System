@@ -6,6 +6,7 @@ import { redirect }          from 'next/navigation'
 import { z }                 from 'zod'
 import { logSupabaseError }  from '@/lib/errors'
 import { logAuditEvent }     from '@/lib/audit'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 
 // ─── Valid roles ───────────────────────────────────────────────────────────────
 
@@ -105,6 +106,10 @@ export async function createSchoolUser(
   formData: FormData,
 ): Promise<CreateSchoolUserState> {
   const { supabase, schoolId, actor } = await resolveSchoolAdmin()
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
 
   const parsed = CreateUserSchema.safeParse({
     email:     formData.get('email'),
@@ -222,6 +227,10 @@ export async function setMembershipStatus(formData: FormData) {
   const newStatus = z.enum(['active', 'inactive']).safeParse(formData.get('new_status'))
   if (!userId.success || !newStatus.success) redirect('/school/users')
 
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(`/school/users/${userId.data}?error=readonly`)
+  }
+
   const { error: statusError } = await supabase
     .from('school_memberships')
     .update({ status: newStatus.data })
@@ -263,6 +272,10 @@ export async function linkEntityToUser(formData: FormData) {
   const entityId = z.string().uuid().safeParse(formData.get('entity_id'))
   const role     = z.enum(['teacher', 'parent', 'student']).safeParse(formData.get('role'))
   if (!userId.success || !entityId.success || !role.success) redirect('/school/users')
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(`/school/users/${userId.data}?error=readonly`)
+  }
 
   const table = entityTable(role.data)!
 
@@ -317,6 +330,10 @@ export async function unlinkEntityFromUser(formData: FormData) {
   const userId = z.string().uuid().safeParse(formData.get('user_id'))
   const role   = z.enum(['teacher', 'parent', 'student']).safeParse(formData.get('role'))
   if (!userId.success || !role.success) redirect('/school/users')
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(`/school/users/${userId.data}?error=readonly`)
+  }
 
   const table = entityTable(role.data)!
 

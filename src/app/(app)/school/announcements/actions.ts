@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -175,6 +176,10 @@ export async function createAnnouncement(
 
   const schoolId = await getSchoolId(supabase, user.id)
   if (!schoolId) return { errors: { _form: ['Non autorisé.'] } }
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
 
   const parsed = AnnouncementSchema.safeParse({
     title:         formData.get('title'),

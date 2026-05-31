@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -77,6 +78,10 @@ export async function createAttendanceSession(
   }
 
   const schoolId = memberships[0].school_id as string
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
 
   // ── Validate inputs ────────────────────────────────────────────────────────
   const parsed = AttendanceSessionSchema.safeParse({

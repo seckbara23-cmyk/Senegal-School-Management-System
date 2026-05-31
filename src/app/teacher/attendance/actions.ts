@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { logAuditEvent } from '@/lib/audit'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -87,6 +88,10 @@ export async function createTeacherAttendanceSession(
   if (!ctx) return { errors: { _form: ['Non autorisé.'] } }
 
   const { supabase, userId, userEmail, schoolId, teacherId } = ctx
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
 
   const parsed = AttendanceSessionSchema.safeParse({
     class_id:     formData.get('class_id'),

@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,10 @@ export async function createSubject(
   const { name, code, coefficient } = parsed.data
   const supabase = createClient()
 
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
   const { data: subject, error } = await supabase.from('subjects').insert({
     school_id:   schoolId,
     name:        name.trim(),
@@ -110,6 +115,10 @@ export async function assignSubjectToClass(formData: FormData): Promise<void> {
 
   const { class_id, subject_id } = parsed.data
   const supabase = createClient()
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect('/school/academics/assignments?error=readonly')
+  }
 
   // Verify class belongs to this school and get its academic_year_id
   const [classRes, subjectRes] = await Promise.all([
@@ -164,6 +173,10 @@ export async function assignTeacher(formData: FormData): Promise<void> {
 
   const { class_subject_id, teacher_id } = parsed.data
   const supabase = createClient()
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect('/school/academics/assignments?error=readonly')
+  }
 
   // Verify class_subject belongs to this school
   const { data: cs } = await supabase
@@ -233,6 +246,10 @@ export async function removeSubjectFromClass(formData: FormData): Promise<void> 
 
   const supabase = createClient()
 
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect('/school/academics/assignments?error=readonly')
+  }
+
   const { error } = await supabase
     .from('class_subjects')
     .delete()
@@ -287,6 +304,10 @@ export async function createPeriod(
 
   const { academic_year_id, name, starts_on, ends_on, is_active } = parsed.data
   const supabase = createClient()
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
 
   // Verify academic_year belongs to this school
   const { data: year } = await supabase
@@ -389,6 +410,10 @@ export async function createAssessment(
   const { class_subject_id, academic_period_id, title, assessment_type, coefficient, max_score, assessment_date } = parsed.data
   const supabase = createClient()
 
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
   // Verify class_subject and period both belong to this school
   const [csRes, periodRes] = await Promise.all([
     supabase.from('class_subjects').select('id').eq('id', class_subject_id).eq('school_id', schoolId).maybeSingle(),
@@ -442,6 +467,10 @@ export async function saveGrades(formData: FormData): Promise<void> {
   if (!assessmentId.success) redirect('/school/academics/assessments?error=invalid')
 
   const supabase = createClient()
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect('/school/academics/assessments?error=readonly')
+  }
 
   // Verify assessment belongs to school; get max_score and class_id
   const { data: assessment } = await supabase

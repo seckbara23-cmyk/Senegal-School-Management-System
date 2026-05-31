@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -110,6 +111,10 @@ export async function createFeeItem(
   const schoolId = await getSchoolId(supabase, user.id)
   if (!schoolId) return { errors: { _form: ['Non autorisé.'] } }
 
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
   const parsed = FeeItemSchema.safeParse({
     name:             formData.get('name'),
     description:      formData.get('description'),
@@ -179,6 +184,10 @@ export async function createInvoice(
 
   const schoolId = await getSchoolId(supabase, user.id)
   if (!schoolId) return { errors: { _form: ['Non autorisé.'] } }
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
 
   const studentId       = formData.get('student_id')
   const title           = formData.get('title')
@@ -351,6 +360,10 @@ export async function recordPayment(
   const schoolId = await getSchoolId(supabase, user.id)
   if (!schoolId) return { errors: { _form: ['Non autorisé.'] } }
 
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
   const parsed = PaymentSchema.safeParse({
     invoice_id:     formData.get('invoice_id'),
     amount:         formData.get('amount'),
@@ -462,6 +475,10 @@ export async function createBulkInvoices(
   const schoolId = await getSchoolId(supabase, user.id)
   if (!schoolId) return { errors: { _form: ['Non autorisé.'] } }
 
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
   const classId = formData.get('class_id')
   if (!classId || String(classId).trim() === '') {
     return { errors: { class_id: ['Sélectionnez une classe.'] } }
@@ -569,6 +586,10 @@ export async function cancelInvoice(
 
   const schoolId = await getSchoolId(supabase, user.id)
   if (!schoolId) return { errors: { _form: ['Non autorisé.'] } }
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
 
   const parsed = CancelSchema.safeParse({
     invoice_id:          formData.get('invoice_id'),
