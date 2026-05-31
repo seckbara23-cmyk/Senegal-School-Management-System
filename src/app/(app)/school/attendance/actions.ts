@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
+import { logAuditEvent } from '@/lib/audit'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -196,6 +197,17 @@ export async function createAttendanceSession(
       },
     }
   }
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'admin_attendance_session_created', resourceType: 'attendance_session', resourceId: session.id as string,
+    metadata: { class_id, session_date },
+  })
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'admin_attendance_records_saved', resourceType: 'attendance_session', resourceId: session.id as string,
+    metadata: { class_id, session_id: session.id, changed_count: records.length },
+  })
 
   redirect(`/school/attendance/${session.id}`)
 }

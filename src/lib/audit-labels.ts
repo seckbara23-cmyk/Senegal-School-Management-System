@@ -43,6 +43,9 @@ export const ACTION_LABELS: Record<string, string> = {
   parent_status_changed:         'Statut parent modifié',
   parent_student_linked:         'Parent lié à un élève',
   parent_student_unlinked:       'Parent délié d’un élève',
+  // Présences (administration)
+  admin_attendance_session_created: 'Séance de présence créée (admin)',
+  admin_attendance_records_saved:   'Présences enregistrées (admin)',
   // Portail enseignant
   teacher_attendance_session_created: 'Séance de présence créée',
   teacher_attendance_records_saved:   'Présences enregistrées',
@@ -69,6 +72,7 @@ export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Structure académique', actions: ['subject_created', 'subject_assigned_to_class', 'subject_removed_from_class', 'teacher_assigned_to_subject', 'academic_period_created', 'assessment_created', 'grades_saved'] },
   { label: 'Annonces',             actions: ['announcement_published'] },
   { label: 'Personnes',            actions: ['student_created', 'student_updated', 'teacher_created', 'teacher_updated', 'teacher_status_changed', 'parent_created', 'parent_updated', 'parent_status_changed', 'parent_student_linked', 'parent_student_unlinked'] },
+  { label: 'Présences (admin)',    actions: ['admin_attendance_session_created', 'admin_attendance_records_saved'] },
   { label: 'Portail enseignant',   actions: ['teacher_attendance_session_created', 'teacher_attendance_records_saved', 'teacher_assessment_created', 'teacher_grades_saved'] },
   { label: 'Comptes & rôles',      actions: ['user_created', 'role_linked', 'role_unlinked', 'user_deactivated', 'user_reactivated', 'password_reset_link_generated'] },
   { label: 'Plateforme',           actions: ['school_created', 'school_admin_created'] },
