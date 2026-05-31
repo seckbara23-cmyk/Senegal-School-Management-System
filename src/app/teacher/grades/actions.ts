@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { logAuditEvent } from '@/lib/audit'
 
 // Resolve teacher context for server actions — never reads teacher_id from
 // form data; always resolves via auth.uid() → school_memberships → teachers.
@@ -33,7 +34,7 @@ async function resolveTeacher() {
 
   if (!teacher) redirect('/dashboard')
 
-  return { supabase, schoolId, teacherId: (teacher as { id: string }).id }
+  return { supabase, userId: user.id, userEmail: user.email ?? null, schoolId, teacherId: (teacher as { id: string }).id }
 }
 
 // ─── Assessment creation ──────────────────────────────────────────────────────
@@ -71,7 +72,7 @@ export async function createTeacherAssessment(
   _prevState: CreateTeacherAssessmentState,
   formData: FormData,
 ): Promise<CreateTeacherAssessmentState> {
-  const { supabase, schoolId, teacherId } = await resolveTeacher()
+  const { supabase, userId, userEmail, schoolId, teacherId } = await resolveTeacher()
 
   const parsed = AssessmentSchema.safeParse({
     class_subject_id:   formData.get('class_subject_id'),
@@ -133,6 +134,12 @@ export async function createTeacherAssessment(
     return { errors: { _form: ["Erreur lors de la création de l'évaluation. Veuillez réessayer."] } }
   }
 
+  await logAuditEvent(supabase, {
+    actorId: userId, actorEmail: userEmail, schoolId,
+    action: 'teacher_assessment_created', resourceType: 'assessment', resourceId: (newAssessment as { id: string }).id,
+    metadata: { teacher_id: teacherId, class_subject_id, academic_period_id, title: title.trim(), assessment_type, coefficient, max_score },
+  })
+
   redirect(`/teacher/grades/${(newAssessment as { id: string }).id}`)
 }
 
@@ -142,7 +149,7 @@ export async function createTeacherAssessment(
 //   2. assessment ownership is verified via teacher_subject_assignments
 //   3. valid student IDs are whitelisted through student_class_enrollments
 export async function saveTeacherGrades(formData: FormData): Promise<void> {
-  const { supabase, schoolId, teacherId } = await resolveTeacher()
+  const { supabase, userId, userEmail, schoolId, teacherId } = await resolveTeacher()
 
   const assessmentId = z.string().uuid().safeParse(formData.get('assessment_id'))
   if (!assessmentId.success) redirect('/teacher/grades?error=invalid')
@@ -241,6 +248,12 @@ export async function saveTeacherGrades(formData: FormData): Promise<void> {
       .from('grades')
       .upsert(toUpsert, { onConflict: 'assessment_id,student_id' })
   }
+
+  await logAuditEvent(supabase, {
+    actorId: userId, actorEmail: userEmail, schoolId,
+    action: 'teacher_grades_saved', resourceType: 'assessment', resourceId: assessmentId.data,
+    metadata: { teacher_id: teacherId, class_id: classId, assessment_id: assessmentId.data, saved_count: toUpsert.length, cleared_count: toDelete.length, changed_count: toUpsert.length + toDelete.length },
+  })
 
   redirect(`/teacher/grades/${assessmentId.data}?saved=1`)
 }

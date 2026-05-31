@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect }          from 'next/navigation'
 import { z }                 from 'zod'
 import { logSupabaseError }  from '@/lib/errors'
+import { logAuditEvent }     from '@/lib/audit'
 
 // ─── Valid roles ───────────────────────────────────────────────────────────────
 
@@ -47,6 +48,8 @@ async function resolveSchoolAdmin() {
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
+// Best-effort: delegates to the shared logAuditEvent helper, which never throws
+// and never blocks the user flow. All user-lifecycle events are resource_type 'user'.
 async function logAudit(
   adminClient: AdminClient,
   actorId: string,
@@ -56,14 +59,14 @@ async function logAudit(
   schoolId: string,
   metadata: Record<string, unknown>,
 ) {
-  await adminClient.rpc('log_audit_event', {
-    p_actor_id:      actorId,
-    p_actor_email:   actorEmail,
-    p_action:        action,
-    p_resource_type: 'user',
-    p_resource_id:   resourceId,
-    p_school_id:     schoolId,
-    p_metadata:      metadata,
+  await logAuditEvent(adminClient, {
+    actorId,
+    actorEmail,
+    action,
+    resourceType: 'user',
+    resourceId,
+    schoolId,
+    metadata,
   })
 }
 

@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { headers }           from 'next/headers'
 import { z }                 from 'zod'
 import { logSupabaseError }  from '@/lib/errors'
+import { logAuditEvent }     from '@/lib/audit'
 
 // ─── Super-admin guard ─────────────────────────────────────────────────────────
 // Returns the authenticated super_admin actor, or null when not authorised.
@@ -164,16 +165,16 @@ export async function createSchoolWithAdmin(
     return { errors: { _form: ["Erreur lors de l'attribution du rôle administrateur. Veuillez réessayer."] } }
   }
 
-  // ── Step 5: audit events ────────────────────────────────────────────────────
-  await admin.rpc('log_audit_event', {
-    p_actor_id: actor.id, p_actor_email: actor.email,
-    p_action: 'school_created', p_resource_type: 'school', p_resource_id: schoolId,
-    p_school_id: schoolId, p_metadata: { name: d.name, slug: d.slug },
+  // ── Step 5: audit events (best-effort via shared helper) ────────────────────
+  await logAuditEvent(admin, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'school_created', resourceType: 'school', resourceId: schoolId,
+    metadata: { name: d.name, slug: d.slug },
   })
-  await admin.rpc('log_audit_event', {
-    p_actor_id: actor.id, p_actor_email: actor.email,
-    p_action: 'school_admin_created', p_resource_type: 'user', p_resource_id: newUserId,
-    p_school_id: schoolId, p_metadata: { admin_email: d.admin_email, role: 'school_admin' },
+  await logAuditEvent(admin, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'school_admin_created', resourceType: 'user', resourceId: newUserId,
+    metadata: { admin_email: d.admin_email, role: 'school_admin' },
   })
 
   // ── Step 6: build login URL + best-effort recovery link ─────────────────────

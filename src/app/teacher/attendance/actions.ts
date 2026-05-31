@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { logAuditEvent } from '@/lib/audit'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -62,7 +63,7 @@ async function resolveTeacher() {
 
   if (!teacher) return null
 
-  return { supabase, userId: user.id, schoolId, teacherId: (teacher as { id: string }).id }
+  return { supabase, userId: user.id, userEmail: user.email ?? null, schoolId, teacherId: (teacher as { id: string }).id }
 }
 
 // ─── State type ───────────────────────────────────────────────────────────────
@@ -85,7 +86,7 @@ export async function createTeacherAttendanceSession(
   const ctx = await resolveTeacher()
   if (!ctx) return { errors: { _form: ['Non autorisé.'] } }
 
-  const { supabase, userId, schoolId, teacherId } = ctx
+  const { supabase, userId, userEmail, schoolId, teacherId } = ctx
 
   const parsed = AttendanceSessionSchema.safeParse({
     class_id:     formData.get('class_id'),
@@ -212,6 +213,17 @@ export async function createTeacherAttendanceSession(
       },
     }
   }
+
+  await logAuditEvent(supabase, {
+    actorId: userId, actorEmail: userEmail, schoolId,
+    action: 'teacher_attendance_session_created', resourceType: 'attendance_session', resourceId: session.id as string,
+    metadata: { teacher_id: teacherId, class_id, session_date },
+  })
+  await logAuditEvent(supabase, {
+    actorId: userId, actorEmail: userEmail, schoolId,
+    action: 'teacher_attendance_records_saved', resourceType: 'attendance_session', resourceId: session.id as string,
+    metadata: { teacher_id: teacherId, class_id, session_id: session.id, changed_count: records.length },
+  })
 
   redirect(`/teacher/attendance/${session.id}`)
 }
