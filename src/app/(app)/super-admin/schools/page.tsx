@@ -5,11 +5,12 @@ import Link from 'next/link'
 const STATUS_BADGE: Record<string, string> = {
   active:    'bg-emerald-50 text-emerald-700 border-emerald-200',
   inactive:  'bg-gray-100 text-gray-600 border-gray-200',
-  suspended: 'bg-red-50 text-red-700 border-red-200',
+  suspended: 'bg-amber-50 text-amber-700 border-amber-200',
+  archived:  'bg-gray-100 text-gray-500 border-gray-200',
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  active: 'Active', inactive: 'Inactive', suspended: 'Suspendue',
+  active: 'Active', inactive: 'Inactive', suspended: 'Suspendue', archived: 'Archivée',
 }
 
 function fmtDate(iso: string | null): string {
@@ -17,7 +18,11 @@ function fmtDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-export default async function SuperAdminSchoolsPage() {
+export default async function SuperAdminSchoolsPage({
+  searchParams,
+}: {
+  searchParams: { [key: string]: string | string[] | undefined }
+}) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -26,10 +31,26 @@ export default async function SuperAdminSchoolsPage() {
     .from('profiles').select('global_role').eq('id', user.id).maybeSingle()
   if ((profile as { global_role: string } | null)?.global_role !== 'super_admin') redirect('/dashboard')
 
-  const { data: schools } = await supabase
+  // Archived schools are hidden from the active list by default; an explicit
+  // ?view=archived toggle reveals them so they stay reachable.
+  const showArchived = searchParams.view === 'archived'
+
+  let query = supabase
     .from('schools')
     .select('id, name, slug, email, subscription_status, created_at')
     .order('created_at', { ascending: false })
+
+  query = showArchived
+    ? query.eq('subscription_status', 'archived')
+    : query.neq('subscription_status', 'archived')
+
+  const { data: schools } = await query
+
+  // Count archived (for the toggle label) — head-only, cheap.
+  const { count: archivedCount } = await supabase
+    .from('schools')
+    .select('id', { count: 'exact', head: true })
+    .eq('subscription_status', 'archived')
 
   type SchoolRow = {
     id: string; name: string; slug: string; email: string | null
@@ -47,16 +68,29 @@ export default async function SuperAdminSchoolsPage() {
             <span className="mx-2">/</span>
             <span className="font-medium text-gray-900">Écoles</span>
           </nav>
-          <h1 className="text-2xl font-bold text-gray-900">Écoles</h1>
-          <p className="mt-0.5 text-sm text-gray-500">{rows.length} établissement{rows.length !== 1 ? 's' : ''} sur la plateforme</p>
+          <h1 className="text-2xl font-bold text-gray-900">{showArchived ? 'Écoles archivées' : 'Écoles'}</h1>
+          <p className="mt-0.5 text-sm text-gray-500">{rows.length} établissement{rows.length !== 1 ? 's' : ''} {showArchived ? 'archivé' + (rows.length !== 1 ? 's' : '') : 'actif' + (rows.length !== 1 ? 's' : '')}</p>
         </div>
-        <Link
-          href="/super-admin/schools/new"
-          className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-          Nouvelle école
-        </Link>
+        <div className="flex items-center gap-2">
+          {showArchived ? (
+            <Link href="/super-admin/schools" className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+              ← Écoles actives
+            </Link>
+          ) : (
+            (archivedCount ?? 0) > 0 && (
+              <Link href="/super-admin/schools?view=archived" className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+                Archives ({archivedCount})
+              </Link>
+            )
+          )}
+          <Link
+            href="/super-admin/schools/new"
+            className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+            Nouvelle école
+          </Link>
+        </div>
       </div>
 
       {/* List */}

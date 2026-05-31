@@ -22,6 +22,7 @@ export default async function SuperAdminPage() {
   const { data: schools, error: schoolsError } = await supabase
     .from('schools')
     .select('id, name, slug, email, subscription_status, created_at')
+    .neq('subscription_status', 'archived')
     .order('created_at', { ascending: false })
 
   return (

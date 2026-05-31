@@ -1,19 +1,34 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
+import { SchoolLifecycle } from './_lifecycle'
+import { SchoolAdmins, type AdminView } from './_admins'
 
 const STATUS_BADGE: Record<string, string> = {
   active:    'bg-emerald-50 text-emerald-700 border-emerald-200',
   inactive:  'bg-gray-100 text-gray-600 border-gray-200',
-  suspended: 'bg-red-50 text-red-700 border-red-200',
+  suspended: 'bg-amber-50 text-amber-700 border-amber-200',
+  archived:  'bg-gray-100 text-gray-500 border-gray-200',
 }
 const STATUS_LABEL: Record<string, string> = {
-  active: 'Active', inactive: 'Inactive', suspended: 'Suspendue',
+  active: 'Active', inactive: 'Inactive', suspended: 'Suspendue', archived: 'Archivée',
+}
+
+const ERROR_MESSAGES: Record<string, string> = {
+  last_admin: "Impossible : une école doit conserver au moins un administrateur actif.",
+  status:     "Erreur lors de la mise à jour du statut. Veuillez réessayer.",
+  remove:     "Erreur lors du retrait de l'administrateur. Veuillez réessayer.",
 }
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+function fmtDateTime(iso: string | null | undefined): string {
+  if (!iso) return 'Jamais'
+  return new Date(iso).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 function Field({ label, value, mono = false }: { label: string; value: string | null; mono?: boolean }) {
@@ -27,9 +42,12 @@ function Field({ label, value, mono = false }: { label: string; value: string | 
   )
 }
 
-type Props = { params: { schoolId: string } }
+type Props = {
+  params: { schoolId: string }
+  searchParams: { [key: string]: string | string[] | undefined }
+}
 
-export default async function SuperAdminSchoolDetailPage({ params }: Props) {
+export default async function SuperAdminSchoolDetailPage({ params, searchParams }: Props) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -37,6 +55,9 @@ export default async function SuperAdminSchoolDetailPage({ params }: Props) {
   const { data: profile } = await supabase
     .from('profiles').select('global_role').eq('id', user.id).maybeSingle()
   if ((profile as { global_role: string } | null)?.global_role !== 'super_admin') redirect('/dashboard')
+
+  const errorKey = typeof searchParams.error === 'string' ? searchParams.error : ''
+  const errorMessage = ERROR_MESSAGES[errorKey] ?? ''
 
   const { data: schoolData } = await supabase
     .from('schools')
@@ -68,6 +89,27 @@ export default async function SuperAdminSchoolDetailPage({ params }: Props) {
   const studentCount = studentCountRes.count ?? 0
   const teacherCount = teacherCountRes.count ?? 0
 
+  // Enrich each admin with last sign-in time via the Admin API (best-effort).
+  const adminClient = createAdminClient()
+  const adminViews: AdminView[] = await Promise.all(
+    admins.map(async (a): Promise<AdminView> => {
+      let lastLogin = '—'
+      try {
+        const { data } = await adminClient.auth.admin.getUserById(a.user_id)
+        lastLogin = fmtDateTime(data.user?.last_sign_in_at)
+      } catch {
+        // best-effort: leave as '—'
+      }
+      return {
+        userId:    a.user_id,
+        fullName:  a.profiles?.full_name ?? null,
+        email:     a.profiles?.email ?? null,
+        status:    a.status,
+        lastLogin,
+      }
+    })
+  )
+
   return (
     <div className="space-y-6">
       {/* Breadcrumb + header */}
@@ -87,6 +129,29 @@ export default async function SuperAdminSchoolDetailPage({ params }: Props) {
         <span className={`inline-block rounded-full border px-3 py-1 text-sm font-semibold ${STATUS_BADGE[school.subscription_status] ?? STATUS_BADGE.inactive}`}>
           {STATUS_LABEL[school.subscription_status] ?? school.subscription_status}
         </span>
+      </div>
+
+      {/* Error banner */}
+      {errorMessage && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+          <p className="text-sm text-red-700">{errorMessage}</p>
+        </div>
+      )}
+
+      {/* Lifecycle controls */}
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="border-b border-gray-100 bg-gray-50 px-5 py-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Cycle de vie de l&apos;établissement</h2>
+        </div>
+        <div className="px-5 py-4">
+          <SchoolLifecycle schoolId={school.id} status={school.subscription_status} />
+          <p className="mt-3 text-xs text-gray-400">
+            {school.subscription_status === 'active' && 'Établissement actif : fonctionnement normal.'}
+            {school.subscription_status === 'suspended' && "Suspendu : les utilisateurs de l'école sont bloqués ; les données sont conservées."}
+            {school.subscription_status === 'archived' && 'Archivé : tenant historique, masqué de la liste active.'}
+            {school.subscription_status === 'inactive' && 'Inactif.'}
+          </p>
+        </div>
       </div>
 
       {/* Counts */}
@@ -120,28 +185,7 @@ export default async function SuperAdminSchoolDetailPage({ params }: Props) {
       </div>
 
       {/* Admins */}
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-100 bg-gray-50 px-5 py-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Administrateurs de l&apos;école</h2>
-        </div>
-        {admins.length === 0 ? (
-          <p className="px-5 py-6 text-center text-sm text-gray-400">Aucun administrateur lié à cette école.</p>
-        ) : (
-          <ul className="divide-y divide-gray-100">
-            {admins.map((a) => (
-              <li key={a.user_id} className="flex items-center justify-between px-5 py-3">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{a.profiles?.full_name || '—'}</p>
-                  <p className="text-xs text-gray-500">{a.profiles?.email || a.user_id}</p>
-                </div>
-                <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${a.status === 'active' ? STATUS_BADGE.active : STATUS_BADGE.inactive}`}>
-                  {a.status === 'active' ? 'Actif' : 'Inactif'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      <SchoolAdmins schoolId={school.id} admins={adminViews} />
 
       <Link href="/super-admin/schools" className="inline-block text-sm text-gray-600 hover:text-gray-900 hover:underline">← Toutes les écoles</Link>
     </div>

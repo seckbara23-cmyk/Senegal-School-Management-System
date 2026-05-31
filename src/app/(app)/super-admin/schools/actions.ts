@@ -3,6 +3,7 @@
 import { createClient }      from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { headers }           from 'next/headers'
+import { redirect }          from 'next/navigation'
 import { z }                 from 'zod'
 import { logSupabaseError }  from '@/lib/errors'
 import { logAuditEvent }     from '@/lib/audit'
@@ -197,4 +198,402 @@ export async function createSchoolWithAdmin(
       resetLink,
     },
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PART 1 — SCHOOL LIFECYCLE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Suspend / Reactivate / Archive transitions on the existing
+// schools.subscription_status column. Super-admin only; school_id is validated
+// as a UUID but never used for authorisation (super admins may act on any
+// school). Service-role writes only.
+
+type LifecycleStatus = 'active' | 'suspended' | 'archived'
+
+async function transitionSchool(
+  formData: FormData,
+  newStatus: LifecycleStatus,
+  action: 'school_reactivated' | 'school_suspended' | 'school_archived',
+): Promise<void> {
+  const actor = await resolveSuperAdmin()
+  if (!actor) redirect('/dashboard')
+
+  const schoolId = z.string().uuid().safeParse(formData.get('school_id'))
+  if (!schoolId.success) redirect('/super-admin/schools')
+
+  const admin = createAdminClient()
+
+  // Capture the previous status for the audit trail.
+  const { data: before } = await admin
+    .from('schools')
+    .select('subscription_status, name')
+    .eq('id', schoolId.data)
+    .maybeSingle()
+
+  if (!before) redirect('/super-admin/schools')
+  const prev = before as { subscription_status: string; name: string }
+
+  const { error } = await admin
+    .from('schools')
+    .update({ subscription_status: newStatus })
+    .eq('id', schoolId.data)
+
+  if (error) {
+    logSupabaseError(error, { action, userId: actor.id, entityIds: { schoolId: schoolId.data, newStatus } })
+    redirect(`/super-admin/schools/${schoolId.data}?error=status`)
+  }
+
+  await logAuditEvent(admin, {
+    actorId: actor.id, actorEmail: actor.email, schoolId: schoolId.data,
+    action, resourceType: 'school', resourceId: schoolId.data,
+    metadata: { name: prev.name, old_status: prev.subscription_status, new_status: newStatus },
+  })
+
+  redirect(`/super-admin/schools/${schoolId.data}`)
+}
+
+export async function suspendSchool(formData: FormData): Promise<void> {
+  return transitionSchool(formData, 'suspended', 'school_suspended')
+}
+
+export async function reactivateSchool(formData: FormData): Promise<void> {
+  return transitionSchool(formData, 'active', 'school_reactivated')
+}
+
+export async function archiveSchool(formData: FormData): Promise<void> {
+  return transitionSchool(formData, 'archived', 'school_archived')
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PART 2 — SCHOOL ADMIN MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Manage the school_admin memberships of a specific school. Super-admin only;
+// service-role writes. Safeguard: a school's LAST active school_admin can be
+// neither removed nor deactivated.
+
+// Counts active school_admin memberships for a school (service role).
+async function countActiveSchoolAdmins(
+  admin: ReturnType<typeof createAdminClient>,
+  schoolId: string,
+): Promise<number> {
+  const { count } = await admin
+    .from('school_memberships')
+    .select('id', { count: 'exact', head: true })
+    .eq('school_id', schoolId)
+    .eq('role', 'school_admin')
+    .eq('status', 'active')
+  return count ?? 0
+}
+
+// ─── Add school admin (create new OR attach existing) ────────────────────────
+
+const AddAdminSchema = z.object({
+  school_id: z.string().uuid('École invalide.'),
+  mode:      z.enum(['create', 'attach']),
+  email:     z.string().email('Adresse email invalide.').max(200),
+  full_name: z.preprocess((v) => (v === '' || v == null ? undefined : v),
+    z.string().min(2, 'Nom complet requis (2 caractères min.).').max(100).optional()),
+  password:  z.preprocess((v) => (v === '' || v == null ? undefined : v),
+    z.string().min(8, 'Mot de passe : 8 caractères min.').max(72).optional()),
+})
+
+export type AddAdminState = {
+  errors?: { email?: string[]; full_name?: string[]; password?: string[]; _form?: string[] }
+  success?: {
+    mode:         'create' | 'attach'
+    email:        string
+    tempPassword?: string
+    resetLink?:   string | null
+  }
+}
+
+export async function addSchoolAdmin(
+  _prevState: AddAdminState,
+  formData: FormData,
+): Promise<AddAdminState> {
+  const actor = await resolveSuperAdmin()
+  if (!actor) return { errors: { _form: ['Non autorisé.'] } }
+
+  const parsed = AddAdminSchema.safeParse({
+    school_id: formData.get('school_id'),
+    mode:      formData.get('mode'),
+    email:     formData.get('email'),
+    full_name: formData.get('full_name'),
+    password:  formData.get('password'),
+  })
+  if (!parsed.success) {
+    return { errors: parsed.error.flatten().fieldErrors as AddAdminState['errors'] }
+  }
+
+  const { school_id, mode, email, full_name, password } = parsed.data
+  const admin = createAdminClient()
+
+  // Verify the school exists.
+  const { data: school } = await admin.from('schools').select('id').eq('id', school_id).maybeSingle()
+  if (!school) return { errors: { _form: ['École introuvable.'] } }
+
+  // ── Attach an existing account ──────────────────────────────────────────────
+  if (mode === 'attach') {
+    const { data: profileRow } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle()
+
+    if (!profileRow) {
+      return { errors: { email: ['Aucun compte avec cet email. Utilisez « Créer un compte ».'] } }
+    }
+    const targetUserId = (profileRow as { id: string }).id
+
+    // Existing school_admin membership for this user + school?
+    const { data: existing } = await admin
+      .from('school_memberships')
+      .select('id, status')
+      .eq('user_id', targetUserId)
+      .eq('school_id', school_id)
+      .eq('role', 'school_admin')
+      .maybeSingle()
+
+    if (existing) {
+      const ex = existing as { id: string; status: string }
+      if (ex.status === 'active') {
+        return { errors: { email: ['Ce compte est déjà administrateur actif de cette école.'] } }
+      }
+      const { error: reErr } = await admin
+        .from('school_memberships')
+        .update({ status: 'active' })
+        .eq('id', ex.id)
+      if (reErr) {
+        logSupabaseError(reErr, { action: 'addSchoolAdmin:reactivate', userId: actor.id, entityIds: { school_id, targetUserId } })
+        return { errors: { _form: ['Erreur lors de la liaison du compte. Veuillez réessayer.'] } }
+      }
+    } else {
+      const { error: insErr } = await admin
+        .from('school_memberships')
+        .insert({ user_id: targetUserId, school_id, role: 'school_admin', status: 'active' })
+      if (insErr) {
+        logSupabaseError(insErr, { action: 'addSchoolAdmin:attach', userId: actor.id, entityIds: { school_id, targetUserId } })
+        return { errors: { _form: ['Erreur lors de la liaison du compte. Veuillez réessayer.'] } }
+      }
+    }
+
+    await logAuditEvent(admin, {
+      actorId: actor.id, actorEmail: actor.email, schoolId: school_id,
+      action: 'school_admin_added', resourceType: 'user', resourceId: targetUserId,
+      metadata: { mode: 'attach', target_user_id: targetUserId, target_email: email, role: 'school_admin' },
+    })
+
+    redirect(`/super-admin/schools/${school_id}`)
+  }
+
+  // ── Create a brand-new account ──────────────────────────────────────────────
+  if (!full_name) return { errors: { full_name: ['Nom complet requis.'] } }
+  if (!password)  return { errors: { password:  ['Mot de passe temporaire requis.'] } }
+
+  const { data: authData, error: authError } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name },
+  })
+
+  if (authError || !authData.user) {
+    const msg = authError?.message ?? ''
+    if (msg.toLowerCase().includes('already') || (authError as unknown as { status?: number })?.status === 422) {
+      return { errors: { email: ['Un compte avec cet email existe déjà. Utilisez « Lier un compte existant ».'] } }
+    }
+    logSupabaseError(authError, { action: 'addSchoolAdmin:auth', userId: actor.id, entityIds: { school_id, email } })
+    return { errors: { _form: ['Erreur lors de la création du compte. Veuillez réessayer.'] } }
+  }
+
+  const newUserId = authData.user.id
+
+  await admin
+    .from('profiles')
+    .upsert({ id: newUserId, email, full_name }, { onConflict: 'id', ignoreDuplicates: true })
+
+  const { error: memberError } = await admin
+    .from('school_memberships')
+    .insert({ user_id: newUserId, school_id, role: 'school_admin', status: 'active' })
+
+  if (memberError) {
+    logSupabaseError(memberError, { action: 'addSchoolAdmin:membership', userId: actor.id, entityIds: { school_id, newUserId } })
+    await admin.auth.admin.deleteUser(newUserId)
+    return { errors: { _form: ["Erreur lors de l'attribution du rôle. Veuillez réessayer."] } }
+  }
+
+  await logAuditEvent(admin, {
+    actorId: actor.id, actorEmail: actor.email, schoolId: school_id,
+    action: 'school_admin_added', resourceType: 'user', resourceId: newUserId,
+    metadata: { mode: 'create', target_user_id: newUserId, target_email: email, role: 'school_admin' },
+  })
+
+  let resetLink: string | null = null
+  const { data: linkData } = await admin.auth.admin.generateLink({ type: 'recovery', email })
+  if (linkData?.properties?.action_link) resetLink = linkData.properties.action_link
+
+  return { success: { mode: 'create', email, tempPassword: password, resetLink } }
+}
+
+// ─── Remove school admin (delete the school_admin membership) ────────────────
+
+export async function removeSchoolAdmin(formData: FormData): Promise<void> {
+  const actor = await resolveSuperAdmin()
+  if (!actor) redirect('/dashboard')
+
+  const schoolId = z.string().uuid().safeParse(formData.get('school_id'))
+  const userId   = z.string().uuid().safeParse(formData.get('user_id'))
+  if (!schoolId.success || !userId.success) redirect('/super-admin/schools')
+
+  const admin = createAdminClient()
+
+  // Target membership must exist for this school.
+  const { data: membership } = await admin
+    .from('school_memberships')
+    .select('id, status')
+    .eq('user_id', userId.data)
+    .eq('school_id', schoolId.data)
+    .eq('role', 'school_admin')
+    .maybeSingle()
+
+  if (!membership) redirect(`/super-admin/schools/${schoolId.data}`)
+  const m = membership as { id: string; status: string }
+
+  // Safeguard: never remove the last ACTIVE school_admin.
+  if (m.status === 'active') {
+    const activeCount = await countActiveSchoolAdmins(admin, schoolId.data)
+    if (activeCount <= 1) {
+      redirect(`/super-admin/schools/${schoolId.data}?error=last_admin`)
+    }
+  }
+
+  const { error } = await admin.from('school_memberships').delete().eq('id', m.id)
+  if (error) {
+    logSupabaseError(error, { action: 'removeSchoolAdmin', userId: actor.id, entityIds: { schoolId: schoolId.data, targetUserId: userId.data } })
+    redirect(`/super-admin/schools/${schoolId.data}?error=remove`)
+  }
+
+  await logAuditEvent(admin, {
+    actorId: actor.id, actorEmail: actor.email, schoolId: schoolId.data,
+    action: 'school_admin_removed', resourceType: 'user', resourceId: userId.data,
+    metadata: { target_user_id: userId.data, role: 'school_admin' },
+  })
+
+  redirect(`/super-admin/schools/${schoolId.data}`)
+}
+
+// ─── Deactivate / reactivate school admin ────────────────────────────────────
+
+export async function setSchoolAdminStatus(formData: FormData): Promise<void> {
+  const actor = await resolveSuperAdmin()
+  if (!actor) redirect('/dashboard')
+
+  const schoolId  = z.string().uuid().safeParse(formData.get('school_id'))
+  const userId    = z.string().uuid().safeParse(formData.get('user_id'))
+  const newStatus = z.enum(['active', 'inactive']).safeParse(formData.get('new_status'))
+  if (!schoolId.success || !userId.success || !newStatus.success) redirect('/super-admin/schools')
+
+  const admin = createAdminClient()
+
+  const { data: membership } = await admin
+    .from('school_memberships')
+    .select('id, status')
+    .eq('user_id', userId.data)
+    .eq('school_id', schoolId.data)
+    .eq('role', 'school_admin')
+    .maybeSingle()
+
+  if (!membership) redirect(`/super-admin/schools/${schoolId.data}`)
+  const m = membership as { id: string; status: string }
+
+  // Safeguard: never deactivate the last ACTIVE school_admin.
+  if (newStatus.data === 'inactive' && m.status === 'active') {
+    const activeCount = await countActiveSchoolAdmins(admin, schoolId.data)
+    if (activeCount <= 1) {
+      redirect(`/super-admin/schools/${schoolId.data}?error=last_admin`)
+    }
+  }
+
+  const { error } = await admin
+    .from('school_memberships')
+    .update({ status: newStatus.data })
+    .eq('id', m.id)
+
+  if (error) {
+    logSupabaseError(error, { action: 'setSchoolAdminStatus', userId: actor.id, entityIds: { schoolId: schoolId.data, targetUserId: userId.data, newStatus: newStatus.data } })
+    redirect(`/super-admin/schools/${schoolId.data}?error=status`)
+  }
+
+  await logAuditEvent(admin, {
+    actorId: actor.id, actorEmail: actor.email, schoolId: schoolId.data,
+    action: newStatus.data === 'inactive' ? 'school_admin_deactivated' : 'school_admin_reactivated',
+    resourceType: 'user', resourceId: userId.data,
+    metadata: { target_user_id: userId.data, new_status: newStatus.data },
+  })
+
+  redirect(`/super-admin/schools/${schoolId.data}`)
+}
+
+// ─── Generate password reset link for a school admin ─────────────────────────
+
+export type AdminResetLinkState = {
+  link?:    string
+  email?:   string
+  errors?:  { _form?: string[] }
+}
+
+export async function generateSchoolAdminResetLink(
+  _prevState: AdminResetLinkState,
+  formData: FormData,
+): Promise<AdminResetLinkState> {
+  const actor = await resolveSuperAdmin()
+  if (!actor) return { errors: { _form: ['Non autorisé.'] } }
+
+  const schoolId = z.string().uuid().safeParse(formData.get('school_id'))
+  const userId   = z.string().uuid().safeParse(formData.get('user_id'))
+  if (!schoolId.success || !userId.success) {
+    return { errors: { _form: ['Paramètres invalides.'] } }
+  }
+
+  const admin = createAdminClient()
+
+  // Verify the target is a school_admin of this school.
+  const { data: membership } = await admin
+    .from('school_memberships')
+    .select('id')
+    .eq('user_id', userId.data)
+    .eq('school_id', schoolId.data)
+    .eq('role', 'school_admin')
+    .maybeSingle()
+
+  if (!membership) return { errors: { _form: ['Administrateur introuvable pour cette école.'] } }
+
+  const { data: profileRow } = await admin
+    .from('profiles')
+    .select('email')
+    .eq('id', userId.data)
+    .maybeSingle()
+
+  const targetEmail = (profileRow as { email: string | null } | null)?.email
+  if (!targetEmail) return { errors: { _form: ['Adresse email introuvable pour ce compte.'] } }
+
+  const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+    type:  'recovery',
+    email: targetEmail,
+  })
+
+  if (linkError || !linkData?.properties?.action_link) {
+    logSupabaseError(linkError, { action: 'generateSchoolAdminResetLink', userId: actor.id, entityIds: { schoolId: schoolId.data, targetUserId: userId.data } })
+    return { errors: { _form: ['Erreur lors de la génération du lien. Veuillez réessayer.'] } }
+  }
+
+  await logAuditEvent(admin, {
+    actorId: actor.id, actorEmail: actor.email, schoolId: schoolId.data,
+    action: 'school_admin_password_reset_generated', resourceType: 'user', resourceId: userId.data,
+    metadata: { target_user_id: userId.data, target_email: targetEmail },
+  })
+
+  return { link: linkData.properties.action_link, email: targetEmail }
 }

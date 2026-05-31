@@ -61,6 +61,14 @@ export const ACTION_LABELS: Record<string, string> = {
   // Plateforme
   school_created:                'École créée',
   school_admin_created:          'Administrateur d’école créé',
+  school_suspended:              'École suspendue',
+  school_reactivated:            'École réactivée',
+  school_archived:               'École archivée',
+  school_admin_added:            'Administrateur ajouté',
+  school_admin_removed:          'Administrateur retiré',
+  school_admin_deactivated:      'Administrateur désactivé',
+  school_admin_reactivated:      'Administrateur réactivé',
+  school_admin_password_reset_generated: 'Lien de réinitialisation (admin école)',
 }
 
 // ── Grouped action options for the filter <select> ───────────────────────────
@@ -76,6 +84,8 @@ export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Portail enseignant',   actions: ['teacher_attendance_session_created', 'teacher_attendance_records_saved', 'teacher_assessment_created', 'teacher_grades_saved'] },
   { label: 'Comptes & rôles',      actions: ['user_created', 'role_linked', 'role_unlinked', 'user_deactivated', 'user_reactivated', 'password_reset_link_generated'] },
   { label: 'Plateforme',           actions: ['school_created', 'school_admin_created'] },
+  { label: 'Cycle de vie tenant',  actions: ['school_suspended', 'school_reactivated', 'school_archived'] },
+  { label: 'Admins d’école',       actions: ['school_admin_added', 'school_admin_removed', 'school_admin_deactivated', 'school_admin_reactivated', 'school_admin_password_reset_generated'] },
 ]
 
 // ── Resource type → human label ──────────────────────────────────────────────
@@ -109,9 +119,9 @@ export const RESOURCE_TYPES: string[] = Object.keys(RESOURCE_TYPE_LABELS)
 export type AuditTone = 'create' | 'update' | 'delete' | 'neutral'
 
 export function actionTone(action: string): AuditTone {
-  if (/(deactivat|cancel|withdraw|remov|unlink|delet)/.test(action)) return 'delete'
+  if (/(deactivat|cancel|withdraw|remov|unlink|delet|suspend|archiv)/.test(action)) return 'delete'
   if (/(updat|chang|assign|edit)/.test(action))                     return 'update'
-  if (/(creat|record|publish|enroll|link|sav|reactivat|generat)/.test(action)) return 'create'
+  if (/(creat|record|publish|enroll|link|sav|reactivat|generat|add)/.test(action)) return 'create'
   return 'neutral'
 }
 
