@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { markNotificationRead, markAllNotificationsRead } from './actions'
 import { notificationTypeLabel, notificationTypeDot, formatRelativeTime } from '@/lib/notifications'
 
@@ -29,6 +30,39 @@ function buildUrl(filter: string, page: number): string {
   return `/notifications${qs ? '?' + qs : ''}`
 }
 
+// Resolve the user's "home" portal for the role-aware back link. Super admins
+// take precedence; otherwise the highest-privilege active membership wins.
+// finance_officer has no dedicated portal yet → neutral /dashboard.
+async function resolvePortal(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<{ href: string; label: string }> {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('global_role')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if ((profile as { global_role: string } | null)?.global_role === 'super_admin') {
+    return { href: '/super-admin', label: 'Retour au Super Admin' }
+  }
+
+  const { data: memberships } = await supabase
+    .from('school_memberships')
+    .select('role')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+
+  const roles = new Set(((memberships ?? []) as { role: string }[]).map((m) => m.role))
+
+  if (roles.has('school_admin'))    return { href: '/school',   label: "Retour à l'administration" }
+  if (roles.has('teacher'))         return { href: '/teacher',  label: 'Retour au portail enseignant' }
+  if (roles.has('parent'))          return { href: '/parent',   label: 'Retour au portail parent' }
+  if (roles.has('student'))         return { href: '/student',  label: 'Retour au portail étudiant' }
+  // finance_officer (no portal yet) and any other role
+  return { href: '/dashboard', label: 'Retour au tableau de bord' }
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 type Props = {
@@ -50,7 +84,9 @@ export default async function NotificationsPage({ searchParams }: Props) {
 
   const isUnreadFilter = filter === 'unread'
 
-  const [unreadResult, totalResult, listResult] = await Promise.all([
+  const [portal, unreadResult, totalResult, listResult] = await Promise.all([
+    resolvePortal(supabase, user.id),
+
     supabase
       .from('notifications')
       .select('id', { count: 'exact', head: true })
@@ -92,6 +128,17 @@ export default async function NotificationsPage({ searchParams }: Props) {
 
   return (
     <div className="space-y-5">
+
+      {/* ── Role-aware back link ────────────────────────────────────────────── */}
+      <Link
+        href={portal.href}
+        className="inline-flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-gray-900"
+      >
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+        </svg>
+        {portal.label}
+      </Link>
 
       {/* ── Header band ─────────────────────────────────────────────────────── */}
       <div className="rounded-xl bg-primary-800 px-6 py-5">
