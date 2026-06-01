@@ -171,7 +171,7 @@ export function Sidebar({ schoolName, userEmail, unreadCount, recent }: SidebarP
           <p className="text-xs text-white/60">Administration scolaire</p>
         </div>
         <div className="ml-auto flex items-center">
-          <NotificationBell unreadCount={unreadCount} items={recent} variant="dark" align="left" />
+          <NotificationBell unreadCount={unreadCount} items={recent} role="school_admin" variant="dark" align="left" />
           {/* Close button — mobile only */}
           <button
             className="rounded-md p-1 text-white/60 hover:bg-white/10 hover:text-white lg:hidden"
@@ -247,7 +247,7 @@ export function Sidebar({ schoolName, userEmail, unreadCount, recent }: SidebarP
           {displayName}
         </span>
 
-        <NotificationBell unreadCount={unreadCount} items={recent} variant="light" align="right" />
+        <NotificationBell unreadCount={unreadCount} items={recent} role="school_admin" variant="light" align="right" />
       </header>
 
       {/* ── Mobile: overlay + slide-in drawer ─────────────────────────────── */}

@@ -1,13 +1,16 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   formatRelativeTime,
   notificationTypeDot,
   notificationTypeLabel,
   type NotificationPreview,
 } from '@/lib/notifications'
+import { getNotificationHref, type NotificationRole } from '@/lib/notification-links'
+import { markNotificationRead } from '@/app/notifications/actions'
 
 const BELL_PATH =
   'M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0'
@@ -15,15 +18,33 @@ const BELL_PATH =
 type Props = {
   unreadCount: number
   items:       NotificationPreview[]
+  /** Viewer role — controls where each notification deep-links to. */
+  role:        NotificationRole
   /** Trigger icon colour. 'dark' = white icon (coloured headers), 'light' = gray icon (white headers). */
   variant?:    'dark' | 'light'
   /** Which edge the dropdown is anchored to. 'left' opens toward the content area (sidebars). */
   align?:      'left' | 'right'
 }
 
-export function NotificationBell({ unreadCount, items, variant = 'dark', align = 'right' }: Props) {
+export function NotificationBell({ unreadCount, items, role, variant = 'dark', align = 'right' }: Props) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const router = useRouter()
+  const [, startTransition] = useTransition()
+
+  // Open a notification: mark it read (if unread) then navigate to its target.
+  function handleOpen(n: NotificationPreview) {
+    setOpen(false)
+    const href = getNotificationHref(n, role)
+    startTransition(async () => {
+      if (n.read_at === null) {
+        const fd = new FormData()
+        fd.set('notificationId', n.id)
+        try { await markNotificationRead(fd) } catch { /* best-effort */ }
+      }
+      router.push(href)
+    })
+  }
 
   // Close on outside click + Escape.
   useEffect(() => {
@@ -89,7 +110,11 @@ export function NotificationBell({ unreadCount, items, variant = 'dark', align =
                 const isUnread = n.read_at === null
                 return (
                   <li key={n.id} className={isUnread ? 'bg-white' : 'bg-sand-50'}>
-                    <div className="flex items-start gap-3 px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => handleOpen(n)}
+                      className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-sand-100 transition-colors"
+                    >
                       <span
                         className={`mt-1.5 block h-2 w-2 shrink-0 rounded-full ${isUnread ? notificationTypeDot(n.type) : 'bg-sand-300'}`}
                         aria-hidden="true"
@@ -107,7 +132,7 @@ export function NotificationBell({ unreadCount, items, variant = 'dark', align =
                           {n.title}
                         </p>
                       </div>
-                    </div>
+                    </button>
                   </li>
                 )
               })}

@@ -96,6 +96,7 @@ export type NotificationPreview = {
   type:       string
   read_at:    string | null
   created_at: string
+  metadata:   Record<string, unknown> | null
 }
 
 // ── createNotification() — reusable write helper ─────────────────────────────
@@ -160,7 +161,7 @@ export async function getNotificationSummary(
       .is('read_at', null),
     client
       .from('notifications')
-      .select('id, title, type, read_at, created_at')
+      .select('id, title, type, read_at, created_at, metadata')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(limit),

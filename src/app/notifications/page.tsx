@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { markNotificationRead, markAllNotificationsRead } from './actions'
-import { notificationTypeLabel, notificationTypeDot, formatRelativeTime } from '@/lib/notifications'
+import { markAllNotificationsRead } from './actions'
+import { NotificationCard } from './_card'
+import { getNotificationHref, type NotificationRole } from '@/lib/notification-links'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -14,6 +15,7 @@ type Notification = {
   read_at: string | null
   created_at: string
   school_id: string | null
+  metadata: Record<string, unknown> | null
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -36,7 +38,7 @@ function buildUrl(filter: string, page: number): string {
 async function resolvePortal(
   supabase: ReturnType<typeof createClient>,
   userId: string,
-): Promise<{ href: string; label: string }> {
+): Promise<{ href: string; label: string; role: NotificationRole }> {
   const { data: profile } = await supabase
     .from('profiles')
     .select('global_role')
@@ -44,7 +46,7 @@ async function resolvePortal(
     .maybeSingle()
 
   if ((profile as { global_role: string } | null)?.global_role === 'super_admin') {
-    return { href: '/super-admin', label: 'Retour au Super Admin' }
+    return { href: '/super-admin', label: 'Retour au Super Admin', role: 'super_admin' }
   }
 
   const { data: memberships } = await supabase
@@ -55,12 +57,13 @@ async function resolvePortal(
 
   const roles = new Set(((memberships ?? []) as { role: string }[]).map((m) => m.role))
 
-  if (roles.has('school_admin'))    return { href: '/school',   label: "Retour à l'administration" }
-  if (roles.has('teacher'))         return { href: '/teacher',  label: 'Retour au portail enseignant' }
-  if (roles.has('parent'))          return { href: '/parent',   label: 'Retour au portail parent' }
-  if (roles.has('student'))         return { href: '/student',  label: 'Retour au portail étudiant' }
-  // finance_officer (no portal yet) and any other role
-  return { href: '/dashboard', label: 'Retour au tableau de bord' }
+  if (roles.has('school_admin'))    return { href: '/school',   label: "Retour à l'administration",     role: 'school_admin' }
+  if (roles.has('teacher'))         return { href: '/teacher',  label: 'Retour au portail enseignant',  role: 'teacher' }
+  if (roles.has('parent'))          return { href: '/parent',   label: 'Retour au portail parent',      role: 'parent' }
+  if (roles.has('student'))         return { href: '/student',  label: 'Retour au portail étudiant',    role: 'student' }
+  if (roles.has('finance_officer')) return { href: '/dashboard', label: 'Retour au tableau de bord',    role: 'finance_officer' }
+  // any other / no active role
+  return { href: '/dashboard', label: 'Retour au tableau de bord', role: 'finance_officer' }
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -107,14 +110,14 @@ export default async function NotificationsPage({ searchParams }: Props) {
     (isUnreadFilter
       ? supabase
           .from('notifications')
-          .select('id, title, body, type, read_at, created_at, school_id')
+          .select('id, title, body, type, read_at, created_at, school_id, metadata')
           .eq('user_id', user.id)
           .is('read_at', null)
           .order('created_at', { ascending: false })
           .range(offset, offset + PAGE_SIZE - 1)
       : supabase
           .from('notifications')
-          .select('id, title, body, type, read_at, created_at, school_id')
+          .select('id, title, body, type, read_at, created_at, school_id, metadata')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
           .range(offset, offset + PAGE_SIZE - 1)),
@@ -211,66 +214,18 @@ export default async function NotificationsPage({ searchParams }: Props) {
       {/* ── Notification list ───────────────────────────────────────────────── */}
       {!queryError && notifications.length > 0 && (
         <div className="space-y-2">
-          {notifications.map((n) => {
-            const isUnread = n.read_at === null
-            const dotClass = notificationTypeDot(n.type)
-            const typeLabel = notificationTypeLabel(n.type)
-
-            return (
-              <article
-                key={n.id}
-                className={`flex items-start gap-4 rounded-xl border px-5 py-4 transition-colors ${
-                  isUnread
-                    ? 'border-accent-300 bg-white shadow-sm'
-                    : 'border-sand-200 bg-sand-50'
-                }`}
-              >
-                {/* Colored dot indicator */}
-                <div className="mt-1 shrink-0">
-                  <span
-                    className={`block h-2.5 w-2.5 rounded-full ${isUnread ? dotClass : 'bg-sand-300'}`}
-                    aria-label={isUnread ? 'Non lue' : 'Lue'}
-                  />
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                      {typeLabel}
-                    </span>
-                    <time
-                      dateTime={n.created_at}
-                      className="text-xs text-gray-400"
-                    >
-                      {formatRelativeTime(n.created_at)}
-                    </time>
-                  </div>
-
-                  <p className={`text-sm font-semibold ${isUnread ? 'text-gray-900' : 'text-gray-500'}`}>
-                    {n.title}
-                  </p>
-
-                  {n.body && (
-                    <p className={`mt-0.5 text-sm leading-relaxed ${isUnread ? 'text-gray-600' : 'text-gray-400'}`}>
-                      {n.body}
-                    </p>
-                  )}
-                </div>
-
-                {isUnread && (
-                  <form action={markNotificationRead} className="shrink-0">
-                    <input type="hidden" name="notificationId" value={n.id} />
-                    <button
-                      type="submit"
-                      className="text-xs font-medium text-primary-600 hover:text-primary-800 hover:underline whitespace-nowrap"
-                    >
-                      Lu ✓
-                    </button>
-                  </form>
-                )}
-              </article>
-            )
-          })}
+          {notifications.map((n) => (
+            <NotificationCard
+              key={n.id}
+              id={n.id}
+              title={n.title}
+              body={n.body}
+              type={n.type}
+              read_at={n.read_at}
+              created_at={n.created_at}
+              href={getNotificationHref({ type: n.type, metadata: n.metadata }, portal.role)}
+            />
+          ))}
         </div>
       )}
 

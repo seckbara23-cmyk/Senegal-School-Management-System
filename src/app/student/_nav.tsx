@@ -102,7 +102,7 @@ export function StudentNav({ schoolName, studentName, userEmail, unreadCount, re
         </div>
         <div className="ml-auto flex items-center">
           <div className="hidden lg:block">
-            <NotificationBell unreadCount={unreadCount} items={recent} variant="dark" align="left" />
+            <NotificationBell unreadCount={unreadCount} items={recent} role="student" variant="dark" align="left" />
           </div>
           <button
             className="rounded-md p-1 text-white/60 hover:bg-white/10 hover:text-white lg:hidden"
@@ -130,7 +130,7 @@ export function StudentNav({ schoolName, studentName, userEmail, unreadCount, re
         </button>
         <span className="text-sm font-semibold text-white truncate">{displaySchool}</span>
         <div className="ml-auto">
-          <NotificationBell unreadCount={unreadCount} items={recent} variant="dark" align="right" />
+          <NotificationBell unreadCount={unreadCount} items={recent} role="student" variant="dark" align="right" />
         </div>
       </div>
 
