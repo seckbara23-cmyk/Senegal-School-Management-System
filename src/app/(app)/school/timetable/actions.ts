@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
+import { notifyTimetableCreated, notifyTimetableUpdated, notifyTimetableDeleted } from '@/lib/notification-events'
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -239,6 +240,12 @@ export async function createTimetableSlot(
     metadata: { class_id: v.values.class_id, class_subject_id: v.values.class_subject_id, day_of_week: v.values.day_of_week, start_time: v.values.start_time, end_time: v.values.end_time },
   })
 
+  // Best-effort: notify the assigned teacher + class students + their parents.
+  await notifyTimetableCreated(supabase, {
+    schoolId, slotId: (row as { id: string }).id, classId: v.values.class_id, classSubjectId: v.values.class_subject_id,
+    teacherId: v.values.teacher_id, dayOfWeek: v.values.day_of_week, startTime: v.values.start_time, endTime: v.values.end_time,
+  })
+
   redirect(`/school/timetable?year=${v.values.academic_year_id}&class=${v.values.class_id}`)
 }
 
@@ -287,6 +294,12 @@ export async function updateTimetableSlot(
     metadata: { class_id: v.values.class_id, class_subject_id: v.values.class_subject_id, day_of_week: v.values.day_of_week, start_time: v.values.start_time, end_time: v.values.end_time },
   })
 
+  // Best-effort: notify the assigned teacher + class students + their parents.
+  await notifyTimetableUpdated(supabase, {
+    schoolId, slotId: slotId.data, classId: v.values.class_id, classSubjectId: v.values.class_subject_id,
+    teacherId: v.values.teacher_id, dayOfWeek: v.values.day_of_week, startTime: v.values.start_time, endTime: v.values.end_time,
+  })
+
   redirect(`/school/timetable?year=${v.values.academic_year_id}&class=${v.values.class_id}`)
 }
 
@@ -307,15 +320,18 @@ export async function deleteTimetableSlot(formData: FormData): Promise<void> {
     redirect('/school/timetable?error=readonly')
   }
 
-  // Capture context for the redirect + audit before deleting.
+  // Capture context for the redirect + audit + notification before deleting.
   const { data: slot } = await supabase
     .from('timetable_slots')
-    .select('id, class_id, academic_year_id')
+    .select('id, class_id, academic_year_id, class_subject_id, teacher_id, day_of_week, start_time, end_time')
     .eq('id', slotId.data)
     .eq('school_id', schoolId)
     .maybeSingle()
   if (!slot) redirect('/school/timetable')
-  const s = slot as { id: string; class_id: string; academic_year_id: string }
+  const s = slot as {
+    id: string; class_id: string; academic_year_id: string; class_subject_id: string
+    teacher_id: string | null; day_of_week: number; start_time: string; end_time: string
+  }
 
   const { error } = await supabase
     .from('timetable_slots').delete().eq('id', s.id).eq('school_id', schoolId)
@@ -328,6 +344,12 @@ export async function deleteTimetableSlot(formData: FormData): Promise<void> {
     actorId: user.id, actorEmail: user.email, schoolId,
     action: 'timetable_slot_deleted', resourceType: 'timetable_slot', resourceId: s.id,
     metadata: { class_id: s.class_id },
+  })
+
+  // Best-effort: notify the assigned teacher + class students + their parents.
+  await notifyTimetableDeleted(supabase, {
+    schoolId, slotId: s.id, classId: s.class_id, classSubjectId: s.class_subject_id,
+    teacherId: s.teacher_id, dayOfWeek: s.day_of_week, startTime: s.start_time, endTime: s.end_time,
   })
 
   redirect(`/school/timetable?year=${s.academic_year_id}&class=${s.class_id}`)

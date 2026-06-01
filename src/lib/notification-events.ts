@@ -380,3 +380,126 @@ export async function notifyBulletinPublished(
     console.error('[notify] notifyBulletinPublished failed', err)
   }
 }
+
+// ── Timetable changes ────────────────────────────────────────────────────────
+//
+// Recipients of a slot change: the assigned teacher + all actively enrolled
+// students of the class + their linked parents (de-duplicated).
+
+const TIMETABLE_DAY = ['', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche']
+function ttDay(n: number): string { return TIMETABLE_DAY[n] ?? `jour ${n}` }
+function ttTime(t: string): string { return t.slice(0, 5) }
+
+export type TimetableNotifyInput = {
+  schoolId:        string
+  slotId:          string
+  classId:         string
+  classSubjectId:  string
+  teacherId:       string | null
+  dayOfWeek:       number
+  startTime:       string
+  endTime:         string
+}
+
+async function timetableSubjectName(client: NotifyClient, schoolId: string, classSubjectId: string): Promise<string> {
+  const { data } = await client
+    .from('class_subjects')
+    .select('subjects!subject_id(name)')
+    .eq('id', classSubjectId)
+    .eq('school_id', schoolId)
+    .maybeSingle()
+  return (data as unknown as { subjects: { name: string } | null } | null)?.subjects?.name ?? 'cours'
+}
+
+async function timetableRecipients(client: NotifyClient, input: TimetableNotifyInput): Promise<string[]> {
+  const set = new Set<string>()
+
+  // Assigned teacher.
+  if (input.teacherId) {
+    const { data: t } = await client
+      .from('teachers').select('profile_id').eq('id', input.teacherId).eq('school_id', input.schoolId).maybeSingle()
+    const pid = (t as { profile_id: string | null } | null)?.profile_id
+    if (pid) set.add(pid)
+  }
+
+  // Actively enrolled students of the class.
+  const { data: enr } = await client
+    .from('student_class_enrollments')
+    .select('student_id')
+    .eq('school_id', input.schoolId)
+    .eq('class_id', input.classId)
+    .eq('status', 'active')
+  const studentIds = Array.from(new Set(((enr ?? []) as { student_id: string }[]).map((e) => e.student_id)))
+
+  if (studentIds.length > 0) {
+    const [students, parents] = await Promise.all([
+      resolveStudents(client, input.schoolId, studentIds),
+      resolveParentProfilesByStudent(client, input.schoolId, studentIds),
+    ])
+    for (const sid of studentIds) {
+      for (const uid of recipientsForStudent(sid, students, parents)) set.add(uid)
+    }
+  }
+
+  return Array.from(set)
+}
+
+function timetableMetadata(input: TimetableNotifyInput) {
+  return {
+    timetable_slot_id: input.slotId,
+    class_id:          input.classId,
+    class_subject_id:  input.classSubjectId,
+    teacher_id:        input.teacherId,
+    day_of_week:       input.dayOfWeek,
+    start_time:        input.startTime,
+    end_time:          input.endTime,
+  }
+}
+
+export async function notifyTimetableCreated(client: NotifyClient, input: TimetableNotifyInput): Promise<void> {
+  try {
+    const [subject, recipients] = await Promise.all([
+      timetableSubjectName(client, input.schoolId, input.classSubjectId),
+      timetableRecipients(client, input),
+    ])
+    if (recipients.length === 0) return
+    const body = `Un nouveau cours de ${subject} a été ajouté le ${ttDay(input.dayOfWeek)} de ${ttTime(input.startTime)} à ${ttTime(input.endTime)}.`
+    const metadata = timetableMetadata(input)
+    await Promise.all(recipients.map((userId) =>
+      createNotification(client, { userId, type: 'timetable_created', title: 'Nouvel horaire', body, schoolId: input.schoolId, metadata })))
+  } catch (err) {
+    console.error('[notify] notifyTimetableCreated failed', err)
+  }
+}
+
+export async function notifyTimetableUpdated(client: NotifyClient, input: TimetableNotifyInput): Promise<void> {
+  try {
+    const [subject, recipients] = await Promise.all([
+      timetableSubjectName(client, input.schoolId, input.classSubjectId),
+      timetableRecipients(client, input),
+    ])
+    if (recipients.length === 0) return
+    const body = `Le cours de ${subject} a été modifié.`
+    const metadata = timetableMetadata(input)
+    await Promise.all(recipients.map((userId) =>
+      createNotification(client, { userId, type: 'timetable_updated', title: 'Horaire modifié', body, schoolId: input.schoolId, metadata })))
+  } catch (err) {
+    console.error('[notify] notifyTimetableUpdated failed', err)
+  }
+}
+
+export async function notifyTimetableDeleted(client: NotifyClient, input: TimetableNotifyInput): Promise<void> {
+  try {
+    const [subject, recipients] = await Promise.all([
+      timetableSubjectName(client, input.schoolId, input.classSubjectId),
+      timetableRecipients(client, input),
+    ])
+    if (recipients.length === 0) return
+    const body = `Le cours de ${subject} prévu le ${ttDay(input.dayOfWeek)} de ${ttTime(input.startTime)} à ${ttTime(input.endTime)} a été supprimé.`
+    const metadata = timetableMetadata(input)
+    await Promise.all(recipients.map((userId) =>
+      createNotification(client, { userId, type: 'timetable_deleted', title: 'Cours annulé', body, schoolId: input.schoolId, metadata })))
+  } catch (err) {
+    console.error('[notify] notifyTimetableDeleted failed', err)
+  }
+}

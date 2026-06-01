@@ -88,6 +88,18 @@ export function getNotificationHref(n: NotificationLike, role: NotificationRole)
       }
     }
 
+    // ── Timetable changes — portal timetable views (no per-slot page) ─────────
+    case 'timetable_created':
+    case 'timetable_updated':
+    case 'timetable_deleted':
+      switch (role) {
+        case 'school_admin': return '/school/timetable'
+        case 'teacher':      return '/teacher/timetable'
+        case 'parent':       return '/parent/timetable'
+        case 'student':      return '/student/timetable'
+        default:             return FALLBACK
+      }
+
     // ── Bulletin published (future — no publish workflow yet) ─────────────────
     case 'bulletin_published': {
       const studentId = meta(m, 'student_id')
