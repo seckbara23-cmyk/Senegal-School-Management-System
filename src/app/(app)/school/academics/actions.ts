@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
+import { notifyAssessmentCreated } from '@/lib/notification-events'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -453,6 +454,15 @@ export async function createAssessment(
     actorId: actor.id, actorEmail: actor.email, schoolId,
     action: 'assessment_created', resourceType: 'assessment', resourceId: newAssessment.id,
     metadata: { class_subject_id, academic_period_id, title: title.trim(), assessment_type, coefficient, max_score },
+  })
+
+  // Best-effort: notify enrolled students + their parents.
+  await notifyAssessmentCreated(supabase, {
+    schoolId,
+    assessmentId:     newAssessment.id,
+    classSubjectId:   class_subject_id,
+    academicPeriodId: academic_period_id,
+    assessmentDate:   assessment_date || null,
   })
 
   redirect(`/school/academics/assessments/${newAssessment.id}`)

@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
+import { notifyAttendanceRecorded } from '@/lib/notification-events'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -228,6 +229,17 @@ export async function createTeacherAttendanceSession(
     actorId: userId, actorEmail: userEmail, schoolId,
     action: 'teacher_attendance_records_saved', resourceType: 'attendance_session', resourceId: session.id as string,
     metadata: { teacher_id: teacherId, class_id, session_id: session.id, changed_count: records.length },
+  })
+
+  // Best-effort: notify student + parents for non-present statuses only.
+  await notifyAttendanceRecorded(supabase, {
+    schoolId,
+    sessionId: session.id as string,
+    classId:   class_id,
+    date:      session_date,
+    records:   records
+      .filter((r) => r.status !== 'present')
+      .map((r) => ({ studentId: r.student_id, status: r.status as 'absent' | 'late' | 'excused' })),
   })
 
   redirect(`/teacher/attendance/${session.id}`)

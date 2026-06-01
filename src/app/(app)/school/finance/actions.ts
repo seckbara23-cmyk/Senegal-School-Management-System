@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
+import { notifyInvoiceCreated, notifyPaymentRecorded } from '@/lib/notification-events'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -344,6 +345,16 @@ export async function createInvoice(
     metadata: { invoice_number: invoiceNumber, student_id: String(studentId), total_amount: totalAmount, due_date: (dueDate && String(dueDate) !== '') ? String(dueDate) : null },
   })
 
+  // Best-effort in-app notification to the student + linked parents.
+  await notifyInvoiceCreated(supabase, {
+    schoolId,
+    invoiceId,
+    invoiceNumber,
+    studentId: String(studentId),
+    amount:    totalAmount,
+    dueDate:   (dueDate && String(dueDate) !== '') ? String(dueDate) : null,
+  })
+
   redirect(`/school/finance/invoices/${invoiceId}`)
 }
 
@@ -459,6 +470,17 @@ export async function recordPayment(
     metadata: { receipt_number: receiptNumber, invoice_id, amount, payment_method, invoice_new_status: newStatus, student_id: inv.student_id },
   })
 
+  // Best-effort in-app notification to school_admin + finance_officer users.
+  await notifyPaymentRecorded(supabase, {
+    schoolId,
+    paymentId,
+    receiptNumber,
+    invoiceId:     invoice_id,
+    studentId:     inv.student_id,
+    amount,
+    paymentMethod: payment_method,
+  })
+
   redirect(`/school/finance/payments/${paymentId}`)
 }
 
@@ -555,6 +577,12 @@ export async function createBulkInvoices(
     action: 'bulk_invoices_created', resourceType: 'class', resourceId: String(classId),
     metadata: { class_id: String(classId), title, created_count: result.created_count, skipped_count: result.skipped_count },
   })
+
+  // NOTE: No per-invoice notification here. create_bulk_invoices() is a
+  // SECURITY DEFINER RPC that returns only counts (created/skipped), not the
+  // created invoice or student IDs, so recipients cannot be resolved reliably
+  // without fragile re-querying. Wiring bulk-invoice notifications is deferred
+  // to Phase 36.3 (would require the RPC to return the created invoice IDs).
 
   const qs = new URLSearchParams({ created: String(result.created_count) })
   if (result.skipped_count > 0) qs.set('skipped', String(result.skipped_count))

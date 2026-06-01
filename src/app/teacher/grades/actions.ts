@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
+import { notifyAssessmentCreated } from '@/lib/notification-events'
 
 // Resolve teacher context for server actions — never reads teacher_id from
 // form data; always resolves via auth.uid() → school_memberships → teachers.
@@ -143,6 +144,15 @@ export async function createTeacherAssessment(
     actorId: userId, actorEmail: userEmail, schoolId,
     action: 'teacher_assessment_created', resourceType: 'assessment', resourceId: (newAssessment as { id: string }).id,
     metadata: { teacher_id: teacherId, class_subject_id, academic_period_id, title: title.trim(), assessment_type, coefficient, max_score },
+  })
+
+  // Best-effort: notify enrolled students + their parents.
+  await notifyAssessmentCreated(supabase, {
+    schoolId,
+    assessmentId:     (newAssessment as { id: string }).id,
+    classSubjectId:   class_subject_id,
+    academicPeriodId: academic_period_id,
+    assessmentDate:   assessment_date || null,
   })
 
   redirect(`/teacher/grades/${(newAssessment as { id: string }).id}`)
