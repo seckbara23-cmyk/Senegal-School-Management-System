@@ -1,5 +1,6 @@
 import { requireParentCtx } from '../_auth'
 import { TimetableWeek, type TimetableDisplaySlot } from '@/components/TimetableWeek'
+import { PrintableTimetable } from '@/components/PrintableTimetable'
 
 const RELATIONSHIP_LABELS: Record<string, string> = {
   father: 'Père', mother: 'Mère', guardian: 'Tuteur', other: 'Autre',
@@ -121,7 +122,13 @@ export default async function ParentTimetablePage({ searchParams }: { searchPara
           <p className="mt-1 text-sm text-gray-400">L&apos;emploi du temps de cette classe n&apos;est pas encore disponible.</p>
         </div>
       ) : (
-        <TimetableWeek slots={slots} todayDow={todayDow} />
+        <PrintableTimetable
+          heading="Emploi du temps"
+          subtitle={`${selectedStudent.first_name} ${selectedStudent.last_name}${className ? ` · ${className}` : ''}`}
+          exportHref={`/api/timetable/export/parent?child=${selectedId}`}
+        >
+          <TimetableWeek slots={slots} todayDow={todayDow} />
+        </PrintableTimetable>
       )}
     </div>
   )

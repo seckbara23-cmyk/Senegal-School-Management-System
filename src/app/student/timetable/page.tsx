@@ -1,5 +1,6 @@
 import { requireStudentCtx } from '../_auth'
 import { TimetableWeek, type TimetableDisplaySlot } from '@/components/TimetableWeek'
+import { PrintableTimetable } from '@/components/PrintableTimetable'
 
 export default async function StudentTimetablePage() {
   const { supabase, schoolId, student } = await requireStudentCtx()
@@ -64,7 +65,13 @@ export default async function StudentTimetablePage() {
           <p className="mt-1 text-sm text-gray-400">L&apos;emploi du temps de votre classe n&apos;est pas encore disponible.</p>
         </div>
       ) : (
-        <TimetableWeek slots={slots} todayDow={todayDow} />
+        <PrintableTimetable
+          heading="Emploi du temps"
+          subtitle={`${student.first_name} ${student.last_name}${className ? ` · ${className}` : ''}`}
+          exportHref="/api/timetable/export/student"
+        >
+          <TimetableWeek slots={slots} todayDow={todayDow} />
+        </PrintableTimetable>
       )}
     </div>
   )

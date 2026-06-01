@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { PrintableTimetable } from '@/components/PrintableTimetable'
 
 const DAYS = [
   { value: 1, label: 'Lundi' },
@@ -149,6 +150,11 @@ export default async function TimetablePage({ searchParams }: Props) {
           </a>
         </div>
       ) : (
+        <PrintableTimetable
+          heading="Emploi du temps"
+          subtitle={selectedClassRow ? [selectedClassRow.name, selectedClassRow.section].filter(Boolean).join(' ') : undefined}
+          exportHref={`/api/timetable/export/class?class=${selectedClass}`}
+        >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {visibleDays.map((day) => {
             const daySlots = slotsByDay.get(day.value) ?? []
@@ -181,6 +187,7 @@ export default async function TimetablePage({ searchParams }: Props) {
             )
           })}
         </div>
+        </PrintableTimetable>
       )}
     </div>
   )

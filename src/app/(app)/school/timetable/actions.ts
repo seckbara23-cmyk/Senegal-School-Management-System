@@ -168,6 +168,24 @@ async function validateSlot(
     }
   }
 
+  // Room conflict: same room (case-insensitive), same day, overlapping time —
+  // scoped to the school + academic year. Blank rooms are never in conflict.
+  const room = d.room?.trim() ?? ''
+  if (room) {
+    const { data: roomSlots } = await supabase
+      .from('timetable_slots')
+      .select('id, start_time, end_time, room')
+      .eq('school_id', schoolId)
+      .eq('academic_year_id', academic_year_id)
+      .eq('day_of_week', d.day_of_week)
+      .not('room', 'is', null)
+    const sameRoom = ((roomSlots ?? []) as (SlotTimeRow & { room: string | null })[])
+      .filter((r) => (r.room ?? '').trim().toLowerCase() === room.toLowerCase())
+    if (overlaps(sameRoom, startMin, endMin, slotId)) {
+      return { ok: false, state: { errors: { _form: ['Cette salle est déjà occupée à cet horaire.'] } } }
+    }
+  }
+
   return {
     ok: true,
     values: {
@@ -178,7 +196,7 @@ async function validateSlot(
       day_of_week:      d.day_of_week,
       start_time:       d.start_time,
       end_time:         d.end_time,
-      room:             d.room ?? null,
+      room:             room || null,
       notes:            d.notes ?? null,
     },
   }
