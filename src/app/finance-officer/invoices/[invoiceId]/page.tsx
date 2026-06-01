@@ -1,5 +1,6 @@
 import { requireFinanceOfficerCtx } from '../../_auth'
 import { notFound } from 'next/navigation'
+import { FinanceOfficerPaymentForm } from './_payment_form'
 
 function fmt(n: number) { return new Intl.NumberFormat('fr-FR').format(n) + ' FCFA' }
 function fmtDate(iso: string | null) {
@@ -155,11 +156,20 @@ export default async function FinanceOfficerInvoiceDetailPage({ params }: Props)
         </div>
       )}
 
-      {/* Read-only notice: payment recording is handled by the administration. */}
-      {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
-        <p className="rounded-lg border border-sand-200 bg-sand-50 px-4 py-3 text-xs text-gray-500">
-          Consultation seule. L&apos;enregistrement des paiements est géré par l&apos;administration de l&apos;école.
-        </p>
+      {/* Record a payment — only for payable invoices (unpaid/partial). */}
+      {(invoice.status === 'unpaid' || invoice.status === 'partial') && (
+        <section>
+          <h2 className="text-base font-semibold text-gray-800 mb-3">Enregistrer un paiement</h2>
+          <div className="rounded-xl border border-sand-200 bg-white px-5 py-5 shadow-sm">
+            <FinanceOfficerPaymentForm invoiceId={invoice.id} balance={balance} />
+          </div>
+        </section>
+      )}
+
+      {invoice.status === 'paid' && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          ✓ Cette facture est entièrement réglée.
+        </div>
       )}
     </div>
   )

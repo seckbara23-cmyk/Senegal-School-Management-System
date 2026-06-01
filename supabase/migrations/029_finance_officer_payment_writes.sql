@@ -1,37 +1,37 @@
 -- =============================================================================
--- Migration 029: Finance-officer payment writes  ── PROPOSAL / NOT YET WIRED ──
+-- Migration 029: Finance-officer payment writes
 --
--- STATUS: Reviewed-pending. This migration is the concrete proposal required by
--- the Finance Officer Portal phase. The portal ships READ-ONLY: a finance
--- officer can view invoices, payments, receipts and reports for their school
--- but cannot record payments, because today's RLS only grants finance_officer
--- SELECT on the finance tables (migration 019). There is NO finance_officer
--- write policy on student_payments or student_invoices.
+-- Grants a finance officer the MINIMUM writes needed to record a payment from
+-- the finance-officer portal, additively (no existing policy is weakened or
+-- replaced). Until migration 019, finance_officer had SELECT only on the
+-- finance tables; the write policies are school_admin-only (migration 012).
 --
--- AUDIT OF CURRENT FINANCE RLS (for reference):
---   student_payments   SELECT  finance_officer  ✅ (migration 019)
---   student_payments   write   school_admin only (FOR ALL, migration 012) ❌ FO
---   student_invoices   SELECT  finance_officer  ✅ (migration 019)
---   student_invoices   write   school_admin only (FOR ALL, migration 012) ❌ FO
---   invoice_lines      SELECT  finance_officer  ✅ (migration 019)
---   restrictive write-gate (migration 025) already requires an ACTIVE school.
+-- WHAT THIS ALLOWS (finance_officer, own active school):
+--   1. INSERT a row into student_payments.
+--   2. UPDATE student_invoices ONLY to move a payable invoice
+--      (unpaid/partial) to unpaid/partial/paid — i.e. recompute amount_paid
+--      and status after a payment.
 --
--- This migration would ADDITIVELY grant a finance officer the minimum writes
--- needed to record a payment:
---   1. INSERT a row into student_payments for their school.
---   2. UPDATE student_invoices.amount_paid / status (recompute after payment).
--- It does NOT grant invoice creation, fee-item management, bulk invoicing, or
--- cancellation — those remain school_admin-only. It does not weaken or replace
--- any existing policy (only adds new permissive policies); the migration-025
--- restrictive gate still blocks writes for suspended/archived schools.
+-- WHAT THIS DOES NOT ALLOW:
+--   • Invoice creation        — no INSERT policy on student_invoices for FO.
+--   • Invoice deletion        — no DELETE policy.
+--   • Invoice CANCELLATION    — the UPDATE USING clause only targets invoices
+--                               currently 'unpaid'/'partial', and the WITH
+--                               CHECK forbids a resulting status of
+--                               'cancelled' (allowed results: unpaid/partial/
+--                               paid). A FO can neither cancel an invoice nor
+--                               edit an already paid/cancelled one.
+--   • Fee-item management      — no policy on fee_items.
+--   • Invoice line mutation    — no policy on invoice_lines.
 --
--- ⚠️ DO NOT APPLY until reviewed AND the matching application code lands:
---   - a finance-officer payment server action (resolving school via the
---     finance_officer membership) + the payment form on the FO invoice detail.
--- Applying the RLS alone is harmless (no code uses it yet); wiring the UI
--- without this migration would fail at the RLS layer. Keep them together.
+-- The migration-025 RESTRICTIVE gate (active_school_required_insert/_update)
+-- still applies on top, so all of the above is blocked for suspended/archived
+-- schools.
 --
--- IDEMPOTENT: DROP POLICY IF EXISTS before each CREATE.
+-- IDEMPOTENT: DROP POLICY IF EXISTS before each CREATE. Safe to rerun.
+--
+-- ⚠️ MANUAL: run this in the Supabase SQL editor against the project database.
+--    Do NOT apply automatically.
 -- =============================================================================
 
 -- 1. Finance officers may record payments (INSERT) for their own school.
@@ -40,14 +40,16 @@ CREATE POLICY "Finance officers can record payments"
   ON public.student_payments FOR INSERT
   WITH CHECK (public.has_school_role(school_id, ARRAY['finance_officer']));
 
--- 2. Finance officers may update invoice totals/status after a payment.
---    (UPDATE only — not INSERT/DELETE, so they cannot create or remove invoices.)
+-- 2. Finance officers may update a payable invoice's total/status after a
+--    payment — but only unpaid/partial invoices, and never to 'cancelled'.
 DROP POLICY IF EXISTS "Finance officers can update invoice payment status" ON public.student_invoices;
 CREATE POLICY "Finance officers can update invoice payment status"
   ON public.student_invoices FOR UPDATE
-  USING (public.has_school_role(school_id, ARRAY['finance_officer']))
-  WITH CHECK (public.has_school_role(school_id, ARRAY['finance_officer']));
-
--- NOTE: The migration-025 RESTRICTIVE policies (active_school_required_insert /
--- _update) still apply on top of these, so writes remain blocked when the
--- school is suspended/archived. No change needed there.
+  USING (
+    public.has_school_role(school_id, ARRAY['finance_officer'])
+    AND status IN ('unpaid', 'partial')
+  )
+  WITH CHECK (
+    public.has_school_role(school_id, ARRAY['finance_officer'])
+    AND status IN ('unpaid', 'partial', 'paid')
+  );
