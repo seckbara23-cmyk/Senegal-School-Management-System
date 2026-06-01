@@ -30,6 +30,10 @@ export const ACTION_LABELS: Record<string, string> = {
   academic_period_created:       'Période créée',
   assessment_created:            'Évaluation créée',
   grades_saved:                  'Notes enregistrées',
+  // Emploi du temps
+  timetable_slot_created:        'Créneau ajouté',
+  timetable_slot_updated:        'Créneau modifié',
+  timetable_slot_deleted:        'Créneau supprimé',
   // Annonces
   announcement_published:        'Annonce publiée',
   // Personnes
@@ -80,6 +84,7 @@ export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Classes & inscriptions', actions: ['class_created', 'students_enrolled', 'enrollment_withdrawn'] },
   { label: 'Années scolaires',     actions: ['academic_year_created', 'academic_year_updated', 'academic_year_status_changed'] },
   { label: 'Structure académique', actions: ['subject_created', 'subject_assigned_to_class', 'subject_removed_from_class', 'teacher_assigned_to_subject', 'academic_period_created', 'assessment_created', 'grades_saved'] },
+  { label: 'Emploi du temps',      actions: ['timetable_slot_created', 'timetable_slot_updated', 'timetable_slot_deleted'] },
   { label: 'Annonces',             actions: ['announcement_published'] },
   { label: 'Personnes',            actions: ['student_created', 'student_updated', 'teacher_created', 'teacher_updated', 'teacher_status_changed', 'parent_created', 'parent_updated', 'parent_status_changed', 'parent_student_linked', 'parent_student_unlinked'] },
   { label: 'Présences (admin)',    actions: ['admin_attendance_session_created', 'admin_attendance_records_saved'] },
@@ -106,6 +111,7 @@ export const RESOURCE_TYPE_LABELS: Record<string, string> = {
   academic_period:    'Période',
   assessment:         'Évaluation',
   attendance_session: 'Séance de présence',
+  timetable_slot:     'Créneau',
   announcement:       'Annonce',
   fee_item:           'Frais',
   invoice:            'Facture',
