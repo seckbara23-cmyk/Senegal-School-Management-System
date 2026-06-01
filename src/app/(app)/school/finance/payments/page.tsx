@@ -111,6 +111,14 @@ export default async function PaymentsLedgerPage({ searchParams }: Props) {
   const totalAmount = payments.reduce((s, p) => s + p.amount, 0)
   const hasFilter   = !!(dateFrom || dateTo || method || q)
 
+  // CSV export carries the current filters.
+  const exportParams = new URLSearchParams()
+  if (dateFrom) exportParams.set('date_from', dateFrom)
+  if (dateTo)   exportParams.set('date_to', dateTo)
+  if (method)   exportParams.set('method', method)
+  if (q)        exportParams.set('q', q)
+  const exportHref = `/api/finance/export/payments${exportParams.toString() ? `?${exportParams.toString()}` : ''}`
+
   return (
     <div className="space-y-6">
 
@@ -127,12 +135,20 @@ export default async function PaymentsLedgerPage({ searchParams }: Props) {
               {totalAmount > 0 ? ` · ${fmt(totalAmount)}` : ''}
             </p>
           </div>
-          <a
-            href="/school/finance/payments/new"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
-          >
-            + Enregistrer paiement
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={exportHref}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-primary-600 bg-primary-700 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-600 transition-colors"
+            >
+              Exporter CSV
+            </a>
+            <a
+              href="/school/finance/payments/new"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
+            >
+              + Enregistrer paiement
+            </a>
+          </div>
         </div>
       </div>
 

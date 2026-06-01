@@ -42,8 +42,11 @@ export default async function FinanceOfficerReportsPage() {
     <div className="space-y-6 pb-8">
 
       <div className="rounded-xl bg-primary-800 px-6 py-5">
-        <div className="mb-1">
+        <div className="mb-1 flex items-center justify-between gap-2">
           <a href="/finance-officer" className="text-primary-300 hover:text-white text-sm">← Tableau de bord</a>
+          <a href="/api/finance/export/report" className="rounded-lg border border-primary-600 bg-primary-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-600 transition-colors">
+            Exporter CSV (mois en cours)
+          </a>
         </div>
         <h1 className="text-2xl font-bold text-white tracking-tight">Rapport financier</h1>
         <p className="text-primary-300 text-sm mt-0.5">{schoolName} · Lecture seule</p>

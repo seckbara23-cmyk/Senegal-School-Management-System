@@ -116,6 +116,12 @@ export default async function InvoicesPage({ searchParams }: Props) {
           </div>
           <div className="flex flex-wrap gap-2">
             <a
+              href={`/api/finance/export/invoices${statusFilter ? `?status=${statusFilter}` : ''}`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-primary-600 bg-primary-700 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-600 transition-colors"
+            >
+              Exporter CSV
+            </a>
+            <a
               href="/school/finance/invoices/new"
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
             >

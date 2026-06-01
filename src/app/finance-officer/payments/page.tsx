@@ -64,12 +64,22 @@ export default async function FinanceOfficerPaymentsPage({ searchParams }: Props
   const totalAmount = payments.reduce((s, p) => s + p.amount, 0)
   const hasFilter = !!(dateFrom || dateTo || method || q)
 
+  const exportParams = new URLSearchParams()
+  if (dateFrom) exportParams.set('date_from', dateFrom)
+  if (dateTo)   exportParams.set('date_to', dateTo)
+  if (method)   exportParams.set('method', method)
+  if (q)        exportParams.set('q', q)
+  const exportHref = `/api/finance/export/payments${exportParams.toString() ? `?${exportParams.toString()}` : ''}`
+
   return (
     <div className="space-y-6 pb-8">
 
       <div className="rounded-xl bg-primary-800 px-6 py-5">
-        <div className="mb-1">
+        <div className="mb-1 flex items-center justify-between gap-2">
           <a href="/finance-officer" className="text-primary-300 hover:text-white text-sm">← Tableau de bord</a>
+          <a href={exportHref} className="rounded-lg border border-primary-600 bg-primary-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-600 transition-colors">
+            Exporter CSV
+          </a>
         </div>
         <h1 className="text-2xl font-bold text-white tracking-tight">Journal des paiements</h1>
         <p className="text-primary-300 text-sm mt-0.5">

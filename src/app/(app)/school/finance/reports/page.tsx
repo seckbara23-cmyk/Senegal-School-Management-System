@@ -129,10 +129,20 @@ export default async function FinanceReportsPage({ searchParams }: Props) {
         <div className="mb-1">
           <a href="/school/finance" className="text-primary-300 hover:text-white text-sm">← Finances</a>
         </div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">Rapport financier</h1>
-        <p className="text-primary-300 text-sm mt-0.5">
-          {isDefaultRange ? 'Mois en cours' : `${fmtLong(dateFrom)} – ${fmtLong(dateTo)}`}
-        </p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-white tracking-tight">Rapport financier</h1>
+            <p className="text-primary-300 text-sm mt-0.5">
+              {isDefaultRange ? 'Mois en cours' : `${fmtLong(dateFrom)} – ${fmtLong(dateTo)}`}
+            </p>
+          </div>
+          <a
+            href={`/api/finance/export/report?date_from=${dateFrom}&date_to=${dateTo}`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-primary-600 bg-primary-700 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-600 transition-colors"
+          >
+            Exporter CSV
+          </a>
+        </div>
       </div>
 
       {/* ── Date range filter ────────────────────────────────────────────────── */}

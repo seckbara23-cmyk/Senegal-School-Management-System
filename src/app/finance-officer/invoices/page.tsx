@@ -79,12 +79,20 @@ export default async function FinanceOfficerInvoicesPage({ searchParams }: Props
     return inv.due_date !== null && inv.due_date < today && (inv.status === 'unpaid' || inv.status === 'partial')
   }
 
+  const exportParams = new URLSearchParams()
+  if (statusParam) exportParams.set('status', statusParam)
+  if (q)           exportParams.set('q', q)
+  const exportHref = `/api/finance/export/invoices${exportParams.toString() ? `?${exportParams.toString()}` : ''}`
+
   return (
     <div className="space-y-6 pb-8">
 
       <div className="rounded-xl bg-primary-800 px-6 py-5">
-        <div className="mb-1">
+        <div className="mb-1 flex items-center justify-between gap-2">
           <a href="/finance-officer" className="text-primary-300 hover:text-white text-sm">← Tableau de bord</a>
+          <a href={exportHref} className="rounded-lg border border-primary-600 bg-primary-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-600 transition-colors">
+            Exporter CSV
+          </a>
         </div>
         <h1 className="text-2xl font-bold text-white tracking-tight">Factures</h1>
         <p className="text-primary-300 text-sm mt-0.5">{invoices.length} facture{invoices.length !== 1 ? 's' : ''}</p>
