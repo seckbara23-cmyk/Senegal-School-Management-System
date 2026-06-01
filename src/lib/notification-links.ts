@@ -58,9 +58,9 @@ export function getNotificationHref(n: NotificationLike, role: NotificationRole)
     case 'payment_recorded': {
       const paymentId = meta(m, 'payment_id')
       switch (role) {
-        case 'school_admin': return paymentId ? `/school/finance/payments/${paymentId}` : '/school/finance/payments'
-        // finance_officer has no dedicated portal yet → fallback.
-        default:             return FALLBACK
+        case 'school_admin':    return paymentId ? `/school/finance/payments/${paymentId}`          : '/school/finance/payments'
+        case 'finance_officer': return paymentId ? `/finance-officer/payments/${paymentId}`         : '/finance-officer/payments'
+        default:                return FALLBACK
       }
     }
 

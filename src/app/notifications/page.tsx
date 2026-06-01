@@ -61,7 +61,7 @@ async function resolvePortal(
   if (roles.has('teacher'))         return { href: '/teacher',  label: 'Retour au portail enseignant',  role: 'teacher' }
   if (roles.has('parent'))          return { href: '/parent',   label: 'Retour au portail parent',      role: 'parent' }
   if (roles.has('student'))         return { href: '/student',  label: 'Retour au portail étudiant',    role: 'student' }
-  if (roles.has('finance_officer')) return { href: '/dashboard', label: 'Retour au tableau de bord',    role: 'finance_officer' }
+  if (roles.has('finance_officer')) return { href: '/finance-officer', label: 'Retour au portail finance', role: 'finance_officer' }
   // any other / no active role
   return { href: '/dashboard', label: 'Retour au tableau de bord', role: 'finance_officer' }
 }
