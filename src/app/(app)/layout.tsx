@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Sidebar } from './_sidebar'
 import { TenantUnavailable } from './_tenant-unavailable'
+import { getNotificationSummary } from '@/lib/notifications'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
@@ -49,12 +50,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     }
   }
 
-  // Unread notification count for the bell badge.
-  const { count: unreadCount } = await supabase
-    .from('notifications')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', user.id)
-    .is('read_at', null)
+  // Unread count + recent notifications for the header bell.
+  const { unreadCount, recent } = await getNotificationSummary(supabase, user.id)
 
   return (
     <div className="flex min-h-screen bg-sand-100 print:bg-white">
@@ -62,7 +59,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Sidebar
           schoolName={schoolName}
           userEmail={user.email ?? ''}
-          unreadCount={unreadCount ?? 0}
+          unreadCount={unreadCount}
+          recent={recent}
         />
       </div>
 

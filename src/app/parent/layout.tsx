@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { ParentNav } from './_nav'
+import { getNotificationSummary } from '@/lib/notifications'
 
 export default async function ParentLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
@@ -32,12 +33,16 @@ export default async function ParentLayout({ children }: { children: React.React
 
   const parentName = parent ? `${parent.first_name} ${parent.last_name}` : ''
 
+  const { unreadCount, recent } = await getNotificationSummary(supabase, user.id)
+
   return (
     <div className="flex min-h-screen bg-sand-100">
       <ParentNav
         schoolName={schoolName}
         parentName={parentName}
         userEmail={user.email ?? ''}
+        unreadCount={unreadCount}
+        recent={recent}
       />
       <main className="flex-1 pt-14 lg:pt-0 lg:pl-52">
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8">

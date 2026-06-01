@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { formatServerActionError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
+import { createNotification } from '@/lib/notifications'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -144,13 +145,13 @@ async function dispatchNotifications(
 
     await Promise.all(
       userIds.map((uid) =>
-        supabase.rpc('create_notification', {
-          p_user_id:   uid,
-          p_title:     title,
-          p_body:      body ?? null,
-          p_type:      'info',
-          p_school_id: schoolId,
-          p_metadata:  metadata,
+        createNotification(supabase, {
+          userId:   uid,
+          type:     'announcement_published',
+          title,
+          body:     body ?? null,
+          schoolId,
+          metadata,
         })
       )
     )

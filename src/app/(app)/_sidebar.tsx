@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
+import { NotificationBell } from '@/components/NotificationBell'
+import type { NotificationPreview } from '@/lib/notifications'
 
 // ─── SVG icon paths (Heroicons outline, 24px viewBox) ────────────────────────
 
@@ -132,9 +134,10 @@ type SidebarProps = {
   schoolName: string
   userEmail:  string
   unreadCount: number
+  recent: NotificationPreview[]
 }
 
-export function Sidebar({ schoolName, userEmail, unreadCount }: SidebarProps) {
+export function Sidebar({ schoolName, userEmail, unreadCount, recent }: SidebarProps) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
 
@@ -167,14 +170,17 @@ export function Sidebar({ schoolName, userEmail, unreadCount }: SidebarProps) {
           <p className="truncate text-sm font-semibold text-white">{displayName}</p>
           <p className="text-xs text-white/60">Administration scolaire</p>
         </div>
-        {/* Close button — mobile only */}
-        <button
-          className="ml-auto rounded-md p-1 text-white/60 hover:bg-white/10 hover:text-white lg:hidden"
-          onClick={() => setOpen(false)}
-          aria-label="Fermer le menu"
-        >
-          <Icon path={P.x} className="h-5 w-5" />
-        </button>
+        <div className="ml-auto flex items-center">
+          <NotificationBell unreadCount={unreadCount} items={recent} variant="dark" align="left" />
+          {/* Close button — mobile only */}
+          <button
+            className="rounded-md p-1 text-white/60 hover:bg-white/10 hover:text-white lg:hidden"
+            onClick={() => setOpen(false)}
+            aria-label="Fermer le menu"
+          >
+            <Icon path={P.x} className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
       {/* Main navigation */}
@@ -241,16 +247,7 @@ export function Sidebar({ schoolName, userEmail, unreadCount }: SidebarProps) {
           {displayName}
         </span>
 
-        <Link
-          href="/notifications"
-          aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount})` : ''}`}
-          className="relative rounded-md p-2 text-gray-600 hover:bg-sand-100 hover:text-gray-900"
-        >
-          <Icon path={P.bell} className="h-5 w-5" />
-          {unreadCount > 0 && (
-            <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-accent-400" />
-          )}
-        </Link>
+        <NotificationBell unreadCount={unreadCount} items={recent} variant="light" align="right" />
       </header>
 
       {/* ── Mobile: overlay + slide-in drawer ─────────────────────────────── */}

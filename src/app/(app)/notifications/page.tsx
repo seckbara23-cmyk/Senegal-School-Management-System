@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { markNotificationRead, markAllNotificationsRead } from './actions'
+import { notificationTypeLabel, notificationTypeDot, formatRelativeTime } from '@/lib/notifications'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,22 +19,6 @@ type Notification = {
 
 const PAGE_SIZE = 20
 
-const TYPE_LABEL: Record<string, string> = {
-  info:    'Info',
-  success: 'Succès',
-  warning: 'Attention',
-  error:   'Erreur',
-  system:  'Système',
-}
-
-const TYPE_DOT: Record<string, string> = {
-  info:    'bg-primary-500',
-  success: 'bg-emerald-500',
-  warning: 'bg-amber-500',
-  error:   'bg-red-500',
-  system:  'bg-gray-400',
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function buildUrl(filter: string, page: number): string {
@@ -42,21 +27,6 @@ function buildUrl(filter: string, page: number): string {
   if (page > 1)         params.set('page', String(page))
   const qs = params.toString()
   return `/notifications${qs ? '?' + qs : ''}`
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso)
-  const now = new Date()
-  const diff = now.getTime() - d.getTime()
-  const mins  = Math.floor(diff / 60_000)
-  const hours = Math.floor(diff / 3_600_000)
-  const days  = Math.floor(diff / 86_400_000)
-
-  if (mins < 1)   return "À l'instant"
-  if (mins < 60)  return `Il y a ${mins} min`
-  if (hours < 24) return `Il y a ${hours} h`
-  if (days === 1) return 'Hier'
-  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -196,8 +166,8 @@ export default async function NotificationsPage({ searchParams }: Props) {
         <div className="space-y-2">
           {notifications.map((n) => {
             const isUnread = n.read_at === null
-            const dotClass = TYPE_DOT[n.type] ?? TYPE_DOT.info
-            const typeLabel = TYPE_LABEL[n.type] ?? n.type
+            const dotClass = notificationTypeDot(n.type)
+            const typeLabel = notificationTypeLabel(n.type)
 
             return (
               <article
@@ -225,7 +195,7 @@ export default async function NotificationsPage({ searchParams }: Props) {
                       dateTime={n.created_at}
                       className="text-xs text-gray-400"
                     >
-                      {formatDate(n.created_at)}
+                      {formatRelativeTime(n.created_at)}
                     </time>
                   </div>
 

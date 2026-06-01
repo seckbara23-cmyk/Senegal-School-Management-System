@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
+import { NotificationBell } from '@/components/NotificationBell'
+import type { NotificationPreview } from '@/lib/notifications'
 
 const P = {
   home:       'M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25',
@@ -34,9 +36,11 @@ interface Props {
   schoolName:   string
   studentName:  string
   userEmail:    string
+  unreadCount:  number
+  recent:       NotificationPreview[]
 }
 
-export function StudentNav({ schoolName, studentName, userEmail }: Props) {
+export function StudentNav({ schoolName, studentName, userEmail, unreadCount, recent }: Props) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
 
@@ -96,13 +100,18 @@ export function StudentNav({ schoolName, studentName, userEmail }: Props) {
           <p className="truncate text-sm font-semibold text-white">{displaySchool}</p>
           <p className="text-xs text-white/60">Portail Étudiant</p>
         </div>
-        <button
-          className="ml-auto rounded-md p-1 text-white/60 hover:bg-white/10 hover:text-white lg:hidden"
-          onClick={() => setOpen(false)}
-          aria-label="Fermer le menu"
-        >
-          <Icon d={P.x} />
-        </button>
+        <div className="ml-auto flex items-center">
+          <div className="hidden lg:block">
+            <NotificationBell unreadCount={unreadCount} items={recent} variant="dark" align="left" />
+          </div>
+          <button
+            className="rounded-md p-1 text-white/60 hover:bg-white/10 hover:text-white lg:hidden"
+            onClick={() => setOpen(false)}
+            aria-label="Fermer le menu"
+          >
+            <Icon d={P.x} />
+          </button>
+        </div>
       </div>
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">{links}</nav>
       <div className="px-3 pb-4">{footer}</div>
@@ -120,7 +129,9 @@ export function StudentNav({ schoolName, studentName, userEmail }: Props) {
           <Icon d={P.bars} />
         </button>
         <span className="text-sm font-semibold text-white truncate">{displaySchool}</span>
-        <span className="ml-auto text-xs font-medium text-white/50">Portail Étudiant</span>
+        <div className="ml-auto">
+          <NotificationBell unreadCount={unreadCount} items={recent} variant="dark" align="right" />
+        </div>
       </div>
 
       {open && (
