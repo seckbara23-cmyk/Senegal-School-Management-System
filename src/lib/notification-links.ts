@@ -30,24 +30,26 @@ export function getNotificationHref(n: NotificationLike, role: NotificationRole)
   const m = n.metadata ?? {}
 
   switch (n.type) {
-    // ── Announcements (list pages only — no per-announcement detail page) ──────
-    case 'announcement_published':
+    // ── Announcements (per-announcement detail pages, Phase 36.7) ─────────────
+    case 'announcement_published': {
+      const annId = meta(m, 'announcement_id')
       switch (role) {
-        case 'school_admin': return '/school/announcements'
-        case 'teacher':      return '/teacher/announcements'
-        case 'parent':       return '/parent/announcements'
-        case 'student':      return '/student/announcements'
+        case 'school_admin': return annId ? `/school/announcements/${annId}`  : '/school/announcements'
+        case 'teacher':      return annId ? `/teacher/announcements/${annId}` : '/teacher/announcements'
+        case 'parent':       return annId ? `/parent/announcements/${annId}`  : '/parent/announcements'
+        case 'student':      return annId ? `/student/announcements/${annId}` : '/student/announcements'
         default:             return FALLBACK
       }
+    }
 
     // ── Invoices (created / overdue) ──────────────────────────────────────────
     case 'invoice_created':
     case 'invoice_overdue': {
       const invoiceId = meta(m, 'invoice_id')
       switch (role) {
-        case 'school_admin': return invoiceId ? `/school/finance/invoices/${invoiceId}` : '/school/finance/invoices'
-        case 'parent':       return '/parent/finance'   // no per-invoice detail in parent portal
-        case 'student':      return '/student/finance'  // no per-invoice detail in student portal
+        case 'school_admin': return invoiceId ? `/school/finance/invoices/${invoiceId}`  : '/school/finance/invoices'
+        case 'parent':       return invoiceId ? `/parent/finance/invoices/${invoiceId}`  : '/parent/finance'
+        case 'student':      return invoiceId ? `/student/finance/invoices/${invoiceId}` : '/student/finance'
         default:             return FALLBACK
       }
     }
@@ -66,10 +68,10 @@ export function getNotificationHref(n: NotificationLike, role: NotificationRole)
     case 'attendance_recorded': {
       const sessionId = meta(m, 'attendance_session_id')
       switch (role) {
-        case 'school_admin': return sessionId ? `/school/attendance/${sessionId}` : '/school/attendance'
+        case 'school_admin': return sessionId ? `/school/attendance/${sessionId}`  : '/school/attendance'
         case 'teacher':      return sessionId ? `/teacher/attendance/${sessionId}` : '/teacher/attendance'
-        case 'parent':       return '/parent/attendance'   // list only
-        case 'student':      return '/student/attendance'  // list only
+        case 'parent':       return sessionId ? `/parent/attendance/${sessionId}`  : '/parent/attendance'
+        case 'student':      return sessionId ? `/student/attendance/${sessionId}` : '/student/attendance'
         default:             return FALLBACK
       }
     }
