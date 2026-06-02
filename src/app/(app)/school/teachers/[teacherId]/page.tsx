@@ -263,11 +263,19 @@ export default async function TeacherDetailPage({ params, searchParams }: Props)
 
       {/* ── Affectations ────────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-sand-200 bg-white shadow-sm overflow-hidden">
-        <div className="border-b border-sand-200 bg-sand-50 px-5 py-3 flex items-center justify-between">
+        <div className="border-b border-sand-200 bg-sand-50 px-5 py-3 flex items-center justify-between gap-3">
           <p className="text-xs font-bold uppercase tracking-widest text-gray-500">
             Registre des affectations
           </p>
-          <p className="text-xs text-gray-400">{assignments.length} matière{assignments.length !== 1 ? 's' : ''}</p>
+          <div className="flex items-center gap-3">
+            <p className="text-xs text-gray-400">{assignments.length} matière{assignments.length !== 1 ? 's' : ''}</p>
+            <a
+              href={`/school/teachers/${teacher.id}/assignments`}
+              className="shrink-0 rounded-lg border border-primary-200 px-3 py-1.5 text-xs font-semibold text-primary-600 hover:bg-primary-50 transition-colors"
+            >
+              Gérer les affectations →
+            </a>
+          </div>
         </div>
 
         {yearGroups.length === 0 ? (

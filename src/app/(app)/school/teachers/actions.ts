@@ -228,3 +228,111 @@ export async function setTeacherStatus(formData: FormData) {
 
   redirect(`/school/teachers/${teacherId.data}`)
 }
+
+// ─── Teacher ↔ class-subject assignments (Phase 39.2) ──────────────────────────
+//
+// A teacher is assigned to a class_subject (class + subject + year) via the
+// existing teacher_subject_assignments table (UNIQUE on class_subject_id → one
+// teacher per class-subject). These actions power the teacher-centric page at
+// /school/teachers/[teacherId]/assignments.
+
+const AssignmentSchema = z.object({
+  teacher_id:       z.string().uuid(),
+  class_subject_id: z.string().uuid(),
+})
+
+function assignmentsPath(teacherId: string, param?: string): string {
+  return `/school/teachers/${teacherId}/assignments${param ? `?${param}` : ''}`
+}
+
+export async function assignTeacherToClassSubject(formData: FormData): Promise<void> {
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
+
+  const parsed = AssignmentSchema.safeParse({
+    teacher_id:       formData.get('teacher_id'),
+    class_subject_id: formData.get('class_subject_id'),
+  })
+  if (!parsed.success) redirect('/school/teachers')
+  const { teacher_id, class_subject_id } = parsed.data
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(assignmentsPath(teacher_id, 'error=readonly'))
+  }
+
+  // Teacher must belong to this school and be active.
+  const { data: teacher } = await supabase
+    .from('teachers')
+    .select('id, status')
+    .eq('id', teacher_id)
+    .eq('school_id', schoolId)
+    .maybeSingle()
+  if (!teacher) redirect('/school/teachers')
+  if ((teacher as { status: string }).status !== 'active') {
+    redirect(assignmentsPath(teacher_id, 'error=inactive'))
+  }
+
+  // Class-subject must belong to the same school.
+  const { data: cs } = await supabase
+    .from('class_subjects')
+    .select('id')
+    .eq('id', class_subject_id)
+    .eq('school_id', schoolId)
+    .maybeSingle()
+  if (!cs) redirect(assignmentsPath(teacher_id, 'error=invalid'))
+
+  const { error } = await supabase
+    .from('teacher_subject_assignments')
+    .insert({ school_id: schoolId, teacher_id, class_subject_id })
+
+  if (error) {
+    // UNIQUE(class_subject_id) → this class-subject already has a teacher.
+    if (error.code === '23505') redirect(assignmentsPath(teacher_id, 'error=duplicate'))
+    logSupabaseError(error, { action: 'assignTeacherToClassSubject', schoolId, userId: actor.id, entityIds: { teacher_id, class_subject_id } })
+    redirect(assignmentsPath(teacher_id, 'error=server'))
+  }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'teacher_assignment_created', resourceType: 'class_subject', resourceId: class_subject_id,
+    metadata: { teacher_id, class_subject_id },
+  })
+
+  redirect(assignmentsPath(teacher_id, 'created=1'))
+}
+
+export async function removeTeacherAssignment(formData: FormData): Promise<void> {
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
+
+  const parsed = AssignmentSchema.safeParse({
+    teacher_id:       formData.get('teacher_id'),
+    class_subject_id: formData.get('class_subject_id'),
+  })
+  if (!parsed.success) redirect('/school/teachers')
+  const { teacher_id, class_subject_id } = parsed.data
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(assignmentsPath(teacher_id, 'error=readonly'))
+  }
+
+  // Scope the delete by school + teacher + class_subject — a tampered id cannot
+  // remove another school's or another teacher's assignment.
+  const { error } = await supabase
+    .from('teacher_subject_assignments')
+    .delete()
+    .eq('school_id', schoolId)
+    .eq('teacher_id', teacher_id)
+    .eq('class_subject_id', class_subject_id)
+
+  if (error) {
+    logSupabaseError(error, { action: 'removeTeacherAssignment', schoolId, userId: actor.id, entityIds: { teacher_id, class_subject_id } })
+    redirect(assignmentsPath(teacher_id, 'error=server'))
+  }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'teacher_assignment_removed', resourceType: 'class_subject', resourceId: class_subject_id,
+    metadata: { teacher_id, class_subject_id },
+  })
+
+  redirect(assignmentsPath(teacher_id, 'removed=1'))
+}

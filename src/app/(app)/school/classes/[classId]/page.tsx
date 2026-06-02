@@ -103,6 +103,21 @@ export default async function ClassDetailPage({ params }: Props) {
 
   const enrollments = (rawEnrollments ?? []) as unknown as EnrolledStudent[]
 
+  // Subjects assigned to this class, with their (optional) teacher — read-only.
+  const { data: rawClassSubjects } = await supabase
+    .from('class_subjects')
+    .select('id, subjects!subject_id(name, code), teacher_subject_assignments!class_subject_id(teachers!teacher_id(id, first_name, last_name))')
+    .eq('class_id', cls.id)
+    .eq('school_id', school.id)
+    .order('subjects(name)', { ascending: true })
+
+  type ClassSubjectRow = {
+    id: string
+    subjects: { name: string; code: string | null } | null
+    teacher_subject_assignments: { teachers: { id: string; first_name: string; last_name: string } | null }[]
+  }
+  const classSubjects = (rawClassSubjects ?? []) as unknown as ClassSubjectRow[]
+
   const displayName = [cls.name, cls.section].filter(Boolean).join(' — ')
   const yr = cls.academic_years
 
@@ -182,6 +197,53 @@ export default async function ClassDetailPage({ params }: Props) {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Subjects & teachers (read-only; managed under Académique → Attributions) */}
+      <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
+        <div className="border-b border-sand-100 bg-sand-50 px-5 py-3 flex items-center justify-between gap-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+            Matières &amp; enseignants
+          </h2>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-400">{classSubjects.length} matière{classSubjects.length !== 1 ? 's' : ''}</span>
+            <a
+              href={`/school/academics/assignments?class_id=${cls.id}`}
+              className="shrink-0 rounded-lg border border-primary-200 px-3 py-1.5 text-xs font-semibold text-primary-600 hover:bg-primary-50 transition-colors"
+            >
+              Gérer →
+            </a>
+          </div>
+        </div>
+        {classSubjects.length === 0 ? (
+          <div className="px-5 py-8 text-center">
+            <p className="text-sm text-gray-500">Aucune matière assignée à cette classe.</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-sand-100">
+            {classSubjects.map((cs) => {
+              const teacher = cs.teacher_subject_assignments[0]?.teachers ?? null
+              return (
+                <li key={cs.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{cs.subjects?.name ?? '—'}</p>
+                    {cs.subjects?.code && <p className="text-xs font-mono text-gray-400">{cs.subjects.code}</p>}
+                  </div>
+                  {teacher ? (
+                    <a
+                      href={`/school/teachers/${teacher.id}`}
+                      className="shrink-0 text-sm text-primary-600 hover:text-primary-700 hover:underline"
+                    >
+                      {teacher.last_name} {teacher.first_name}
+                    </a>
+                  ) : (
+                    <span className="shrink-0 text-xs italic text-gray-400">Non assigné</span>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
       </div>
 
       {/* Enrolled students table */}
