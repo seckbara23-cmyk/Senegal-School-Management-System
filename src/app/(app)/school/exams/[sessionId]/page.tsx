@@ -111,11 +111,16 @@ export default async function ExamSessionDetailPage({ params, searchParams }: Pr
               {s.academic_years?.name ?? ''} · {fmtDate(s.starts_on)} – {fmtDate(s.ends_on)}
             </p>
           </div>
-          {s.status !== 'archived' && (
-            <a href={`/school/exams/${s.id}/edit`} className="rounded-lg border border-primary-600 bg-primary-700 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-600 transition-colors">
-              Modifier
+          <div className="flex flex-wrap items-center gap-2">
+            <a href={`/school/exams/${s.id}/results`} className="rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm">
+              Résultats
             </a>
-          )}
+            {s.status !== 'archived' && (
+              <a href={`/school/exams/${s.id}/edit`} className="rounded-lg border border-primary-600 bg-primary-700 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-600 transition-colors">
+                Modifier
+              </a>
+            )}
+          </div>
         </div>
       </div>
 
