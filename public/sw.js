@@ -1,14 +1,22 @@
 // Cache version — bump this any time you change what gets cached.
 // Bumping forces every older cache (including any that wrongly stored an
 // app document or RSC payload) to be deleted on the next activation.
-const CACHE_NAME = 'school-management-v3'
+const CACHE_NAME = 'school-management-v4'
 
-// Only cache true static, versioned assets.
-// HTML navigation requests and React Server Component (RSC) payloads must
-// NEVER be cached here — they are per-user / per-route and must always reach
-// the server so that the correct page content is rendered.
+// Static, non-sensitive, app-shell-independent assets that are safe to
+// precache. HTML navigation requests and React Server Component (RSC) payloads
+// must NEVER be cached here — they are per-user / per-route and must always
+// reach the server so that the correct page content is rendered.
+//
+// `/offline.html` is a fully self-contained static page (no auth, no user
+// data) served only when a navigation fails because the device is offline.
+const OFFLINE_URL = '/offline.html'
 const STATIC_ASSETS = [
   '/manifest.json',
+  OFFLINE_URL,
+  '/icons/icon-192x192.png',
+  '/icons/icon-512x512.png',
+  '/icons/apple-touch-icon.png',
 ]
 
 // Authenticated application route prefixes. Requests to these paths — whether
@@ -72,15 +80,24 @@ self.addEventListener('fetch', (event) => {
   // (prefetch) or with an `RSC: 1` request header (client-side navigation).
   const isRsc = url.searchParams.has('_rsc') || request.headers.get('RSC') === '1'
 
+  // Document navigations: always go to the network first (the response is
+  // NEVER cached — app content stays per-user / per-route and fresh). Only when
+  // the network is unreachable (offline) do we serve the static offline page.
+  // This never returns stale app content and never caches authenticated HTML.
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request).catch(() => caches.match(OFFLINE_URL))
+    )
+    return
+  }
+
   // Bypass the service worker entirely (normal network fetch, no caching) for:
-  //   1. document navigations           — request.mode === 'navigate'
-  //   2. RSC / data requests            — isRsc
-  //   3. authenticated app routes       — isProtectedPath
-  //   4. cross-origin requests          — different origin
+  //   1. RSC / data requests            — isRsc
+  //   2. authenticated app routes       — isProtectedPath
+  //   3. cross-origin requests          — different origin
   // Returning without calling respondWith lets the browser perform its default
   // network fetch, guaranteeing the freshest server-rendered content.
   if (
-    request.mode === 'navigate' ||
     isRsc ||
     url.origin !== self.location.origin ||
     isProtectedPath(url.pathname)

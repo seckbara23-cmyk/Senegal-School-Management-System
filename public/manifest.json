@@ -1,11 +1,14 @@
 {
-  "name": "School Management System",
-  "short_name": "SMS",
-  "description": "Multi-tenant school management SaaS for Senegal",
+  "name": "EduSen — Gestion scolaire",
+  "short_name": "EduSen",
+  "description": "Plateforme de gestion scolaire pour les établissements au Sénégal : élèves, présences, paiements et communication.",
+  "lang": "fr",
+  "dir": "ltr",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#4f46e5",
+  "theme_color": "#054D2C",
   "icons": [
     {
       "src": "/icons/icon-192x192.png",
