@@ -148,6 +148,7 @@ export default async function TeacherDashboard() {
             </a>
           </div>
           <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-sand-200 bg-primary-800 text-left">
@@ -169,6 +170,7 @@ export default async function TeacherDashboard() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </section>
       )}

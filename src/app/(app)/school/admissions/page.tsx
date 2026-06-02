@@ -123,6 +123,7 @@ export default async function AdmissionsPage({ searchParams }: Props) {
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
+          <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-sand-200">
             <thead>
               <tr className="bg-sand-50 text-left">
@@ -162,6 +163,7 @@ export default async function AdmissionsPage({ searchParams }: Props) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

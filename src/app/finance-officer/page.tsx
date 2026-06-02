@@ -116,6 +116,7 @@ export default async function FinanceOfficerDashboard() {
             <a href="/finance-officer/invoices?status=overdue" className="text-sm text-primary-600 hover:text-primary-800 hover:underline">Voir toutes →</a>
           </div>
           <div className="overflow-hidden rounded-xl border border-red-200 shadow-sm">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <tbody>
                 {overdue.map((inv, idx) => (
@@ -132,6 +133,7 @@ export default async function FinanceOfficerDashboard() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </section>
       )}
@@ -148,6 +150,7 @@ export default async function FinanceOfficerDashboard() {
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <tbody>
                 {recentPayments.map((p, idx) => (
@@ -163,6 +166,7 @@ export default async function FinanceOfficerDashboard() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </section>
@@ -179,6 +183,7 @@ export default async function FinanceOfficerDashboard() {
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <tbody>
                 {recentInvoices.map((inv, idx) => (
@@ -199,6 +204,7 @@ export default async function FinanceOfficerDashboard() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </section>
