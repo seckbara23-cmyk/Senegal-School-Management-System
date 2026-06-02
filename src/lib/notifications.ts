@@ -25,6 +25,7 @@ export const NOTIFICATION_TYPES = [
   'timetable_created',
   'timetable_updated',
   'timetable_deleted',
+  'exam_results_published',
 ] as const
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number]
@@ -51,6 +52,7 @@ export const NOTIFICATION_TYPE_LABEL: Record<string, string> = {
   timetable_created:      'Nouvel horaire',
   timetable_updated:      'Horaire modifié',
   timetable_deleted:      'Cours annulé',
+  exam_results_published: "Résultats d'examen",
 }
 
 export const NOTIFICATION_TYPE_DOT: Record<string, string> = {
@@ -71,6 +73,7 @@ export const NOTIFICATION_TYPE_DOT: Record<string, string> = {
   timetable_created:      'bg-primary-500',
   timetable_updated:      'bg-blue-500',
   timetable_deleted:      'bg-red-500',
+  exam_results_published: 'bg-indigo-500',
 }
 
 export function notificationTypeLabel(type: string): string {

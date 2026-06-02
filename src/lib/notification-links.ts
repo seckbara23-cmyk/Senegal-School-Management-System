@@ -100,6 +100,17 @@ export function getNotificationHref(n: NotificationLike, role: NotificationRole)
         default:             return FALLBACK
       }
 
+    // ── Exam results published (recipients: student + parents) ────────────────
+    case 'exam_results_published': {
+      const sessionId = meta(m, 'exam_session_id')
+      switch (role) {
+        case 'school_admin': return sessionId ? `/school/exams/${sessionId}/results` : '/school/exams'
+        case 'parent':       return '/parent/exams'
+        case 'student':      return sessionId ? `/student/exams/${sessionId}` : '/student/exams'
+        default:             return FALLBACK
+      }
+    }
+
     // ── Bulletin published (future — no publish workflow yet) ─────────────────
     case 'bulletin_published': {
       const studentId = meta(m, 'student_id')

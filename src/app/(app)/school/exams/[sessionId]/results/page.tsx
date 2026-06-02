@@ -1,7 +1,9 @@
 import { PrintButton } from '@/components/PrintButton'
 import { computeExamResults } from '@/lib/exam-results'
+import { getPublicationState } from '@/lib/exam-publications'
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
+import { publishExamResults, unpublishExamResults } from '../../actions'
 
 const UUID_RE = /^[0-9a-fA-F-]{36}$/
 
@@ -15,16 +17,27 @@ const MENTION_CLASS: Record<string, string> = {
 
 type Props = {
   params: { sessionId: string }
-  searchParams: { class?: string }
+  searchParams: { class?: string; published?: string; unpublished?: string; error?: string }
 }
 
 type SessionRow = {
   id: string
   name: string
+  status: string
   starts_on: string
   ends_on: string
   academic_year_id: string
   academic_years: { name: string } | null
+}
+
+const PUBLISH_ERROR: Record<string, string> = {
+  readonly:      'Cet établissement est en lecture seule. La publication est désactivée.',
+  archived:      'Une session archivée ne peut pas être modifiée.',
+  not_completed: 'Seules les sessions terminées peuvent être publiées.',
+  incomplete:    'Des notes sont manquantes. Complétez la saisie avant de publier (100 % requis).',
+  no_results:    'Aucun résultat à publier pour cette sélection.',
+  bad_class:     'Classe invalide.',
+  server:        'Une erreur est survenue. Veuillez réessayer.',
 }
 
 function fmtDate(iso: string): string {
@@ -49,7 +62,7 @@ export default async function ExamResultsPage({ params, searchParams }: Props) {
 
   const { data: sessionData } = await supabase
     .from('exam_sessions')
-    .select('id, name, starts_on, ends_on, academic_year_id, academic_years!academic_year_id(name)')
+    .select('id, name, status, starts_on, ends_on, academic_year_id, academic_years!academic_year_id(name)')
     .eq('id', params.sessionId)
     .eq('school_id', schoolId)
     .maybeSingle()
@@ -83,6 +96,24 @@ export default async function ExamResultsPage({ params, searchParams }: Props) {
   const exportParams = new URLSearchParams({ session: session.id })
   if (classFilter) exportParams.set('class', classFilter)
 
+  // ── Publication state ────────────────────────────────────────────────────
+  const pubState = await getPublicationState(supabase, schoolId, session.id)
+  const scope: 'session' | 'class' = classFilter ? 'class' : 'session'
+  const currentPubRow = classFilter ? pubState.byClass.get(classFilter) ?? null : pubState.sessionRow
+  const isPublished = currentPubRow?.status === 'published'
+  const returnTo = `/school/exams/${session.id}/results${classFilter ? `?class=${classFilter}` : ''}`
+  const scopeLabel = classFilter
+    ? (results.classOptions.find((c) => c.id === classFilter)?.label ?? 'la classe')
+    : 'toute la session'
+  const canPublish = session.status === 'completed' && results.classes.length > 0 && results.summary.missingGrades === 0
+  const publishBlockedReason =
+    session.status === 'archived'   ? 'Session archivée — lecture seule.'
+    : session.status !== 'completed' ? 'La session doit être terminée pour publier.'
+    : results.classes.length === 0   ? 'Aucun résultat à publier.'
+    : results.summary.missingGrades > 0 ? `${results.summary.missingGrades} note(s) manquante(s) — la saisie doit être complète.`
+    : null
+  const publishError = searchParams.error ? (PUBLISH_ERROR[searchParams.error] ?? '') : ''
+
   return (
     <div className="space-y-6">
       <div className="rounded-xl bg-primary-800 px-6 py-5 print:hidden">
@@ -111,6 +142,78 @@ export default async function ExamResultsPage({ params, searchParams }: Props) {
             </a>
             <PrintButton />
           </div>
+        </div>
+      </div>
+
+      {/* ── Feedback banners ──────────────────────────────────────────────── */}
+      {searchParams.published && (
+        <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 print:hidden">
+          <p className="text-sm text-emerald-700">Résultats publiés. Les élèves et parents concernés ont été notifiés.</p>
+        </div>
+      )}
+      {searchParams.unpublished && (
+        <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-4 print:hidden">
+          <p className="text-sm text-amber-700">Résultats dépubliés. Ils ne sont plus visibles dans les portails.</p>
+        </div>
+      )}
+      {publishError && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 print:hidden">
+          <p className="text-sm text-red-700">{publishError}</p>
+        </div>
+      )}
+
+      {/* ── Publication controls ──────────────────────────────────────────── */}
+      <div className="rounded-xl border border-sand-200 bg-white shadow-sm print:hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-sand-100 bg-gray-50 px-5 py-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+            Publication — {scopeLabel}
+          </h2>
+          <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+            isPublished ? 'border-emerald-200 bg-emerald-100 text-emerald-700' : 'border-gray-200 bg-gray-100 text-gray-500'
+          }`}>
+            {isPublished ? 'Publié' : currentPubRow?.status === 'unpublished' ? 'Dépublié' : 'Non publié'}
+          </span>
+        </div>
+        <div className="px-5 py-4">
+          <div className="flex flex-wrap items-center gap-3">
+            {!isPublished ? (
+              <form action={publishExamResults}>
+                <input type="hidden" name="session_id" value={session.id} />
+                <input type="hidden" name="scope" value={scope} />
+                {classFilter && <input type="hidden" name="class_id" value={classFilter} />}
+                <input type="hidden" name="return_to" value={returnTo} />
+                <button
+                  type="submit"
+                  disabled={!canPublish}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Publier {classFilter ? 'cette classe' : 'la session'}
+                </button>
+              </form>
+            ) : (
+              <form action={unpublishExamResults}>
+                <input type="hidden" name="session_id" value={session.id} />
+                <input type="hidden" name="scope" value={scope} />
+                {classFilter && <input type="hidden" name="class_id" value={classFilter} />}
+                <input type="hidden" name="return_to" value={returnTo} />
+                <button
+                  type="submit"
+                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Dépublier {classFilter ? 'cette classe' : 'la session'}
+                </button>
+              </form>
+            )}
+            {pubState.sessionPublished && classFilter && (
+              <p className="text-xs text-emerald-700">La session entière est publiée — cette classe est déjà visible.</p>
+            )}
+          </div>
+          {!isPublished && publishBlockedReason && (
+            <p className="mt-3 text-xs text-amber-600">{publishBlockedReason}</p>
+          )}
+          <p className="mt-3 text-xs text-gray-400">
+            La publication rend les résultats visibles dans les portails élève et parent. Sélectionnez une classe ci-dessous pour publier classe par classe, ou publiez toute la session.
+          </p>
         </div>
       </div>
 

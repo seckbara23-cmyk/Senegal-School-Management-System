@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
-import { setExamSessionStatus } from '../actions'
+import { setExamSessionStatus, publishExamResults, unpublishExamResults } from '../actions'
+import { getPublicationState } from '@/lib/exam-publications'
 
 const STATUS_LABEL: Record<string, string> = {
   draft: 'Brouillon', active: 'Active', completed: 'Terminée', archived: 'Archivée',
@@ -15,6 +16,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   readonly:   'Cet établissement est en lecture seule. Les modifications sont désactivées.',
   transition: 'Cette transition de statut n’est pas autorisée.',
   overlap:    "Une session d'examen active existe déjà sur cette période.",
+  archived:   'Une session archivée ne peut pas être modifiée.',
+  not_completed: 'Seules les sessions terminées peuvent être publiées.',
+  incomplete: 'Des notes sont manquantes. Complétez la saisie avant de publier (100 % requis).',
+  no_results: 'Aucun résultat à publier.',
+  bad_class:  'Classe invalide.',
   server:     'Une erreur est survenue. Veuillez réessayer.',
 }
 
@@ -22,7 +28,7 @@ function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-type Props = { params: { sessionId: string }; searchParams: { error?: string } }
+type Props = { params: { sessionId: string }; searchParams: { error?: string; published?: string; unpublished?: string } }
 
 function StatusButton({ sessionId, newStatus, label, tone }: { sessionId: string; newStatus: string; label: string; tone: 'primary' | 'sky' | 'neutral' }) {
   const cls =
@@ -93,6 +99,27 @@ export default async function ExamSessionDetailPage({ params, searchParams }: Pr
     for (const r of (gradeRes.data ?? []) as { assessment_id: string }[]) gradedByAssessment.set(r.assessment_id, (gradedByAssessment.get(r.assessment_id) ?? 0) + 1)
   }
 
+  // Total missing grades across the session (for the publish completion gate).
+  let totalMissing = 0
+  for (const a of assessments) {
+    const classId = a.class_subjects?.class_id
+    const enrolled = classId ? (enrolledByClass.get(classId) ?? 0) : 0
+    const graded = gradedByAssessment.get(a.id) ?? 0
+    totalMissing += Math.max(0, enrolled - graded)
+  }
+
+  // Publication state (whole-session scope).
+  const pubState = await getPublicationState(supabase, schoolId, s.id)
+  const sessionPublished = pubState.sessionPublished
+  const publishedClassCount = pubState.publishedClassIds.size
+  const canPublishWhole = s.status === 'completed' && assessments.length > 0 && totalMissing === 0
+  const wholePublishBlockedReason =
+    s.status === 'archived'    ? 'Session archivée — lecture seule.'
+    : s.status !== 'completed'  ? 'La session doit être terminée pour publier.'
+    : assessments.length === 0  ? 'Aucune évaluation rattachée.'
+    : totalMissing > 0          ? `${totalMissing} note(s) manquante(s) — la saisie doit être complète.`
+    : null
+
   return (
     <div className="space-y-6">
       <div className="rounded-xl bg-primary-800 px-6 py-5">
@@ -105,6 +132,15 @@ export default async function ExamSessionDetailPage({ params, searchParams }: Pr
               <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_CLASS[s.status] ?? STATUS_CLASS.draft}`}>
                 {STATUS_LABEL[s.status] ?? s.status}
               </span>
+              {sessionPublished ? (
+                <span className="rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                  Résultats publiés
+                </span>
+              ) : publishedClassCount > 0 ? (
+                <span className="rounded-full border border-sky-200 bg-sky-100 px-2.5 py-0.5 text-xs font-semibold text-sky-700">
+                  {publishedClassCount} classe(s) publiée(s)
+                </span>
+              ) : null}
             </div>
             <h1 className="text-2xl font-bold text-white tracking-tight">{s.name}</h1>
             <p className="text-primary-300 text-sm mt-0.5">
@@ -129,6 +165,64 @@ export default async function ExamSessionDetailPage({ params, searchParams }: Pr
           <p className="text-sm text-red-700">{errorMessage}</p>
         </div>
       )}
+      {searchParams.published && (
+        <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm text-emerald-700">Résultats publiés. Les élèves et parents concernés ont été notifiés.</p>
+        </div>
+      )}
+      {searchParams.unpublished && (
+        <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm text-amber-700">Résultats dépubliés. Ils ne sont plus visibles dans les portails.</p>
+        </div>
+      )}
+
+      {/* Publication (whole-session). Per-class publishing lives on the results page. */}
+      <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-sand-100 bg-gray-50 px-5 py-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Publication des résultats</h2>
+          <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+            sessionPublished ? 'border-emerald-200 bg-emerald-100 text-emerald-700' : 'border-gray-200 bg-gray-100 text-gray-500'
+          }`}>
+            {sessionPublished ? 'Session publiée' : 'Non publiée'}
+          </span>
+        </div>
+        <div className="px-5 py-4">
+          <div className="flex flex-wrap items-center gap-3">
+            {!sessionPublished ? (
+              <form action={publishExamResults}>
+                <input type="hidden" name="session_id" value={s.id} />
+                <input type="hidden" name="scope" value="session" />
+                <input type="hidden" name="return_to" value={`/school/exams/${s.id}`} />
+                <button
+                  type="submit"
+                  disabled={!canPublishWhole}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Publier toute la session
+                </button>
+              </form>
+            ) : (
+              <form action={unpublishExamResults}>
+                <input type="hidden" name="session_id" value={s.id} />
+                <input type="hidden" name="scope" value="session" />
+                <input type="hidden" name="return_to" value={`/school/exams/${s.id}`} />
+                <button
+                  type="submit"
+                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Dépublier la session
+                </button>
+              </form>
+            )}
+            <a href={`/school/exams/${s.id}/results`} className="text-sm font-medium text-primary-600 hover:text-primary-800 hover:underline">
+              Publier classe par classe →
+            </a>
+          </div>
+          {!sessionPublished && wholePublishBlockedReason && (
+            <p className="mt-3 text-xs text-amber-600">{wholePublishBlockedReason}</p>
+          )}
+        </div>
+      </div>
 
       {/* Lifecycle controls */}
       <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">

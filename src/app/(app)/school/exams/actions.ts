@@ -6,6 +6,8 @@ import { z } from 'zod'
 import { logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
+import { computeExamResults } from '@/lib/exam-results'
+import { notifyExamResultsPublished } from '@/lib/notification-events'
 
 export type ExamSessionState = {
   errors?: {
@@ -254,4 +256,202 @@ export async function setExamSessionStatus(formData: FormData): Promise<void> {
   })
 
   redirect(`/school/exams/${ex.id}`)
+}
+
+// ─── Result publication (publish / unpublish to parent & student portals) ───────
+
+// Only allow redirecting back to an exam page; otherwise fall back to the
+// session results page. Guards against open-redirect via the return_to field.
+function safeReturnTo(value: FormDataEntryValue | null, sessionId: string): string {
+  const v = typeof value === 'string' ? value : ''
+  if (/^\/school\/exams\/[^?#]*(\?[^#]*)?$/.test(v) && !v.includes('//')) return v
+  return `/school/exams/${sessionId}/results`
+}
+
+function withParam(path: string, key: string, val: string): string {
+  return path + (path.includes('?') ? '&' : '?') + `${key}=${val}`
+}
+
+export async function publishExamResults(formData: FormData): Promise<void> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const schoolId = await getSchoolAdmin(supabase, user.id)
+  if (!schoolId) redirect('/school')
+
+  const sessionId = z.string().uuid().safeParse(formData.get('session_id'))
+  const scope     = z.enum(['session', 'class']).safeParse(formData.get('scope'))
+  if (!sessionId.success || !scope.success) redirect('/school/exams')
+
+  const returnTo = safeReturnTo(formData.get('return_to'), sessionId.data)
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(withParam(returnTo, 'error', 'readonly'))
+  }
+
+  // Session must exist, be completed, and not archived.
+  const { data: sessionData } = await supabase
+    .from('exam_sessions')
+    .select('id, name, status, academic_year_id')
+    .eq('id', sessionId.data)
+    .eq('school_id', schoolId)
+    .maybeSingle()
+  if (!sessionData) redirect('/school/exams')
+  const session = sessionData as { id: string; name: string; status: string; academic_year_id: string }
+
+  if (session.status === 'archived') redirect(withParam(returnTo, 'error', 'archived'))
+  if (session.status !== 'completed') redirect(withParam(returnTo, 'error', 'not_completed'))
+
+  // Resolve scope → class filter.
+  let classFilter: string | null = null
+  if (scope.data === 'class') {
+    const classId = z.string().uuid().safeParse(formData.get('class_id'))
+    if (!classId.success) redirect(withParam(returnTo, 'error', 'bad_class'))
+    const { data: cls } = await supabase
+      .from('classes')
+      .select('id')
+      .eq('id', classId.data)
+      .eq('school_id', schoolId)
+      .eq('academic_year_id', session.academic_year_id)
+      .maybeSingle()
+    if (!cls) redirect(withParam(returnTo, 'error', 'bad_class'))
+    classFilter = classId.data
+  }
+
+  // Compute results for the scope; enforce 100% completion (block on missing).
+  const results = await computeExamResults(supabase, schoolId, session.academic_year_id, session.id, classFilter)
+  if (results.classes.length === 0) redirect(withParam(returnTo, 'error', 'no_results'))
+  if (results.summary.missingGrades > 0) redirect(withParam(returnTo, 'error', 'incomplete'))
+
+  const affectedClassIds = results.classes.map((c) => c.classId)
+  const publishedAt = new Date().toISOString()
+
+  // Upsert the publication row (manual select-then-write: the unique guarantee
+  // is via two partial indexes, which supabase-js .upsert can't target).
+  const existingQuery = supabase
+    .from('exam_result_publications')
+    .select('id')
+    .eq('school_id', schoolId)
+    .eq('exam_session_id', session.id)
+  const { data: existing } = await (classFilter === null
+    ? existingQuery.is('class_id', null)
+    : existingQuery.eq('class_id', classFilter)
+  ).maybeSingle()
+
+  const writePayload = {
+    status:       'published' as const,
+    published_at: publishedAt,
+    published_by: user.id,
+  }
+
+  let writeError = null
+  if (existing) {
+    const { error } = await supabase
+      .from('exam_result_publications')
+      .update(writePayload)
+      .eq('id', (existing as { id: string }).id)
+      .eq('school_id', schoolId)
+    writeError = error
+  } else {
+    const { error } = await supabase
+      .from('exam_result_publications')
+      .insert({
+        school_id:       schoolId,
+        exam_session_id: session.id,
+        class_id:        classFilter,
+        ...writePayload,
+      })
+    writeError = error
+  }
+
+  if (writeError) {
+    logSupabaseError(writeError, { action: 'publishExamResults', schoolId, userId: user.id, entityIds: { sessionId: session.id, classFilter } })
+    redirect(withParam(returnTo, 'error', 'server'))
+  }
+
+  await notifyExamResultsPublished(supabase, {
+    schoolId,
+    examSessionId: session.id,
+    sessionName:   session.name,
+    classIds:      affectedClassIds,
+    scopeClassId:  classFilter,
+    publishedAt,
+  })
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'exam_results_published', resourceType: 'exam_session', resourceId: session.id,
+    metadata: { scope: scope.data, class_id: classFilter, class_count: affectedClassIds.length, published_at: publishedAt },
+  })
+
+  redirect(withParam(returnTo, 'published', '1'))
+}
+
+export async function unpublishExamResults(formData: FormData): Promise<void> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const schoolId = await getSchoolAdmin(supabase, user.id)
+  if (!schoolId) redirect('/school')
+
+  const sessionId = z.string().uuid().safeParse(formData.get('session_id'))
+  const scope     = z.enum(['session', 'class']).safeParse(formData.get('scope'))
+  if (!sessionId.success || !scope.success) redirect('/school/exams')
+
+  const returnTo = safeReturnTo(formData.get('return_to'), sessionId.data)
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(withParam(returnTo, 'error', 'readonly'))
+  }
+
+  const { data: sessionData } = await supabase
+    .from('exam_sessions')
+    .select('id, status')
+    .eq('id', sessionId.data)
+    .eq('school_id', schoolId)
+    .maybeSingle()
+  if (!sessionData) redirect('/school/exams')
+  const session = sessionData as { id: string; status: string }
+  if (session.status === 'archived') redirect(withParam(returnTo, 'error', 'archived'))
+
+  let classFilter: string | null = null
+  if (scope.data === 'class') {
+    const classId = z.string().uuid().safeParse(formData.get('class_id'))
+    if (!classId.success) redirect(withParam(returnTo, 'error', 'bad_class'))
+    classFilter = classId.data
+  }
+
+  const existingQuery = supabase
+    .from('exam_result_publications')
+    .select('id, status')
+    .eq('school_id', schoolId)
+    .eq('exam_session_id', session.id)
+  const { data: existing } = await (classFilter === null
+    ? existingQuery.is('class_id', null)
+    : existingQuery.eq('class_id', classFilter)
+  ).maybeSingle()
+
+  // Nothing published for this scope → idempotent no-op.
+  if (!existing) redirect(withParam(returnTo, 'unpublished', '1'))
+
+  const { error } = await supabase
+    .from('exam_result_publications')
+    .update({ status: 'unpublished', published_at: null })
+    .eq('id', (existing as { id: string }).id)
+    .eq('school_id', schoolId)
+
+  if (error) {
+    logSupabaseError(error, { action: 'unpublishExamResults', schoolId, userId: user.id, entityIds: { sessionId: session.id, classFilter } })
+    redirect(withParam(returnTo, 'error', 'server'))
+  }
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'exam_results_unpublished', resourceType: 'exam_session', resourceId: session.id,
+    metadata: { scope: scope.data, class_id: classFilter },
+  })
+
+  redirect(withParam(returnTo, 'unpublished', '1'))
 }

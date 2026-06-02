@@ -381,6 +381,73 @@ export async function notifyBulletinPublished(
   }
 }
 
+// ── Exam results published (Phase 38.4) ──────────────────────────────────────
+//
+// Recipients: all actively enrolled students of the published class(es) + their
+// linked parents (de-duplicated). Emitted after a school_admin publishes an
+// exam session's results, for the whole session or a single class.
+
+export async function notifyExamResultsPublished(
+  client: NotifyClient,
+  input: {
+    schoolId:      string
+    examSessionId: string
+    sessionName:   string
+    classIds:      string[]
+    // Publication scope for the deep link / metadata: null = whole session.
+    scopeClassId:  string | null
+    publishedAt:   string
+  },
+): Promise<void> {
+  try {
+    if (input.classIds.length === 0) return
+
+    const { data: enr } = await client
+      .from('student_class_enrollments')
+      .select('student_id')
+      .eq('school_id', input.schoolId)
+      .eq('status', 'active')
+      .in('class_id', input.classIds)
+
+    const studentIds = Array.from(
+      new Set(((enr ?? []) as { student_id: string }[]).map((e) => e.student_id)),
+    )
+    if (studentIds.length === 0) return
+
+    const [students, parents] = await Promise.all([
+      resolveStudents(client, input.schoolId, studentIds),
+      resolveParentProfilesByStudent(client, input.schoolId, studentIds),
+    ])
+
+    const recipients = new Set<string>()
+    for (const sid of studentIds) {
+      for (const uid of recipientsForStudent(sid, students, parents)) recipients.add(uid)
+    }
+    if (recipients.size === 0) return
+
+    const metadata = {
+      exam_session_id: input.examSessionId,
+      class_id:        input.scopeClassId,
+      published_at:    input.publishedAt,
+    }
+
+    await Promise.all(
+      Array.from(recipients).map((userId) =>
+        createNotification(client, {
+          userId,
+          type:     'exam_results_published',
+          title:    "Résultats d'examen disponibles",
+          body:     `Les résultats de « ${input.sessionName} » sont disponibles.`,
+          schoolId: input.schoolId,
+          metadata,
+        }),
+      ),
+    )
+  } catch (err) {
+    console.error('[notify] notifyExamResultsPublished failed', err)
+  }
+}
+
 // ── Timetable changes ────────────────────────────────────────────────────────
 //
 // Recipients of a slot change: the assigned teacher + all actively enrolled

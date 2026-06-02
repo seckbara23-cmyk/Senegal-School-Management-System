@@ -40,6 +40,8 @@ export const ACTION_LABELS: Record<string, string> = {
   exam_session_activated:        'Session d’examen activée',
   exam_session_completed:        'Session d’examen terminée',
   exam_session_archived:         'Session d’examen archivée',
+  exam_results_published:        'Résultats d’examen publiés',
+  exam_results_unpublished:      'Résultats d’examen dépubliés',
   // Annonces
   announcement_published:        'Annonce publiée',
   // Personnes
@@ -91,7 +93,7 @@ export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Années scolaires',     actions: ['academic_year_created', 'academic_year_updated', 'academic_year_status_changed'] },
   { label: 'Structure académique', actions: ['subject_created', 'subject_assigned_to_class', 'subject_removed_from_class', 'teacher_assigned_to_subject', 'academic_period_created', 'assessment_created', 'grades_saved'] },
   { label: 'Emploi du temps',      actions: ['timetable_slot_created', 'timetable_slot_updated', 'timetable_slot_deleted'] },
-  { label: 'Sessions d’examen',    actions: ['exam_session_created', 'exam_session_updated', 'exam_session_activated', 'exam_session_completed', 'exam_session_archived'] },
+  { label: 'Sessions d’examen',    actions: ['exam_session_created', 'exam_session_updated', 'exam_session_activated', 'exam_session_completed', 'exam_session_archived', 'exam_results_published', 'exam_results_unpublished'] },
   { label: 'Annonces',             actions: ['announcement_published'] },
   { label: 'Personnes',            actions: ['student_created', 'student_updated', 'teacher_created', 'teacher_updated', 'teacher_status_changed', 'parent_created', 'parent_updated', 'parent_status_changed', 'parent_student_linked', 'parent_student_unlinked'] },
   { label: 'Présences (admin)',    actions: ['admin_attendance_session_created', 'admin_attendance_records_saved'] },
