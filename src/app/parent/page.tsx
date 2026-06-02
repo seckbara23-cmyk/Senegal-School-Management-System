@@ -65,6 +65,25 @@ export default async function ParentDashboard() {
     outstanding.set(inv.student_id, (outstanding.get(inv.student_id) ?? 0) + due)
   }
 
+  // Attendance snapshot per child (reuses the same read as /parent/attendance).
+  // Rate mirrors the attendance page: (present + late + excused) / total.
+  type AttendanceStat = { total: number; absent: number; late: number }
+  const attendance = new Map<string, AttendanceStat>()
+  if (childIds.length > 0) {
+    const { data: attData } = await supabase
+      .from('attendance_records')
+      .select('student_id, status')
+      .eq('school_id', schoolId)
+      .in('student_id', childIds)
+    for (const r of (attData ?? []) as { student_id: string; status: string }[]) {
+      const cur = attendance.get(r.student_id) ?? { total: 0, absent: 0, late: 0 }
+      cur.total++
+      if (r.status === 'absent') cur.absent++
+      else if (r.status === 'late') cur.late++
+      attendance.set(r.student_id, cur)
+    }
+  }
+
   // Recent announcements (all_school + parents)
   const { data: announcements } = await supabase
     .from('announcements')
@@ -99,6 +118,10 @@ export default async function ParentDashboard() {
           {links.map((link) => {
             const s = link.students
             const due = outstanding.get(link.student_id) ?? 0
+            const att = attendance.get(link.student_id) ?? null
+            const rate = att && att.total > 0
+              ? Math.round(((att.total - att.absent) / att.total) * 100)
+              : null
             return (
               <div key={link.student_id} className="rounded-xl border border-sand-200 bg-white shadow-sm overflow-hidden">
                 <div className="h-1.5 bg-primary-600" />
@@ -119,10 +142,39 @@ export default async function ParentDashboard() {
                       </span>
                     )}
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
+
+                  {/* Attendance snapshot */}
+                  {att && att.total > 0 ? (
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                        {rate}% présence
+                      </span>
+                      {att.absent > 0 && (
+                        <span className="rounded-md bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">
+                          {att.absent} absence{att.absent !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {att.late > 0 && (
+                        <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
+                          {att.late} retard{att.late !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {att.absent === 0 && att.late === 0 && (
+                        <span className="text-xs font-medium text-emerald-600">Assiduité parfaite</span>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-xs text-gray-400">Aucune présence enregistrée</p>
+                  )}
+
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <a href={`/parent/bulletins?child=${s.id}`}
                       className="rounded-md bg-primary-50 px-3 py-1.5 text-xs font-semibold text-primary-700 hover:bg-primary-100 transition-colors">
                       Bulletins
+                    </a>
+                    <a href={`/parent/exams?child=${s.id}`}
+                      className="rounded-md bg-accent-50 px-3 py-1.5 text-xs font-semibold text-accent-700 hover:bg-accent-300 transition-colors">
+                      Examens
                     </a>
                     <a href={`/parent/attendance?child=${s.id}`}
                       className="rounded-md bg-sand-100 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-sand-200 transition-colors">
