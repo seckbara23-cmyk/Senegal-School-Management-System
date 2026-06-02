@@ -67,6 +67,7 @@ const MAIN_NAV: NavItem[] = [
   { label: 'Annonces',         href: '/school/announcements', iconPath: P.megaphone  },
   { label: 'Académique',       href: '/school/academics',    iconPath: P.academic   },
   { label: 'Notes & bulletins',  href: '/school/academics/bulletins', iconPath: P.document },
+  { label: 'Examens',           href: '/school/exams',        iconPath: P.academic   },
   { label: 'Classement',        href: '/school/academics/rankings', iconPath: P.ranking },
   { label: 'Paiements',         href: '/school/finance',     iconPath: P.money    },
 ]
