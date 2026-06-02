@@ -156,12 +156,15 @@ async function validateSlot(
     return { ok: false, state: { errors: { _form: ['Cette classe a déjà un cours à cet horaire.'] } } }
   }
 
-  // Teacher conflict: same teacher, same day, overlapping time.
+  // Teacher conflict: same teacher, same day, overlapping time — scoped to the
+  // academic year (like the room check below). Different years are not
+  // concurrent, so a teacher's slot in another year is never a real conflict.
   if (teacher_id) {
     const { data: teacherSlots } = await supabase
       .from('timetable_slots')
       .select('id, start_time, end_time')
       .eq('school_id', schoolId)
+      .eq('academic_year_id', academic_year_id)
       .eq('teacher_id', teacher_id)
       .eq('day_of_week', d.day_of_week)
     if (overlaps((teacherSlots ?? []) as SlotTimeRow[], startMin, endMin, slotId)) {
