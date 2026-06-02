@@ -191,7 +191,7 @@ export default async function StudentDetailPage({ params, searchParams }: Props)
           <h1 className="text-2xl font-bold text-gray-900">{fullName}</h1>
           <p className="mt-0.5 text-sm text-gray-500">{school.name}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${STATUS_CLASS[s.status] ?? 'bg-gray-100 text-gray-600'}`}>
             {STATUS_LABEL[s.status] ?? s.status}
           </span>
@@ -295,6 +295,7 @@ export default async function StudentDetailPage({ params, searchParams }: Props)
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-sand-200 bg-sand-100 text-left">
@@ -346,6 +347,7 @@ export default async function StudentDetailPage({ params, searchParams }: Props)
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>

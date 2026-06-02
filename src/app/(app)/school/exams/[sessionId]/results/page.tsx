@@ -267,6 +267,7 @@ export default async function ExamResultsPage({ params, searchParams }: Props) {
           <section>
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">Avancement de la saisie</h2>
             <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-sand-200 bg-sand-100 text-left">
@@ -296,6 +297,7 @@ export default async function ExamResultsPage({ params, searchParams }: Props) {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           </section>
 
@@ -306,6 +308,7 @@ export default async function ExamResultsPage({ params, searchParams }: Props) {
               </h2>
 
               <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-sand-200 bg-primary-800 text-left">
@@ -367,6 +370,7 @@ export default async function ExamResultsPage({ params, searchParams }: Props) {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             </section>
           ))}

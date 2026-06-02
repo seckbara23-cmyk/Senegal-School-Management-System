@@ -260,6 +260,7 @@ export default async function ParentDetailPage({ params }: Props) {
             </a>
           </div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="min-w-full">
             <thead>
               <tr className="border-b border-sand-200 bg-sand-50">
@@ -321,6 +322,7 @@ export default async function ParentDetailPage({ params }: Props) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

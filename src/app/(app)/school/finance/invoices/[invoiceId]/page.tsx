@@ -236,6 +236,7 @@ export default async function InvoiceDetailPage({ params }: Props) {
         <div>
           <h2 className="text-base font-semibold text-gray-800 mb-3">Paiements reçus</h2>
           <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-sand-200 bg-sand-100 text-left">
@@ -276,6 +277,7 @@ export default async function InvoiceDetailPage({ params }: Props) {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}

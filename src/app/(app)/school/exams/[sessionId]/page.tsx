@@ -285,6 +285,7 @@ export default async function ExamSessionDetailPage({ params, searchParams }: Pr
             Aucune évaluation rattachée. Sélectionnez cette session lors de la création d&apos;une évaluation.
           </p>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-sand-200 bg-sand-100 text-left">
@@ -325,6 +326,7 @@ export default async function ExamSessionDetailPage({ params, searchParams }: Pr
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
