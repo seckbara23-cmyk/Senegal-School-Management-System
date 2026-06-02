@@ -77,6 +77,7 @@ export default async function SubjectsPage() {
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-primary-200">Nom</th>
                 <th className="hidden sm:table-cell px-4 py-3 text-xs font-semibold uppercase tracking-wider text-primary-200">Code</th>
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-primary-200 text-right">Coefficient</th>
+                <th className="px-4 py-3"><span className="sr-only">Modifier</span></th>
               </tr>
             </thead>
             <tbody>
@@ -85,12 +86,25 @@ export default async function SubjectsPage() {
                   key={s.id}
                   className={`border-b border-sand-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-sand-50'}`}
                 >
-                  <td className="px-4 py-3 font-medium text-gray-900">{s.name}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    <a href={`/school/academics/subjects/${s.id}/edit`} className="hover:text-primary-600 hover:underline">
+                      {s.name}
+                    </a>
+                  </td>
                   <td className="hidden sm:table-cell px-4 py-3 font-mono text-xs text-gray-400">
                     {s.code ?? '—'}
                   </td>
                   <td className="px-4 py-3 text-right text-gray-600">
                     {s.coefficient != null ? s.coefficient : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <a
+                      href={`/school/academics/subjects/${s.id}/edit`}
+                      className="text-sm font-medium text-primary-600 hover:text-primary-700 hover:underline"
+                      aria-label={`Modifier ${s.name}`}
+                    >
+                      Modifier →
+                    </a>
                   </td>
                 </tr>
               ))}

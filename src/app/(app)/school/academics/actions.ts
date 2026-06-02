@@ -98,6 +98,74 @@ export async function createSubject(
   redirect('/school/academics/subjects')
 }
 
+// ── Update subject ────────────────────────────────────────────────────────────
+
+export type UpdateSubjectState = {
+  errors?: { name?: string[]; code?: string[]; coefficient?: string[]; _form?: string[] }
+}
+
+export async function updateSubject(
+  _prevState: UpdateSubjectState,
+  formData: FormData,
+): Promise<UpdateSubjectState> {
+  const { schoolId, actor } = await getSchoolId()
+
+  const subjectId = z.string().uuid().safeParse(formData.get('subject_id'))
+  if (!subjectId.success) return { errors: { _form: ['Identifiant matière invalide.'] } }
+
+  const parsed = SubjectSchema.safeParse({
+    name:        formData.get('name'),
+    code:        formData.get('code') || undefined,
+    coefficient: formData.get('coefficient'),
+  })
+
+  if (!parsed.success) {
+    return { errors: parsed.error.flatten().fieldErrors }
+  }
+
+  const { name, code, coefficient } = parsed.data
+  const supabase = createClient()
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
+  // Both id and school_id must match — prevents cross-school writes (RLS is the
+  // second layer).
+  const { error } = await supabase
+    .from('subjects')
+    .update({
+      name:        name.trim(),
+      code:        code?.trim() || null,
+      coefficient: coefficient ?? null,
+    })
+    .eq('id', subjectId.data)
+    .eq('school_id', schoolId)
+
+  if (error) {
+    return {
+      errors: formatServerActionError(error, {
+        action: 'updateSubject',
+        schoolId,
+        userId: actor.id,
+        entityIds: { subjectId: subjectId.data, name },
+        constraints: {
+          subjects_school_name_unique: { field: 'name', message: 'Une matière avec ce nom existe déjà.' },
+        },
+        fallback: 'Erreur lors de la mise à jour. Réessayez.',
+      }) as UpdateSubjectState['errors'],
+    }
+  }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'subject_updated', resourceType: 'subject', resourceId: subjectId.data,
+    metadata: { name: name.trim(), code: code?.trim() || null, coefficient: coefficient ?? null },
+  })
+
+  redirect('/school/academics/subjects')
+}
+
 // ── Assign subject to class ───────────────────────────────────────────────────
 
 const AssignSubjectSchema = z.object({
