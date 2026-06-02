@@ -277,6 +277,21 @@ export async function linkEntityToUser(formData: FormData) {
     redirect(`/school/users/${userId.data}?error=readonly`)
   }
 
+  // Authorisation: the link target must be a member of THIS school. user_id is
+  // a hidden form field, so without this check a crafted request could point a
+  // tenant entity's profile_id at an arbitrary (e.g. cross-school or super-admin)
+  // user. The legitimate UI always passes a user already in this school, so this
+  // never blocks the real flow — it just closes the spoofing gap.
+  const { data: targetMembership } = await supabase
+    .from('school_memberships')
+    .select('user_id')
+    .eq('user_id', userId.data)
+    .eq('school_id', schoolId)
+    .limit(1)
+    .maybeSingle()
+
+  if (!targetMembership) redirect(`/school/users/${userId.data}?error=entity`)
+
   const table = entityTable(role.data)!
 
   const { data: entity } = await supabase
