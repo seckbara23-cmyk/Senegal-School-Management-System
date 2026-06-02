@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import { setTeacherStatus } from '../actions'
+import { DocumentsSection, type DocumentRow } from '@/components/DocumentsSection'
 
 // Feedback for failures redirected from setTeacherStatus.
 const ERROR_MESSAGES: Record<string, string> = {
@@ -45,7 +46,7 @@ type Assignment = {
 
 type Props = {
   params: { teacherId: string }
-  searchParams: { error?: string }
+  searchParams: { error?: string; doc_ok?: string; doc_error?: string }
 }
 
 export default async function TeacherDetailPage({ params, searchParams }: Props) {
@@ -125,6 +126,13 @@ export default async function TeacherDetailPage({ params, searchParams }: Props)
     .filter(Boolean)
     .join('')
     .toUpperCase()
+  const { data: docsData } = await supabase
+    .from('school_documents')
+    .select('id, document_type, filename, mime_type, size_bytes, storage_path, created_at')
+    .eq('school_id', schoolId).eq('owner_type', 'teacher').eq('owner_id', teacher.id)
+    .order('created_at', { ascending: false })
+  const documents = (docsData ?? []) as DocumentRow[]
+
   const errorMessage = searchParams.error ? (ERROR_MESSAGES[searchParams.error] ?? '') : ''
 
   return (
@@ -326,6 +334,16 @@ export default async function TeacherDetailPage({ params, searchParams }: Props)
           </div>
         )}
       </div>
+
+      {/* ── Documents ───────────────────────────────────────────────────────── */}
+      <DocumentsSection
+        ownerType="teacher"
+        ownerId={teacher.id}
+        redirectTo={`/school/teachers/${teacher.id}`}
+        documents={documents}
+        okCode={searchParams.doc_ok}
+        errorCode={searchParams.doc_error}
+      />
 
       {/* ── Gestion du dossier ──────────────────────────────────────────────── */}
       <div className="rounded-xl border border-red-100 bg-white shadow-sm overflow-hidden">

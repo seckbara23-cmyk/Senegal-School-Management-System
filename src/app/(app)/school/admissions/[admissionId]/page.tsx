@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import { setAdmissionStatus } from '../actions'
 import { ConvertForm, type ClassOpt } from './_convert_form'
+import { DocumentsSection, type DocumentRow } from '@/components/DocumentsSection'
 
 const STATUS_LABEL: Record<string, string> = {
   draft: 'Brouillon', submitted: 'Soumise', accepted: 'Acceptée', rejected: 'Refusée', waitlisted: "Liste d'attente",
@@ -26,7 +27,7 @@ function fmtDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString('fr-SN', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-type Props = { params: { admissionId: string }; searchParams: { error?: string } }
+type Props = { params: { admissionId: string }; searchParams: { error?: string; doc_ok?: string; doc_error?: string } }
 
 type App = {
   id: string; first_name: string; last_name: string; gender: string | null; date_of_birth: string | null
@@ -85,6 +86,13 @@ export default async function AdmissionDetailPage({ params, searchParams }: Prop
       id: c.id, label: `${[c.name, c.section].filter(Boolean).join(' ')}${c.academic_years ? ` — ${c.academic_years.name}` : ''}`,
     }))
   }
+
+  const { data: docsData } = await supabase
+    .from('school_documents')
+    .select('id, document_type, filename, mime_type, size_bytes, storage_path, created_at')
+    .eq('school_id', schoolId).eq('owner_type', 'admission').eq('owner_id', app.id)
+    .order('created_at', { ascending: false })
+  const documents = (docsData ?? []) as DocumentRow[]
 
   const errorMessage = searchParams.error ? (ERROR_MESSAGES[searchParams.error] ?? '') : ''
   const isConverted = !!app.converted_student_id
@@ -183,6 +191,16 @@ export default async function AdmissionDetailPage({ params, searchParams }: Prop
           </div>
         </div>
       )}
+
+      {/* ── Documents ───────────────────────────────────────────────────────── */}
+      <DocumentsSection
+        ownerType="admission"
+        ownerId={app.id}
+        redirectTo={`/school/admissions/${app.id}`}
+        documents={documents}
+        okCode={searchParams.doc_ok}
+        errorCode={searchParams.doc_error}
+      />
 
       {/* ── Convert to student ──────────────────────────────────────────────── */}
       {app.status === 'accepted' && !isConverted && (

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
+import { DocumentsSection, type DocumentRow } from '@/components/DocumentsSection'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -99,9 +100,9 @@ function DetailRow({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type Props = { params: { studentId: string } }
+type Props = { params: { studentId: string }; searchParams: { doc_ok?: string; doc_error?: string } }
 
-export default async function StudentDetailPage({ params }: Props) {
+export default async function StudentDetailPage({ params, searchParams }: Props) {
   const supabase = createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -162,6 +163,13 @@ export default async function StudentDetailPage({ params }: Props) {
     return inv.due_date !== null && inv.due_date < today
       && (inv.status === 'unpaid' || inv.status === 'partial')
   }
+
+  const { data: docsData } = await supabase
+    .from('school_documents')
+    .select('id, document_type, filename, mime_type, size_bytes, storage_path, created_at')
+    .eq('school_id', school.id).eq('owner_type', 'student').eq('owner_id', s.id)
+    .order('created_at', { ascending: false })
+  const documents = (docsData ?? []) as DocumentRow[]
 
   const fullName = `${s.last_name} ${s.first_name}`
 
@@ -341,6 +349,16 @@ export default async function StudentDetailPage({ params }: Props) {
           </div>
         )}
       </div>
+
+      {/* ── Documents ───────────────────────────────────────────────────────── */}
+      <DocumentsSection
+        ownerType="student"
+        ownerId={s.id}
+        redirectTo={`/school/students/${s.id}`}
+        documents={documents}
+        okCode={searchParams.doc_ok}
+        errorCode={searchParams.doc_error}
+      />
 
       {/* ── Back link ────────────────────────────────────────────────────────── */}
       <a
