@@ -2,6 +2,12 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import { setTeacherStatus } from '../actions'
 
+// Feedback for failures redirected from setTeacherStatus.
+const ERROR_MESSAGES: Record<string, string> = {
+  readonly: 'Cet établissement est en lecture seule. Les modifications sont désactivées.',
+  status:   'Le statut n’a pas pu être mis à jour. Veuillez réessayer.',
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtDate(iso: string | null | undefined) {
@@ -39,9 +45,10 @@ type Assignment = {
 
 type Props = {
   params: { teacherId: string }
+  searchParams: { error?: string }
 }
 
-export default async function TeacherDetailPage({ params }: Props) {
+export default async function TeacherDetailPage({ params, searchParams }: Props) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -118,6 +125,7 @@ export default async function TeacherDetailPage({ params }: Props) {
     .filter(Boolean)
     .join('')
     .toUpperCase()
+  const errorMessage = searchParams.error ? (ERROR_MESSAGES[searchParams.error] ?? '') : ''
 
   return (
     <div className="space-y-6 pb-8">
@@ -155,6 +163,13 @@ export default async function TeacherDetailPage({ params }: Props) {
           </a>
         </div>
       </div>
+
+      {/* ── Error feedback (from setTeacherStatus) ──────────────────────────── */}
+      {errorMessage && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4">
+          <p className="text-sm text-red-700">{errorMessage}</p>
+        </div>
+      )}
 
       {/* ── Info strip ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

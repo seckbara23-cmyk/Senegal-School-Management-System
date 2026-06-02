@@ -106,6 +106,7 @@ export async function createTeacher(
       errors: formatServerActionError(error, {
         action: 'createTeacher',
         schoolId,
+        userId: actor.id,
         entityIds: { employee_number: parsed.data.employee_number },
         constraints: TEACHER_CONSTRAINTS,
         fallback: 'Erreur lors de la création. Veuillez réessayer.',
@@ -169,6 +170,7 @@ export async function updateTeacher(
       errors: formatServerActionError(error, {
         action: 'updateTeacher',
         schoolId,
+        userId: actor.id,
         entityIds: { teacherId: teacherId.data, employee_number: parsed.data.employee_number },
         constraints: TEACHER_CONSTRAINTS,
         fallback: 'Erreur lors de la mise à jour. Veuillez réessayer.',
