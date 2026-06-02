@@ -100,6 +100,13 @@ export async function recordFinanceOfficerPayment(
   if (inv.status === 'cancelled') return { errors: { _form: ['Cette facture est annulée.'] } }
   if (inv.status === 'paid')      return { errors: { _form: ['Cette facture est déjà réglée.'] } }
 
+  // Reject overpayment: a payment must not exceed the remaining balance (which
+  // would push amount_paid above total_amount and yield a negative balance).
+  const remaining = inv.total_amount - inv.amount_paid
+  if (amount > remaining) {
+    return { errors: { amount: [`Le montant dépasse le solde restant (${new Intl.NumberFormat('fr-FR').format(remaining)} FCFA).`] } }
+  }
+
   // paid_at: provided date at noon UTC, else now. Receipt year derives from it.
   const paidAtIso = paid_at ? `${paid_at}T12:00:00.000Z` : new Date().toISOString()
   const payYear = new Date(paidAtIso).getFullYear()

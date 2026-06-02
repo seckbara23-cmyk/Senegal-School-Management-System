@@ -405,6 +405,13 @@ export async function recordPayment(
   if (inv.status === 'cancelled') return { errors: { _form: ['Cette facture est annulée.'] } }
   if (inv.status === 'paid')      return { errors: { _form: ['Cette facture est déjà réglée.'] } }
 
+  // Reject overpayment: a payment must not exceed the remaining balance (which
+  // would push amount_paid above total_amount and yield a negative balance).
+  const remaining = inv.total_amount - inv.amount_paid
+  if (amount > remaining) {
+    return { errors: { amount: [`Le montant dépasse le solde restant (${new Intl.NumberFormat('fr-FR').format(remaining)} FCFA).`] } }
+  }
+
   // Generate receipt number: REC-YYYY-NNNNNN (per school per calendar year)
   const payYear = new Date().getFullYear()
   const { count: paymentCount } = await supabase
