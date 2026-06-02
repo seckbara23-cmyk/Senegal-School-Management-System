@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 import { notifyAssessmentCreated } from '@/lib/notification-events'
+import { validateExamSessionForAssessment } from '@/lib/exam-sessions'
 
 // Resolve teacher context for server actions — never reads teacher_id from
 // form data; always resolves via auth.uid() → school_memberships → teachers.
@@ -55,6 +56,8 @@ const AssessmentSchema = z.object({
     z.number().min(1, 'Barème minimum 1').max(1000, 'Barème maximum 1000'),
   ),
   assessment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
+  exam_session_id: z.preprocess((v) => (v === '' || v == null ? undefined : v),
+    z.string().uuid('Session d\'examen invalide.').optional()),
 })
 
 export type CreateTeacherAssessmentState = {
@@ -88,24 +91,27 @@ export async function createTeacherAssessment(
     coefficient:        formData.get('coefficient'),
     max_score:          formData.get('max_score'),
     assessment_date:    formData.get('assessment_date') || '',
+    exam_session_id:    formData.get('exam_session_id'),
   })
 
   if (!parsed.success) {
     return { errors: parsed.error.flatten().fieldErrors as CreateTeacherAssessmentState['errors'] }
   }
 
-  const { class_subject_id, academic_period_id, title, assessment_type, coefficient, max_score, assessment_date } = parsed.data
+  const { class_subject_id, academic_period_id, title, assessment_type, coefficient, max_score, assessment_date, exam_session_id } = parsed.data
 
-  // Verify teacher is assigned to this class_subject
+  // Verify teacher is assigned to this class_subject (and get its academic year)
   const { data: assignment } = await supabase
-    .from('teacher_subject_assignments')
-    .select('id')
-    .eq('class_subject_id', class_subject_id)
-    .eq('teacher_id', teacherId)
+    .from('class_subjects')
+    .select('id, academic_year_id, teacher_subject_assignments!class_subject_id(teacher_id)')
+    .eq('id', class_subject_id)
     .eq('school_id', schoolId)
     .maybeSingle()
 
-  if (!assignment) {
+  type CsRow = { id: string; academic_year_id: string; teacher_subject_assignments: { teacher_id: string }[] }
+  const cs = assignment as unknown as CsRow | null
+  const isAssigned = !!cs && (cs.teacher_subject_assignments ?? []).some((a) => a.teacher_id === teacherId)
+  if (!cs || !isAssigned) {
     return { errors: { class_subject_id: ["Vous n'êtes pas assigné à cette matière."] } }
   }
 
@@ -121,6 +127,10 @@ export async function createTeacherAssessment(
     return { errors: { academic_period_id: ['Période introuvable.'] } }
   }
 
+  // Optional exam session — validate ownership, status (draft/active) + year match.
+  const sessionCheck = await validateExamSessionForAssessment(supabase, schoolId, exam_session_id ?? null, cs.academic_year_id)
+  if (!sessionCheck.ok) return { errors: { _form: [sessionCheck.message] } }
+
   const { data: newAssessment, error } = await supabase
     .from('assessments')
     .insert({
@@ -132,6 +142,7 @@ export async function createTeacherAssessment(
       coefficient,
       max_score,
       assessment_date:    assessment_date || null,
+      exam_session_id:    sessionCheck.id,
     })
     .select('id')
     .single()
@@ -143,7 +154,7 @@ export async function createTeacherAssessment(
   await logAuditEvent(supabase, {
     actorId: userId, actorEmail: userEmail, schoolId,
     action: 'teacher_assessment_created', resourceType: 'assessment', resourceId: (newAssessment as { id: string }).id,
-    metadata: { teacher_id: teacherId, class_subject_id, academic_period_id, title: title.trim(), assessment_type, coefficient, max_score },
+    metadata: { teacher_id: teacherId, class_subject_id, academic_period_id, title: title.trim(), assessment_type, coefficient, max_score, exam_session_id: sessionCheck.id },
   })
 
   // Best-effort: notify enrolled students + their parents.

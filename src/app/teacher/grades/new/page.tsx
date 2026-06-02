@@ -1,5 +1,5 @@
 import { requireTeacherCtx } from '../../_auth'
-import { NewTeacherAssessmentForm, type ClassSubjectOption, type PeriodOption } from '../_new_assessment_form'
+import { NewTeacherAssessmentForm, type ClassSubjectOption, type PeriodOption, type ExamSessionOption } from '../_new_assessment_form'
 
 type Props = {
   searchParams: { class_subject?: string | string[] }
@@ -18,24 +18,40 @@ export default async function TeacherNewAssessmentPage({ searchParams }: Props) 
   if (assignedClassSubjectIds.length > 0) {
     const { data: csData } = await supabase
       .from('class_subjects')
-      .select('id, classes!class_id(name, level), subjects!subject_id(name, code)')
+      .select('id, academic_year_id, classes!class_id(name, level), subjects!subject_id(name, code)')
       .in('id', assignedClassSubjectIds)
       .eq('school_id', schoolId)
       .order('classes(name)', { ascending: true })
 
     type CSRow = {
       id: string
+      academic_year_id: string
       classes:  { name: string; level: string | null }
       subjects: { name: string; code: string | null }
     }
 
     classSubjects = ((csData ?? []) as unknown as CSRow[]).map((cs) => ({
-      id:          cs.id,
-      className:   cs.classes.name + (cs.classes.level ? ` (${cs.classes.level})` : ''),
-      subjectName: cs.subjects.name,
-      subjectCode: cs.subjects.code,
+      id:             cs.id,
+      className:      cs.classes.name + (cs.classes.level ? ` (${cs.classes.level})` : ''),
+      subjectName:    cs.subjects.name,
+      subjectCode:    cs.subjects.code,
+      academicYearId: cs.academic_year_id,
     }))
   }
+
+  // Open exam sessions for the school (filtered client-side by class year).
+  const { data: sessionsData } = await supabase
+    .from('exam_sessions')
+    .select('id, name, academic_year_id, status, academic_years!academic_year_id(name)')
+    .eq('school_id', schoolId)
+    .in('status', ['draft', 'active'])
+    .order('starts_on', { ascending: false })
+  type SessionRow = { id: string; name: string; academic_year_id: string; status: string; academic_years: { name: string } | null }
+  const examSessions: ExamSessionOption[] = ((sessionsData ?? []) as unknown as SessionRow[]).map((s) => ({
+    id:             s.id,
+    label:          `${s.name}${s.academic_years ? ` — ${s.academic_years.name}` : ''}${s.status === 'draft' ? ' (brouillon)' : ''}`,
+    academicYearId: s.academic_year_id,
+  }))
 
   // Load academic periods for the school
   const { data: periodsData } = await supabase
@@ -78,6 +94,7 @@ export default async function TeacherNewAssessmentPage({ searchParams }: Props) 
           classSubjects={classSubjects}
           periods={periods}
           preselectedCsId={validPreselected}
+          examSessions={examSessions}
         />
       </div>
 

@@ -64,6 +64,35 @@ export default async function ExamSessionDetailPage({ params, searchParams }: Pr
   const s = rawSession as unknown as Session
   const errorMessage = searchParams.error ? (ERROR_MESSAGES[searchParams.error] ?? '') : ''
 
+  // Assessments attached to this session.
+  const { data: rawAssessments } = await supabase
+    .from('assessments')
+    .select('id, title, assessment_date, coefficient, max_score, class_subjects!class_subject_id(class_id, classes!class_id(name, section), subjects!subject_id(name))')
+    .eq('school_id', schoolId)
+    .eq('exam_session_id', s.id)
+    .order('assessment_date', { ascending: true })
+
+  type ARow = {
+    id: string; title: string; assessment_date: string | null; coefficient: number; max_score: number
+    class_subjects: { class_id: string; classes: { name: string; section: string | null } | null; subjects: { name: string } | null } | null
+  }
+  const assessments = (rawAssessments ?? []) as unknown as ARow[]
+
+  // Completion: graded students / actively enrolled students per assessment.
+  const classIds = Array.from(new Set(assessments.map((a) => a.class_subjects?.class_id).filter(Boolean) as string[]))
+  const enrolledByClass = new Map<string, number>()
+  const gradedByAssessment = new Map<string, number>()
+  if (assessments.length > 0) {
+    const [enrRes, gradeRes] = await Promise.all([
+      classIds.length > 0
+        ? supabase.from('student_class_enrollments').select('class_id').eq('school_id', schoolId).eq('status', 'active').in('class_id', classIds)
+        : Promise.resolve({ data: [] as { class_id: string }[] }),
+      supabase.from('grades').select('assessment_id').eq('school_id', schoolId).in('assessment_id', assessments.map((a) => a.id)),
+    ])
+    for (const r of (enrRes.data ?? []) as { class_id: string }[]) enrolledByClass.set(r.class_id, (enrolledByClass.get(r.class_id) ?? 0) + 1)
+    for (const r of (gradeRes.data ?? []) as { assessment_id: string }[]) gradedByAssessment.set(r.assessment_id, (gradedByAssessment.get(r.assessment_id) ?? 0) + 1)
+  }
+
   return (
     <div className="space-y-6">
       <div className="rounded-xl bg-primary-800 px-6 py-5">
@@ -143,6 +172,61 @@ export default async function ExamSessionDetailPage({ params, searchParams }: Pr
             </dd>
           </div>
         </dl>
+      </div>
+
+      {/* Assessments in this session */}
+      <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
+        <div className="border-b border-sand-100 bg-gray-50 px-5 py-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+            Évaluations ({assessments.length})
+          </h2>
+        </div>
+        {assessments.length === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-gray-500">
+            Aucune évaluation rattachée. Sélectionnez cette session lors de la création d&apos;une évaluation.
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-sand-200 bg-sand-100 text-left">
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Classe</th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Matière</th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Titre</th>
+                <th className="hidden sm:table-cell px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Date</th>
+                <th className="hidden md:table-cell px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 text-center">Coef.</th>
+                <th className="hidden md:table-cell px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 text-center">Barème</th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 text-center">Saisie</th>
+              </tr>
+            </thead>
+            <tbody>
+              {assessments.map((a, idx) => {
+                const classId  = a.class_subjects?.class_id
+                const enrolled = classId ? (enrolledByClass.get(classId) ?? 0) : 0
+                const graded   = gradedByAssessment.get(a.id) ?? 0
+                const complete = enrolled > 0 && graded >= enrolled
+                return (
+                  <tr key={a.id} className={`border-b border-sand-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-sand-50'}`}>
+                    <td className="px-4 py-3 text-gray-700">
+                      {a.class_subjects?.classes ? [a.class_subjects.classes.name, a.class_subjects.classes.section].filter(Boolean).join(' ') : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{a.class_subjects?.subjects?.name ?? '—'}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      <a href={`/school/academics/assessments/${a.id}`} className="hover:text-primary-700 hover:underline">{a.title}</a>
+                    </td>
+                    <td className="hidden sm:table-cell px-4 py-3 text-gray-600 whitespace-nowrap">{a.assessment_date ? fmtDate(a.assessment_date) : '—'}</td>
+                    <td className="hidden md:table-cell px-4 py-3 text-center text-gray-600">{a.coefficient}</td>
+                    <td className="hidden md:table-cell px-4 py-3 text-center text-gray-600">{a.max_score}</td>
+                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                      <span className={`text-xs font-semibold ${complete ? 'text-emerald-700' : 'text-gray-500'}`}>
+                        {graded}/{enrolled}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   )

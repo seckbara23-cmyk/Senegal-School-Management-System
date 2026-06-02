@@ -1,19 +1,27 @@
 'use client'
 
 import { useFormState, useFormStatus } from 'react-dom'
+import { useState } from 'react'
 import { createTeacherAssessment, type CreateTeacherAssessmentState } from './actions'
 
 export type ClassSubjectOption = {
-  id:          string
-  className:   string
-  subjectName: string
-  subjectCode: string | null
+  id:             string
+  className:      string
+  subjectName:    string
+  subjectCode:    string | null
+  academicYearId: string
 }
 
 export type PeriodOption = {
   id:       string
   name:     string
   yearName: string
+}
+
+export type ExamSessionOption = {
+  id:             string
+  label:          string
+  academicYearId: string
 }
 
 const ASSESSMENT_TYPES = [
@@ -43,12 +51,18 @@ export function NewTeacherAssessmentForm({
   classSubjects,
   periods,
   preselectedCsId,
+  examSessions = [],
 }: {
   classSubjects:    ClassSubjectOption[]
   periods:          PeriodOption[]
   preselectedCsId?: string
+  examSessions?:    ExamSessionOption[]
 }) {
   const [state, formAction] = useFormState(createTeacherAssessment, initialState)
+  const [csId, setCsId] = useState(preselectedCsId ?? '')
+
+  const selectedYear = classSubjects.find((c) => c.id === csId)?.academicYearId
+  const visibleSessions = examSessions.filter((s) => s.academicYearId === selectedYear)
 
   return (
     <form action={formAction} className="space-y-5">
@@ -72,11 +86,12 @@ export function NewTeacherAssessmentForm({
           <select
             id="class_subject_id"
             name="class_subject_id"
-            defaultValue={preselectedCsId ?? ''}
+            value={csId}
+            onChange={(e) => setCsId(e.target.value)}
             required
             className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 shadow-sm focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600"
           >
-            {!preselectedCsId && <option value="">— Sélectionner —</option>}
+            <option value="">— Sélectionner —</option>
             {classSubjects.map((cs) => (
               <option key={cs.id} value={cs.id}>
                 {cs.className} — {cs.subjectName}{cs.subjectCode ? ` (${cs.subjectCode})` : ''}
@@ -113,6 +128,25 @@ export function NewTeacherAssessmentForm({
         {state.errors?.academic_period_id && (
           <p className="mt-1 text-xs text-red-600">{state.errors.academic_period_id[0]}</p>
         )}
+      </div>
+
+      {/* Exam session (optional) */}
+      <div>
+        <label htmlFor="exam_session_id" className="block text-sm font-medium text-gray-700 mb-1">
+          Session d&apos;examen <span className="font-normal text-gray-400">(optionnel)</span>
+        </label>
+        <select
+          id="exam_session_id"
+          name="exam_session_id"
+          defaultValue=""
+          className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 shadow-sm focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600"
+        >
+          <option value="">— Aucune —</option>
+          {visibleSessions.map((s) => (
+            <option key={s.id} value={s.id}>{s.label}</option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-gray-400">Sessions ouvertes de l&apos;année de la classe sélectionnée.</p>
       </div>
 
       {/* Title */}

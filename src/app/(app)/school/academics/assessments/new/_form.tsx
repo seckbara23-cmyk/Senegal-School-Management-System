@@ -1,6 +1,7 @@
 'use client'
 
 import { useFormState, useFormStatus } from 'react-dom'
+import { useState } from 'react'
 import { createAssessment, type CreateAssessmentState } from '../../actions'
 
 type ClassSubjectOption = {
@@ -8,11 +9,17 @@ type ClassSubjectOption = {
   className: string
   subjectName: string
   subjectCode: string | null
+  academicYearId: string
 }
 type PeriodOption = {
   id: string
   name: string
   yearName: string
+}
+type ExamSessionOption = {
+  id: string
+  label: string
+  academicYearId: string
 }
 
 const ASSESSMENT_TYPES = [
@@ -41,11 +48,17 @@ const initialState: CreateAssessmentState = {}
 export function NewAssessmentForm({
   classSubjects,
   periods,
+  examSessions = [],
 }: {
   classSubjects: ClassSubjectOption[]
   periods: PeriodOption[]
+  examSessions?: ExamSessionOption[]
 }) {
   const [state, formAction] = useFormState(createAssessment, initialState)
+  const [csId, setCsId] = useState(classSubjects[0]?.id ?? '')
+
+  const selectedYear = classSubjects.find((c) => c.id === csId)?.academicYearId
+  const visibleSessions = examSessions.filter((s) => s.academicYearId === selectedYear)
 
   return (
     <form action={formAction} className="space-y-5">
@@ -71,6 +84,8 @@ export function NewAssessmentForm({
             id="class_subject_id"
             name="class_subject_id"
             required
+            value={csId}
+            onChange={(e) => setCsId(e.target.value)}
             className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 shadow-sm focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600"
           >
             {classSubjects.map((cs) => (
@@ -110,6 +125,25 @@ export function NewAssessmentForm({
         {state.errors?.academic_period_id && (
           <p className="mt-1 text-xs text-red-600">{state.errors.academic_period_id.join(' ')}</p>
         )}
+      </div>
+
+      {/* Exam session (optional) */}
+      <div>
+        <label htmlFor="exam_session_id" className="block text-sm font-medium text-gray-700 mb-1">
+          Session d&apos;examen <span className="text-gray-400 font-normal">(optionnel)</span>
+        </label>
+        <select
+          id="exam_session_id"
+          name="exam_session_id"
+          defaultValue=""
+          className="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 shadow-sm focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600"
+        >
+          <option value="">— Aucune —</option>
+          {visibleSessions.map((s) => (
+            <option key={s.id} value={s.id}>{s.label}</option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-gray-400">Sessions ouvertes de l&apos;année de la classe sélectionnée.</p>
       </div>
 
       {/* Title */}

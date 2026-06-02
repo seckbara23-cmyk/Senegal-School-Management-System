@@ -7,6 +7,7 @@ import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 import { notifyAssessmentCreated } from '@/lib/notification-events'
+import { validateExamSessionForAssessment } from '@/lib/exam-sessions'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -373,6 +374,8 @@ const AssessmentSchema = z.object({
     z.number().min(1).max(1000),
   ),
   assessment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
+  exam_session_id: z.preprocess((v) => (v === '' || v == null ? undefined : v),
+    z.string().uuid('Session d\'examen invalide.').optional()),
 })
 
 export type CreateAssessmentState = {
@@ -402,13 +405,14 @@ export async function createAssessment(
     coefficient:        formData.get('coefficient'),
     max_score:          formData.get('max_score'),
     assessment_date:    formData.get('assessment_date') || '',
+    exam_session_id:    formData.get('exam_session_id'),
   })
 
   if (!parsed.success) {
     return { errors: parsed.error.flatten().fieldErrors }
   }
 
-  const { class_subject_id, academic_period_id, title, assessment_type, coefficient, max_score, assessment_date } = parsed.data
+  const { class_subject_id, academic_period_id, title, assessment_type, coefficient, max_score, assessment_date, exam_session_id } = parsed.data
   const supabase = createClient()
 
   if (!(await isSchoolWritable(supabase, schoolId))) {
@@ -417,12 +421,19 @@ export async function createAssessment(
 
   // Verify class_subject and period both belong to this school
   const [csRes, periodRes] = await Promise.all([
-    supabase.from('class_subjects').select('id').eq('id', class_subject_id).eq('school_id', schoolId).maybeSingle(),
+    supabase.from('class_subjects').select('id, academic_year_id').eq('id', class_subject_id).eq('school_id', schoolId).maybeSingle(),
     supabase.from('academic_periods').select('id').eq('id', academic_period_id).eq('school_id', schoolId).maybeSingle(),
   ])
 
   if (!csRes.data)     return { errors: { class_subject_id:   ['Attribution invalide.'] } }
   if (!periodRes.data) return { errors: { academic_period_id: ['Période invalide.']     } }
+
+  // Optional exam session — validate ownership, status (draft/active) + year match.
+  const sessionCheck = await validateExamSessionForAssessment(
+    supabase, schoolId, exam_session_id ?? null,
+    (csRes.data as { academic_year_id: string }).academic_year_id,
+  )
+  if (!sessionCheck.ok) return { errors: { _form: [sessionCheck.message] } }
 
   const { data: newAssessment, error } = await supabase
     .from('assessments')
@@ -435,6 +446,7 @@ export async function createAssessment(
       coefficient,
       max_score,
       assessment_date:    assessment_date || null,
+      exam_session_id:    sessionCheck.id,
     })
     .select('id')
     .single()
@@ -453,7 +465,7 @@ export async function createAssessment(
   await logAuditEvent(supabase, {
     actorId: actor.id, actorEmail: actor.email, schoolId,
     action: 'assessment_created', resourceType: 'assessment', resourceId: newAssessment.id,
-    metadata: { class_subject_id, academic_period_id, title: title.trim(), assessment_type, coefficient, max_score },
+    metadata: { class_subject_id, academic_period_id, title: title.trim(), assessment_type, coefficient, max_score, exam_session_id: sessionCheck.id },
   })
 
   // Best-effort: notify enrolled students + their parents.

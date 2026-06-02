@@ -19,10 +19,10 @@ export default async function NewAssessmentPage() {
   if (!membership) redirect('/school')
   const schoolId = (membership as { school_id: string }).school_id
 
-  const [csRes, periodsRes] = await Promise.all([
+  const [csRes, periodsRes, sessionsRes] = await Promise.all([
     supabase
       .from('class_subjects')
-      .select('id, classes!class_id(name, level), subjects!subject_id(name, code)')
+      .select('id, academic_year_id, classes!class_id(name, level), subjects!subject_id(name, code)')
       .eq('school_id', schoolId)
       .order('classes(name)', { ascending: true }),
 
@@ -31,27 +31,43 @@ export default async function NewAssessmentPage() {
       .select('id, name, academic_years!academic_year_id(name)')
       .eq('school_id', schoolId)
       .order('name', { ascending: true }),
+
+    supabase
+      .from('exam_sessions')
+      .select('id, name, academic_year_id, status, academic_years!academic_year_id(name)')
+      .eq('school_id', schoolId)
+      .in('status', ['draft', 'active'])
+      .order('starts_on', { ascending: false }),
   ])
 
   type CSRow = {
     id: string
+    academic_year_id: string
     classes:  { name: string; level: string | null }
     subjects: { name: string; code: string | null }
   }
   type PeriodRow = { id: string; name: string; academic_years: { name: string } }
+  type SessionRow = { id: string; name: string; academic_year_id: string; status: string; academic_years: { name: string } | null }
 
   const rawCS = (csRes.data ?? []) as unknown as CSRow[]
   const classSubjects = rawCS.map((cs) => ({
-    id:          cs.id,
-    className:   cs.classes.name + (cs.classes.level ? ` (${cs.classes.level})` : ''),
-    subjectName: cs.subjects.name,
-    subjectCode: cs.subjects.code,
+    id:             cs.id,
+    className:      cs.classes.name + (cs.classes.level ? ` (${cs.classes.level})` : ''),
+    subjectName:    cs.subjects.name,
+    subjectCode:    cs.subjects.code,
+    academicYearId: cs.academic_year_id,
   }))
 
   const periods = ((periodsRes.data ?? []) as unknown as PeriodRow[]).map((p) => ({
     id:       p.id,
     name:     p.name,
     yearName: p.academic_years.name,
+  }))
+
+  const examSessions = ((sessionsRes.data ?? []) as unknown as SessionRow[]).map((s) => ({
+    id:             s.id,
+    label:          `${s.name}${s.academic_years ? ` — ${s.academic_years.name}` : ''}${s.status === 'draft' ? ' (brouillon)' : ''}`,
+    academicYearId: s.academic_year_id,
   }))
 
   return (
@@ -68,7 +84,7 @@ export default async function NewAssessmentPage() {
 
       {/* ── Form card ───────────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-sand-200 bg-white px-6 py-6 shadow-sm">
-        <NewAssessmentForm classSubjects={classSubjects} periods={periods} />
+        <NewAssessmentForm classSubjects={classSubjects} periods={periods} examSessions={examSessions} />
       </div>
 
     </div>
