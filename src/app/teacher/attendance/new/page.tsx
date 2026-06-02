@@ -28,7 +28,7 @@ type Props = {
 }
 
 export default async function TeacherNewAttendancePage({ searchParams }: Props) {
-  const { supabase, schoolId, assignedClassSubjectIds } = await requireTeacherCtx()
+  const { supabase, schoolId, assignedClassSubjectIds, teacher } = await requireTeacherCtx()
 
   // ── Resolve assigned classes ────────────────────────────────────────────────
   let assignedClasses: AssignedClass[] = []
@@ -223,6 +223,7 @@ export default async function TeacherNewAttendancePage({ searchParams }: Props) 
               classId={selectedClassId}
               sessionDate={selectedDate}
               cancelHref="/teacher/attendance"
+              teacherId={teacher.id}
             />
           </div>
         </div>

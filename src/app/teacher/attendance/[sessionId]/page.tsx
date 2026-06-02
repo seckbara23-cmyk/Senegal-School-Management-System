@@ -1,5 +1,6 @@
 import { requireTeacherCtx } from '../../_auth'
 import { notFound } from 'next/navigation'
+import { AttendanceDraftCleanup } from '../_draft-cleanup'
 
 type StatusKey = 'present' | 'absent' | 'late' | 'excused'
 
@@ -93,6 +94,9 @@ export default async function TeacherAttendanceSessionPage({ params }: Props) {
 
   return (
     <div className="space-y-5 pb-8">
+
+      {/* Clears any local offline draft for this register now that it is saved. */}
+      <AttendanceDraftCleanup classId={session.class_id} sessionDate={session.session_date} />
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="rounded-xl bg-primary-800 px-6 py-5">
