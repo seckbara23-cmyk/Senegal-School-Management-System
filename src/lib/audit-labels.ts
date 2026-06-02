@@ -18,6 +18,10 @@ export const ACTION_LABELS: Record<string, string> = {
   class_created:                 'Classe créée',
   students_enrolled:             'Élèves inscrits',
   enrollment_withdrawn:          'Inscription retirée',
+  // Admissions
+  admission_created:             'Candidature créée',
+  admission_status_changed:      'Statut candidature modifié',
+  admission_converted:           'Candidature convertie en élève',
   // Années scolaires
   academic_year_created:         'Année scolaire créée',
   academic_year_updated:         'Année scolaire modifiée',
@@ -93,6 +97,7 @@ export const ACTION_LABELS: Record<string, string> = {
 export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Finance',              actions: ['fee_item_created', 'invoice_created', 'payment_recorded', 'bulk_invoices_created', 'invoice_cancelled'] },
   { label: 'Classes & inscriptions', actions: ['class_created', 'students_enrolled', 'enrollment_withdrawn'] },
+  { label: 'Admissions',           actions: ['admission_created', 'admission_status_changed', 'admission_converted'] },
   { label: 'Années scolaires',     actions: ['academic_year_created', 'academic_year_updated', 'academic_year_status_changed'] },
   { label: 'Structure académique', actions: ['subject_created', 'subject_updated', 'subject_assigned_to_class', 'subject_removed_from_class', 'teacher_assigned_to_subject', 'teacher_assignment_created', 'teacher_assignment_removed', 'academic_period_created', 'assessment_created', 'grades_saved'] },
   { label: 'Emploi du temps',      actions: ['timetable_slot_created', 'timetable_slot_updated', 'timetable_slot_deleted'] },
@@ -113,6 +118,7 @@ export const RESOURCE_TYPE_LABELS: Record<string, string> = {
   school:             'École',
   user:               'Compte',
   student:            'Élève',
+  admission:          'Candidature',
   teacher:            'Enseignant',
   parent:             'Parent',
   class:              'Classe',
