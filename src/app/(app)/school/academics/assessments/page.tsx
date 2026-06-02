@@ -14,8 +14,13 @@ const TYPE_LABEL: Record<string, string> = {
   autre:         'Autre',
 }
 
+const ERROR_MSG: Record<string, string> = {
+  readonly: 'Cet établissement est en lecture seule. La saisie des notes est désactivée.',
+  invalid:  'Évaluation introuvable ou invalide.',
+}
+
 type Props = {
-  searchParams: { period_id?: string; class_id?: string }
+  searchParams: { period_id?: string; class_id?: string; error?: string }
 }
 
 export default async function AssessmentsPage({ searchParams }: Props) {
@@ -121,9 +126,17 @@ export default async function AssessmentsPage({ searchParams }: Props) {
   }) {
     const { assessments, periods, classes, selectedPeriodId, selectedClassId } = props
     const hasFilter = !!(selectedPeriodId || selectedClassId)
+    const errorMsg = searchParams.error ? (ERROR_MSG[searchParams.error] ?? '') : ''
 
     return (
       <div className="space-y-6">
+
+        {/* ── Error banner (from saveGrades) ─────────────────────────────────── */}
+        {errorMsg && (
+          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {errorMsg}
+          </div>
+        )}
 
         {/* ── Header ────────────────────────────────────────────────────────── */}
         <div className="rounded-xl bg-primary-800 px-6 py-5">

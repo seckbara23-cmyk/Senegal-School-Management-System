@@ -37,8 +37,14 @@ type AssessmentRow = {
   academic_periods: { name: string }
 }
 
+const ERROR_MSG: Record<string, string> = {
+  readonly:     'Cet établissement est en lecture seule. La saisie des notes est désactivée.',
+  invalid:      'Évaluation introuvable ou invalide.',
+  unauthorized: "Vous n'êtes pas autorisé à modifier les notes de cette évaluation.",
+}
+
 type Props = {
-  searchParams: { class_subject?: string }
+  searchParams: { class_subject?: string; error?: string }
 }
 
 export default async function TeacherGradesPage({ searchParams }: Props) {
@@ -49,6 +55,7 @@ export default async function TeacherGradesPage({ searchParams }: Props) {
   const targetIds  = filterCsId && assignedClassSubjectIds.includes(filterCsId)
     ? [filterCsId]
     : assignedClassSubjectIds
+  const errorMsg = searchParams.error ? (ERROR_MSG[searchParams.error] ?? '') : ''
 
   if (assignedClassSubjectIds.length === 0) {
     return (
@@ -131,6 +138,13 @@ export default async function TeacherGradesPage({ searchParams }: Props) {
           </a>
         </div>
       </div>
+
+      {/* ── Error banner (from saveTeacherGrades) ────────────────────────────── */}
+      {errorMsg && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {errorMsg}
+        </div>
+      )}
 
       {/* ── Active filter banner ─────────────────────────────────────────────── */}
       {filterCsId && (
