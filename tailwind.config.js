@@ -8,14 +8,22 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Senegalese school green — primary brand colour
+        // Senegalese school green — primary brand colour. Shades 300/400/500
+        // (used by text-primary-300 header subtitles, hover borders, etc.) and
+        // 900 were referenced across the app but undefined, so those classes
+        // rendered with no colour. Interpolated evenly between 200 and 600 to
+        // preserve the deep, academic Senegal-green identity.
         primary: {
           50:  '#E8F5EE',
           100: '#D1EBD9',
           200: '#A3D7B3',
+          300: '#7EC097',
+          400: '#59A97C',
+          500: '#349260',
           600: '#0F7B45',
           700: '#075E36',
           800: '#054D2C',
+          900: '#043A21',
         },
         // Gold accent — used sparingly. Full ramp: shades 100/200/500/600/800
         // were referenced across the app (NotificationBell, announcement badges,
