@@ -60,6 +60,17 @@ const ASSESS_TYPE_LABEL: Record<string, string> = {
   autre:         'Autre',
 }
 
+const PAYMENT_METHOD_LABEL: Record<string, string> = {
+  cash: 'Espèces', bank_transfer: 'Virement', cheque: 'Chèque',
+  wave_manual: 'Wave', orange_money_manual: 'Orange Money', other: 'Autre',
+}
+
+const ATT_STATUS_LABEL: Record<string, string> = { absent: 'Absent', late: 'Retard' }
+
+const EXAM_STATUS_LABEL: Record<string, string> = {
+  draft: 'Brouillon', active: 'Active', completed: 'Terminée', archived: 'Archivée',
+}
+
 // ─── KPI card ───────────────────────────────────────────────────────────────────
 
 const TONES: Record<string, string> = {
@@ -159,11 +170,13 @@ export default async function SchoolAdminPage() {
   const schoolId = school.id
 
   const todayISO = new Date().toISOString().split('T')[0]
+  const cutoff30 = new Date(Date.now() - 30 * 86_400_000).toISOString().split('T')[0]
 
   // ── Data fetch (parallel) ──────────────────────────────────────────────────
   const [
     studentsRes, teachersRes, parentsRes, activeYearRes, classesRes,
     attendanceTodayRes, outstandingRes, announcementsRes, assessmentsRes,
+    sessions30Res, paymentsRes, absencesRes, examSessionRes,
   ] = await Promise.all([
     supabase.from('students').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
     supabase.from('teachers').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('status', 'active'),
@@ -189,6 +202,31 @@ export default async function SchoolAdminPage() {
       .gte('assessment_date', todayISO)
       .order('assessment_date', { ascending: true })
       .limit(5),
+    // Attendance sessions in the last 30 days — drives the attendance-rate KPI.
+    supabase.from('attendance_sessions').select('id').eq('school_id', schoolId).gte('session_date', cutoff30),
+    // Recent payments.
+    supabase
+      .from('student_payments')
+      .select('id, amount, payment_method, paid_at, receipt_number, students!student_id(first_name, last_name)')
+      .eq('school_id', schoolId)
+      .order('paid_at', { ascending: false })
+      .limit(5),
+    // Recent absences / lates (ordered by record creation — a reliable top-level column).
+    supabase
+      .from('attendance_records')
+      .select('id, status, created_at, attendance_sessions!session_id(session_date, classes!class_id(name)), students!student_id(first_name, last_name)')
+      .eq('school_id', schoolId)
+      .in('status', ['absent', 'late'])
+      .order('created_at', { ascending: false })
+      .limit(6),
+    // Latest exam session (most recent by start date).
+    supabase
+      .from('exam_sessions')
+      .select('id, name, status, starts_on, ends_on')
+      .eq('school_id', schoolId)
+      .order('starts_on', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
 
   const studentCount = studentsRes.count ?? 0
@@ -226,6 +264,35 @@ export default async function SchoolAdminPage() {
     class_subjects: { classes: { name: string } | null; subjects: { name: string } | null } | null
   }
   const assessments = (assessmentsRes.data ?? []) as unknown as AssessmentRow[]
+
+  // Attendance rate over the last 30 days: (present + late + excused) / total.
+  const sessionIds30 = ((sessions30Res.data ?? []) as { id: string }[]).map((s) => s.id)
+  let attendanceRate: number | null = null
+  if (sessionIds30.length > 0) {
+    const [totalRes, absentRes] = await Promise.all([
+      supabase.from('attendance_records').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).in('session_id', sessionIds30),
+      supabase.from('attendance_records').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('status', 'absent').in('session_id', sessionIds30),
+    ])
+    const total  = totalRes.count ?? 0
+    const absent = absentRes.count ?? 0
+    attendanceRate = total > 0 ? Math.round(((total - absent) / total) * 100) : null
+  }
+
+  type PaymentRow = {
+    id: string; amount: number; payment_method: string; paid_at: string; receipt_number: string | null
+    students: { first_name: string; last_name: string } | null
+  }
+  const payments = (paymentsRes.data ?? []) as unknown as PaymentRow[]
+
+  type AbsenceRow = {
+    id: string; status: string; created_at: string
+    attendance_sessions: { session_date: string; classes: { name: string } | null } | null
+    students: { first_name: string; last_name: string } | null
+  }
+  const absences = (absencesRes.data ?? []) as unknown as AbsenceRow[]
+
+  type ExamSessionRow = { id: string; name: string; status: string; starts_on: string; ends_on: string }
+  const examSession = (examSessionRes.data as ExamSessionRow | null) ?? null
 
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -267,6 +334,11 @@ export default async function SchoolAdminPage() {
         <KpiCard label="Parents"       value={parentCount}  sub="actifs"                 href="/school/parents"  iconPath={P.parents}  tone="sky" />
         <KpiCard label="Classes"       value={activeClasses} sub={activeYear ? "cette année" : 'au total'} href="/school/classes" iconPath={P.classes} tone="green" />
         <KpiCard label="Présences"     value={attendanceToday} sub="séances aujourd'hui" href="/school/attendance" iconPath={P.clock} tone="emerald" />
+        <KpiCard
+          label="Assiduité (30j)" value={attendanceRate !== null ? `${attendanceRate}%` : '—'}
+          sub="taux de présence" href="/school/attendance" iconPath={P.clock}
+          tone={attendanceRate !== null && attendanceRate < 90 ? 'amber' : 'emerald'}
+        />
         <KpiCard
           label="Impayés" value={outstanding.length}
           sub={outstandingTotal > 0 ? fmtFCFA(outstandingTotal) : 'à jour'}
@@ -424,6 +496,78 @@ export default async function SchoolAdminPage() {
                 className="mt-3 inline-block rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-700"
               >
                 Créer une année scolaire
+              </Link>
+            </div>
+          )}
+        </Panel>
+
+        {/* Recent payments */}
+        <Panel title="Paiements récents" href="/school/finance/payments" linkLabel="Journal">
+          {payments.length === 0 ? (
+            <EmptyRow>Aucun paiement enregistré.</EmptyRow>
+          ) : (
+            <ul className="divide-y divide-sand-100">
+              {payments.map((p) => (
+                <li key={p.id}>
+                  <Link href={`/school/finance/payments/${p.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-accent-50">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-gray-900">
+                        {p.students ? `${p.students.last_name} ${p.students.first_name}` : '—'}
+                      </p>
+                      <p className="truncate text-xs text-gray-500">
+                        {PAYMENT_METHOD_LABEL[p.payment_method] ?? p.payment_method} · {fmtDate(p.paid_at)}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-sm font-bold text-emerald-700">{fmtFCFA(p.amount)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+
+        {/* Recent absences */}
+        <Panel title="Absences récentes" href="/school/attendance" linkLabel="Présences">
+          {absences.length === 0 ? (
+            <EmptyRow>Aucune absence récente.</EmptyRow>
+          ) : (
+            <ul className="divide-y divide-sand-100">
+              {absences.map((a) => (
+                <li key={a.id} className="flex items-center gap-3 px-5 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-gray-900">
+                      {a.students ? `${a.students.last_name} ${a.students.first_name}` : '—'}
+                    </p>
+                    <p className="truncate text-xs text-gray-500">
+                      {a.attendance_sessions?.classes?.name ?? '—'} · {fmtDate(a.attendance_sessions?.session_date ?? null)}
+                    </p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${a.status === 'absent' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {ATT_STATUS_LABEL[a.status] ?? a.status}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+
+        {/* Latest exam session */}
+        <Panel title="Dernière session d'examen" href="/school/exams" linkLabel="Examens">
+          {!examSession ? (
+            <EmptyRow>Aucune session d&apos;examen.</EmptyRow>
+          ) : (
+            <div className="px-5 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-base font-bold text-primary-800">{examSession.name}</p>
+                  <p className="text-xs text-gray-500">{fmtDate(examSession.starts_on)} — {fmtDate(examSession.ends_on)}</p>
+                </div>
+                <span className="shrink-0 rounded-full border border-sand-200 bg-sand-50 px-2.5 py-0.5 text-xs font-semibold text-gray-600">
+                  {EXAM_STATUS_LABEL[examSession.status] ?? examSession.status}
+                </span>
+              </div>
+              <Link href={`/school/exams/${examSession.id}/results`} className="mt-3 inline-block rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-700">
+                Voir les résultats →
               </Link>
             </div>
           )}
