@@ -14,6 +14,7 @@ const P = {
   timetable:  'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5m-9-6h.008v.008H12v-.008zM12 15h.008v.008H12V15zm0 2.25h.008v.008H12v-.008zM9.75 15h.008v.008H9.75V15zm0 2.25h.008v.008H9.75v-.008zM7.5 15h.008v.008H7.5V15zm0 2.25h.008v.008H7.5v-.008zm6.75-4.5h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V15zm0 2.25h.008v.008h-.008v-.008zm2.25-4.5h.008v.008H16.5v-.008zm0 2.25h.008v.008H16.5V15z',
   bars:       'M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5',
   x:          'M6 18L18 6M6 6l12 12',
+  help:       'M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z',
   signout:    'M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75',
 }
 
@@ -24,6 +25,7 @@ const NAV = [
   { label: 'Présences',        href: '/teacher/attendance',   icon: P.attendance, exact: false },
   { label: 'Emploi du temps',  href: '/teacher/timetable',    icon: P.timetable,  exact: false },
   { label: 'Annonces',         href: '/teacher/announcements',icon: P.bell,       exact: false },
+  { label: 'Aide',             href: '/teacher/help',         icon: P.help,       exact: false },
 ]
 
 function Icon({ d }: { d: string }) {
