@@ -166,6 +166,40 @@ export async function createSchoolWithAdmin(
     return { errors: { _form: ["Erreur lors de l'attribution du rôle administrateur. Veuillez réessayer."] } }
   }
 
+  // ── Step 4b: provision the relational subscription row (best-effort) ─────────
+  // Every school should have a school_subscriptions row so it appears in the
+  // subscription console and the quota helpers resolve against a plan. NON-FATAL:
+  // if the subscription module (migration 039) is absent or the insert fails,
+  // school creation still succeeds (quota checks fail open). Billing status is
+  // derived from the chosen access status, mirroring the migration-039 backfill.
+  try {
+    const { data: starter } = await admin
+      .from('subscription_plans').select('id').eq('code', 'starter').maybeSingle()
+    const starterId = (starter as { id: string } | null)?.id
+    if (starterId) {
+      const billingStatus =
+        d.subscription_status === 'suspended' ? 'suspended'
+        : d.subscription_status === 'inactive' ? 'cancelled'
+        : 'active'
+      const { data: subRow, error: subErr } = await admin
+        .from('school_subscriptions')
+        .insert({ school_id: schoolId, plan_id: starterId, status: billingStatus, current_period_start: new Date().toISOString() })
+        .select('id')
+        .single()
+      if (subErr) {
+        logSupabaseError(subErr, { action: 'createSchoolWithAdmin:subscription', userId: actor.id, entityIds: { schoolId } })
+      } else if (subRow) {
+        await logAuditEvent(admin, {
+          actorId: actor.id, actorEmail: actor.email, schoolId,
+          action: 'subscription_created', resourceType: 'subscription', resourceId: (subRow as { id: string }).id,
+          metadata: { plan: 'starter', status: billingStatus },
+        })
+      }
+    }
+  } catch (e) {
+    logSupabaseError(e as { message?: string }, { action: 'createSchoolWithAdmin:subscription', userId: actor.id, entityIds: { schoolId } })
+  }
+
   // ── Step 5: audit events (best-effort via shared helper) ────────────────────
   await logAuditEvent(admin, {
     actorId: actor.id, actorEmail: actor.email, schoolId,
