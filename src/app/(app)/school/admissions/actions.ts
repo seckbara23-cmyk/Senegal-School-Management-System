@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
-import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE, canAddStudent, logLimitBlocked, STUDENT_LIMIT_REACHED_MESSAGE } from '@/lib/tenant'
 
 // ─── Shared guard ───────────────────────────────────────────────────────────
 
@@ -238,6 +238,13 @@ export async function convertAdmission(
 
   if (app.converted_student_id) return { errors: { _form: ['Cette candidature a déjà été convertie en élève.'] } }
   if (app.status !== 'accepted') return { errors: { _form: ['Seules les candidatures acceptées peuvent être converties.'] } }
+
+  // Subscription quota — conversion creates an ACTIVE student. Checked before any
+  // record is created/modified so the conversion is all-or-nothing. Fails open.
+  if (!(await canAddStudent(supabase, schoolId))) {
+    logLimitBlocked('student', { schoolId, userId: actor.id })
+    return { errors: { _form: [STUDENT_LIMIT_REACHED_MESSAGE] } }
+  }
 
   // Resolve the optional target class (and its year) before creating anything.
   let enrollClass: { id: string; academic_year_id: string } | null = null

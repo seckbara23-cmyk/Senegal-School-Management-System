@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { formatServerActionError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
-import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE, canAddStudent, logLimitBlocked, STUDENT_LIMIT_REACHED_MESSAGE } from '@/lib/tenant'
 
 // Unique-constraint name → friendly field message (see migration 002).
 const STUDENT_CONSTRAINTS = {
@@ -112,6 +112,14 @@ export async function createStudent(
     return {
       errors: parsed.error.flatten().fieldErrors as CreateStudentState['errors'],
     }
+  }
+
+  // ── Subscription quota ───────────────────────────────────────────────────────
+  // Only an ACTIVE student counts against the plan limit. Checked after
+  // validation and before any insert so no partial record is created. Fails open.
+  if (parsed.data.status === 'active' && !(await canAddStudent(supabase, schoolId))) {
+    logLimitBlocked('student', { schoolId, userId: user.id })
+    return { errors: { _form: [STUDENT_LIMIT_REACHED_MESSAGE] } }
   }
 
   // ── Insert ─────────────────────────────────────────────────────────────────

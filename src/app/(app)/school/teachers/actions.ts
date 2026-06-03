@@ -5,7 +5,7 @@ import { redirect }     from 'next/navigation'
 import { z }            from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
-import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
+import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE, canAddTeacher, logLimitBlocked, TEACHER_LIMIT_REACHED_MESSAGE } from '@/lib/tenant'
 
 // Unique-constraint name → friendly field message (see migration 002).
 const TEACHER_CONSTRAINTS = {
@@ -85,6 +85,13 @@ export async function createTeacher(
 
   if (!parsed.success) {
     return { errors: parsed.error.flatten().fieldErrors as TeacherFormState['errors'] }
+  }
+
+  // Subscription quota — new teachers are created active. Checked before insert
+  // so no partial record is created. Fails open (see canAddTeacher).
+  if (!(await canAddTeacher(supabase, schoolId))) {
+    logLimitBlocked('teacher', { schoolId, userId: actor.id })
+    return { errors: { _form: [TEACHER_LIMIT_REACHED_MESSAGE] } }
   }
 
   const { data: teacher, error } = await supabase
