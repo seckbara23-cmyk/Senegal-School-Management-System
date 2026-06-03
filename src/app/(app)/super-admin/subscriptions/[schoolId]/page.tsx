@@ -2,7 +2,22 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { EditSubscriptionForm, type SubscriptionFormValues } from './_form'
+import { CreateInvoiceForm } from './_create_invoice_form'
 import { cancelSubscription } from '../actions'
+
+const INV_STATUS_LABEL: Record<string, string> = {
+  draft: 'Brouillon', issued: 'Émise', paid: 'Réglée', overdue: 'En retard', cancelled: 'Annulée',
+}
+const INV_STATUS_BADGE: Record<string, string> = {
+  draft:     'bg-gray-100 text-gray-600 border-gray-200',
+  issued:    'bg-sky-50 text-sky-700 border-sky-200',
+  paid:      'bg-emerald-50 text-emerald-700 border-emerald-200',
+  overdue:   'bg-red-50 text-red-700 border-red-200',
+  cancelled: 'bg-gray-100 text-gray-500 border-gray-200',
+}
+function fmtMoney(n: number, currency: string): string {
+  return new Intl.NumberFormat('fr-FR').format(Number(n)) + ' ' + currency
+}
 
 const SUB_STATUS_LABEL: Record<string, string> = {
   trialing: 'Essai', active: 'Active', past_due: 'Impayé', suspended: 'Suspendu', cancelled: 'Annulé',
@@ -50,7 +65,7 @@ export default async function SubscriptionDetailPage({ params, searchParams }: P
     .from('school_subscriptions')
     .select(
       'id, plan_id, status, trial_ends_at, current_period_start, current_period_end, cancelled_at, ' +
-      'subscription_plans!inner(code, name, max_students, max_teachers, max_storage_mb)'
+      'subscription_plans!inner(code, name, monthly_price, max_students, max_teachers, max_storage_mb)'
     )
     .eq('school_id', params.schoolId)
     .maybeSingle()
@@ -90,9 +105,19 @@ export default async function SubscriptionDetailPage({ params, searchParams }: P
     id: string; plan_id: string; status: string
     trial_ends_at: string | null; current_period_start: string | null
     current_period_end: string | null; cancelled_at: string | null
-    subscription_plans: { code: string; name: string; max_students: number | null; max_teachers: number | null; max_storage_mb: number | null } | null
+    subscription_plans: { code: string; name: string; monthly_price: number | null; max_students: number | null; max_teachers: number | null; max_storage_mb: number | null } | null
   }
   const sub = subRaw as unknown as SubRow
+
+  // This school's SaaS invoices (most recent first).
+  const { data: invData } = await supabase
+    .from('subscription_invoices')
+    .select('id, invoice_number, amount, amount_paid, currency, status, due_date')
+    .eq('school_id', school.id)
+    .order('created_at', { ascending: false })
+    .limit(50)
+  type InvRow = { id: string; invoice_number: string; amount: number; amount_paid: number; currency: string; status: string; due_date: string | null }
+  const invoices = (invData ?? []) as InvRow[]
 
   const values: SubscriptionFormValues = {
     school_id:            school.id,
@@ -146,6 +171,58 @@ export default async function SubscriptionDetailPage({ params, searchParams }: P
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500">Modifier l&apos;abonnement</h2>
         <EditSubscriptionForm values={values} plans={plans} />
+      </div>
+
+      {/* SaaS billing ledger */}
+      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Facturation de l&apos;abonnement</h2>
+          <Link href="/super-admin/subscriptions/invoices" className="text-xs font-medium text-indigo-600 hover:text-indigo-900 hover:underline">Toutes les factures →</Link>
+        </div>
+
+        {invoices.length === 0 ? (
+          <p className="text-sm text-gray-400">Aucune facture d&apos;abonnement pour cette école.</p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-gray-200">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50 text-left">
+                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">N°</th>
+                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500 text-right">Montant</th>
+                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500 text-right">Réglé</th>
+                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500 text-center">Statut</th>
+                    <th className="px-4 py-2.5" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoices.map((iv, idx) => (
+                    <tr key={iv.id} className={`border-b border-gray-100 ${idx % 2 ? 'bg-gray-50/40' : 'bg-white'}`}>
+                      <td className="px-4 py-2.5 font-mono text-xs text-gray-500">
+                        <Link href={`/super-admin/subscriptions/invoices/${iv.id}`} className="hover:text-indigo-700 hover:underline">{iv.invoice_number}</Link>
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-gray-800 whitespace-nowrap">{fmtMoney(iv.amount, iv.currency)}</td>
+                      <td className="px-4 py-2.5 text-right text-emerald-700 whitespace-nowrap">{fmtMoney(iv.amount_paid, iv.currency)}</td>
+                      <td className="px-4 py-2.5 text-center">
+                        <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${INV_STATUS_BADGE[iv.status] ?? INV_STATUS_BADGE.draft}`}>
+                          {INV_STATUS_LABEL[iv.status] ?? iv.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <Link href={`/super-admin/subscriptions/invoices/${iv.id}`} className="text-xs font-medium text-indigo-600 hover:text-indigo-900 hover:underline">Voir →</Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-5 border-t border-gray-100 pt-5">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Nouvelle facture</h3>
+          <CreateInvoiceForm schoolId={school.id} suggestedAmount={sub.subscription_plans?.monthly_price ?? null} />
+        </div>
       </div>
 
       {/* Cancel (danger) */}

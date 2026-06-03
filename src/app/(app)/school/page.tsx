@@ -372,6 +372,7 @@ export default async function SchoolAdminPage() {
           <NavCard href="/school/finance"       label="Finance"     desc="Frais, factures, paiements"    iconPath={P.money} />
           <NavCard href="/school/announcements" label="Annonces"    desc="Communication de l'école"      iconPath={P.megaphone} />
           <NavCard href="/school/users"         label="Comptes"     desc="Utilisateurs et accès"         iconPath={P.key} />
+          <NavCard href="/school/billing"       label="Abonnement"  desc="Factures EduSen de l'école"    iconPath={P.money} />
         </div>
       </div>
 

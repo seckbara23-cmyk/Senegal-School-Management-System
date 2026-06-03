@@ -222,7 +222,12 @@ function Header() {
         <span className="mx-2">/</span>
         <span className="font-medium text-gray-900">Abonnements</span>
       </nav>
-      <h1 className="text-2xl font-bold text-gray-900">Abonnements</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-bold text-gray-900">Abonnements</h1>
+        <Link href="/super-admin/subscriptions/invoices" className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+          Factures d&apos;abonnement →
+        </Link>
+      </div>
       <p className="mt-0.5 text-sm text-gray-500">Formules, statuts de facturation et limites par établissement.</p>
     </div>
   )
