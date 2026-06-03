@@ -93,6 +93,10 @@ export const ACTION_LABELS: Record<string, string> = {
   school_admin_deactivated:      'Administrateur désactivé',
   school_admin_reactivated:      'Administrateur réactivé',
   school_admin_password_reset_generated: 'Lien de réinitialisation (admin école)',
+  // Abonnements (SaaS)
+  subscription_created:          'Abonnement créé',
+  subscription_updated:          'Abonnement modifié',
+  subscription_cancelled:        'Abonnement annulé',
 }
 
 // ── Grouped action options for the filter <select> ───────────────────────────
@@ -114,6 +118,7 @@ export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Plateforme',           actions: ['school_created', 'school_updated', 'school_subscription_updated', 'school_admin_created'] },
   { label: 'Cycle de vie tenant',  actions: ['school_suspended', 'school_reactivated', 'school_archived'] },
   { label: 'Admins d’école',       actions: ['school_admin_added', 'school_admin_removed', 'school_admin_deactivated', 'school_admin_reactivated', 'school_admin_password_reset_generated'] },
+  { label: 'Abonnements',          actions: ['subscription_created', 'subscription_updated', 'subscription_cancelled'] },
 ]
 
 // ── Resource type → human label ──────────────────────────────────────────────
@@ -140,6 +145,7 @@ export const RESOURCE_TYPE_LABELS: Record<string, string> = {
   fee_item:           'Frais',
   invoice:            'Facture',
   payment:            'Paiement',
+  subscription:       'Abonnement',
 }
 
 export const RESOURCE_TYPES: string[] = Object.keys(RESOURCE_TYPE_LABELS)
