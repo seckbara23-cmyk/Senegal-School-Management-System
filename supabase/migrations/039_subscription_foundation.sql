@@ -45,12 +45,14 @@ CREATE TABLE IF NOT EXISTS public.subscription_plans (
 ALTER TABLE public.subscription_plans ENABLE ROW LEVEL SECURITY;
 
 -- Super admins manage the catalogue.
+DROP POLICY IF EXISTS "Super admin manages all plans" ON public.subscription_plans;
 CREATE POLICY "Super admin manages all plans" ON public.subscription_plans
   FOR ALL USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 -- Any authenticated school member may read the ACTIVE plan catalogue (to show
 -- their plan / available plans). Inactive (grandfathered) plans are read via the
 -- SECURITY DEFINER helper get_school_plan() below, so this stays minimal.
+DROP POLICY IF EXISTS "Authenticated can view active plans" ON public.subscription_plans;
 CREATE POLICY "Authenticated can view active plans" ON public.subscription_plans
   FOR SELECT USING (is_active = true);
 
@@ -79,11 +81,13 @@ CREATE INDEX IF NOT EXISTS idx_school_subscriptions_plan_id ON public.school_sub
 CREATE INDEX IF NOT EXISTS idx_school_subscriptions_status  ON public.school_subscriptions(status);
 
 -- Super admins manage every subscription.
+DROP POLICY IF EXISTS "Super admin manages all subscriptions" ON public.school_subscriptions;
 CREATE POLICY "Super admin manages all subscriptions" ON public.school_subscriptions
   FOR ALL USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 -- School admins may READ ONLY their own school's subscription (no writes).
 -- has_school_role() is SECURITY DEFINER, so this does not recurse.
+DROP POLICY IF EXISTS "School admins can view their school subscription" ON public.school_subscriptions;
 CREATE POLICY "School admins can view their school subscription" ON public.school_subscriptions
   FOR SELECT USING (public.has_school_role(school_id, ARRAY['school_admin']));
 
