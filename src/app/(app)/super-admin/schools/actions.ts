@@ -246,7 +246,11 @@ export async function createSchoolWithAdmin(
 // a hidden field and is never used for authorisation (super admins may edit any
 // school).
 
-export const SUBSCRIPTION_PLANS = ['starter', 'standard', 'premium'] as const
+// Module-local: NOT exported. A 'use server' file may only export async
+// functions — exporting a non-function value makes the whole server-actions
+// module fail to load in the production bundle ("A \"use server\" file can only
+// export async functions"). Only used by UpdateSchoolSchema below.
+const SUBSCRIPTION_PLANS = ['starter', 'standard', 'premium'] as const
 
 const UpdateSchoolSchema = z.object({
   school_id: z.string().uuid('École invalide.'),
