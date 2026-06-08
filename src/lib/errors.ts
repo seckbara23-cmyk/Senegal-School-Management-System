@@ -68,6 +68,8 @@ export function mapPostgresErrorToFrenchMessage(error: SupabaseLikeError): strin
       return 'Conflit avec une entrée existante.'
     case '42501': // insufficient_privilege (RLS)
       return "Permission refusée : vous n'avez pas les droits nécessaires pour cette action."
+    case '42P17': // infinite recursion detected in policy (RLS misconfiguration)
+      return "La base de données n'est pas correctement configurée (récursion RLS). Contactez l'administrateur."
     case '42703': // undefined_column
     case 'PGRST204': // PostgREST: column not found in schema cache
       return "La base de données n'est pas à jour (champ manquant). Contactez l'administrateur."
