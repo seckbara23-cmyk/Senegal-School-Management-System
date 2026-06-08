@@ -1,14 +1,32 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
-// Maps implemented roles to their portal path.
+// Maps implemented roles to their portal landing path.
 // Roles not listed here have no portal yet and will show "Coming soon".
+// (The school-admin portal index at /school IS the admin dashboard.)
 const ROLE_PATHS: Record<string, string> = {
   school_admin: '/school',
   teacher: '/teacher',
   finance_officer: '/finance-officer',
   parent: '/parent',
   student: '/student',
+}
+
+// Roles whose portal also requires a linked profile record (students/parents/
+// teachers resolved via profile_id). Their portal guards bounce back to
+// /dashboard when that record is missing, so we must confirm the link exists
+// before auto-redirecting — otherwise the two redirects would loop forever.
+const PROFILE_LINKED_TABLE: Record<string, string> = {
+  student: 'students',
+  parent:  'parents',
+  teacher: 'teachers',
+}
+
+type Membership = {
+  id: string
+  role: string
+  school_id: string
+  schools: { name: string; slug: string } | null
 }
 
 export default async function DashboardPage() {
@@ -25,13 +43,41 @@ export default async function DashboardPage() {
     .eq('id', user.id)
     .single()
 
-  const { data: memberships, error: membershipsError } = await supabase
+  const { data: membershipsData, error: membershipsError } = await supabase
     .from('school_memberships')
     .select('id, role, school_id, schools(name, slug)')
     .eq('user_id', user.id)
     .eq('status', 'active')
 
+  const memberships  = (membershipsData ?? []) as unknown as Membership[]
   const isSuperAdmin = profile?.global_role === 'super_admin'
+
+  // ── Post-login auto-routing ─────────────────────────────────────────────────
+  // A user who belongs to exactly ONE school skips this selector and lands
+  // straight in their role portal. Two-or-more memberships keep the selector so
+  // the user can choose which school to enter. Super admins always see this hub
+  // (it carries their platform-management panel), and on any load error we also
+  // render the hub so the failure is visible rather than silently redirected.
+  if (!isSuperAdmin && !profileError && !membershipsError && memberships.length === 1) {
+    const m      = memberships[0]
+    const target = ROLE_PATHS[m.role]
+    if (target) {
+      const linkedTable = PROFILE_LINKED_TABLE[m.role]
+      let canEnter = true
+      if (linkedTable) {
+        // Mirror the portal guard's record check so the redirect can't loop.
+        const { data: linkedRecord } = await supabase
+          .from(linkedTable)
+          .select('id')
+          .eq('profile_id', user.id)
+          .eq('school_id', m.school_id)
+          .maybeSingle()
+        canEnter = Boolean(linkedRecord)
+      }
+      // redirect() throws NEXT_REDIRECT — must run outside any try/catch.
+      if (canEnter) redirect(target)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -59,7 +105,7 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {memberships && memberships.length > 0 && (
+      {memberships.length > 0 && (
         <div className="bg-white shadow rounded-lg p-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">Your Schools</h2>
           <div className="space-y-4">
@@ -104,7 +150,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {!isSuperAdmin && (!memberships || memberships.length === 0) && !membershipsError && (
+      {!isSuperAdmin && memberships.length === 0 && !membershipsError && (
         <div className="bg-white shadow rounded-lg p-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">No School Access</h2>
           <p className="text-gray-600">
