@@ -37,22 +37,30 @@ export default async function DashboardPage() {
     redirect('/login')
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('full_name, global_role')
-    .eq('id', user.id)
-    .single()
+  // ── Detect role/membership FIRST, then redirect before any UI renders ────────
+  // The post-login auto-routing below must run before the hub markup so a
+  // role-specific user never sees the generic dashboard (or its app shell) flash
+  // before landing in their portal. Profile + memberships are fetched in
+  // parallel so the redirect decision is reached in a single round-trip of
+  // latency rather than two sequential queries.
+  const [profileRes, membershipsRes] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('full_name, global_role')
+      .eq('id', user.id)
+      .single(),
+    supabase
+      .from('school_memberships')
+      .select('id, role, school_id, schools(name, slug)')
+      .eq('user_id', user.id)
+      .eq('status', 'active'),
+  ])
 
-  const { data: membershipsData, error: membershipsError } = await supabase
-    .from('school_memberships')
-    .select('id, role, school_id, schools(name, slug)')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-
+  const { data: profile, error: profileError }                 = profileRes
+  const { data: membershipsData, error: membershipsError }     = membershipsRes
   const memberships  = (membershipsData ?? []) as unknown as Membership[]
   const isSuperAdmin = profile?.global_role === 'super_admin'
 
-  // ── Post-login auto-routing ─────────────────────────────────────────────────
   // A user who belongs to exactly ONE school skips this selector and lands
   // straight in their role portal. Two-or-more memberships keep the selector so
   // the user can choose which school to enter. Super admins always see this hub
@@ -74,7 +82,8 @@ export default async function DashboardPage() {
           .maybeSingle()
         canEnter = Boolean(linkedRecord)
       }
-      // redirect() throws NEXT_REDIRECT — must run outside any try/catch.
+      // redirect() throws NEXT_REDIRECT — must run outside any try/catch, and
+      // BEFORE the component returns any JSX so no hub UI is ever rendered.
       if (canEnter) redirect(target)
     }
   }
