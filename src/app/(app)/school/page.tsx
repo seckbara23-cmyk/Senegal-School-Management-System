@@ -241,6 +241,124 @@ function ModuleGroupCard({ group }: { group: ModuleGroupDef }) {
   )
 }
 
+// ─── Onboarding checklist ─────────────────────────────────────────────────────
+// Guides a new school admin through the natural setup journey. Step status is
+// derived from real data on the server; the first incomplete step is "En cours".
+
+type OnboardingStep = {
+  iconPath: string
+  title: string
+  desc: string
+  href: string
+  done: boolean
+}
+
+const ONBOARDING_STATUS = {
+  done:    { label: 'Terminé',  badge: 'border-primary-200 bg-primary-50 text-primary-700' },
+  current: { label: 'En cours', badge: 'border-accent-300 bg-accent-50 text-accent-700'   },
+  todo:    { label: 'À faire',  badge: 'border-sand-300 bg-sand-100 text-gray-500'         },
+} as const
+
+const ONBOARDING_CTA = { done: 'Gérer', current: 'Continuer', todo: 'Commencer' } as const
+
+const CHECK_ICON = 'M4.5 12.75l6 6 9-13.5'
+
+function OnboardingChecklist({
+  steps, doneCount, complete,
+}: { steps: OnboardingStep[]; doneCount: number; complete: boolean }) {
+  // Compact, celebratory state once everything is configured.
+  if (complete) {
+    return (
+      <section
+        aria-label="Mise en route"
+        className="flex items-center gap-3 rounded-xl border border-primary-200 bg-primary-50 px-5 py-4"
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white">
+          <Icon path={CHECK_ICON} className="h-5 w-5" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-primary-800">Configuration de l&apos;école terminée</p>
+          <p className="text-xs text-primary-700/70">Toutes les étapes de mise en route sont complétées. 🎉</p>
+        </div>
+      </section>
+    )
+  }
+
+  const firstTodo = steps.findIndex((s) => !s.done)
+  const pct = Math.round((doneCount / steps.length) * 100)
+
+  return (
+    <section
+      aria-label="Mise en route"
+      className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm"
+    >
+      {/* Header + progress */}
+      <div className="border-b border-sand-100 bg-sand-50 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-primary-700">Mise en route</h2>
+            <p className="mt-0.5 text-xs text-gray-500">Suivez ces étapes pour configurer votre école.</p>
+          </div>
+          <span className="shrink-0 text-xs font-semibold text-gray-500">
+            {doneCount}/{steps.length} terminé{doneCount > 1 ? 's' : ''}
+          </span>
+        </div>
+        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-sand-200" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Progression de la configuration">
+          <div className="h-full rounded-full bg-primary-600 transition-all" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+
+      {/* Steps */}
+      <ol className="divide-y divide-sand-100">
+        {steps.map((step, i) => {
+          const state: keyof typeof ONBOARDING_STATUS = step.done ? 'done' : i === firstTodo ? 'current' : 'todo'
+          const status = ONBOARDING_STATUS[state]
+          return (
+            <li key={step.title}>
+              <Link
+                href={step.href}
+                aria-label={`Étape ${i + 1} : ${step.title} — ${status.label}`}
+                className="group flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-sand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-600"
+              >
+                {/* Status icon badge */}
+                <span
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                    step.done
+                      ? 'bg-primary-600 text-white'
+                      : state === 'current'
+                        ? 'bg-accent-100 text-accent-700 ring-1 ring-accent-300'
+                        : 'bg-sand-100 text-gray-400'
+                  }`}
+                >
+                  <Icon path={step.done ? CHECK_ICON : step.iconPath} className="h-5 w-5" />
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className={`text-sm font-semibold ${step.done ? 'text-gray-500' : 'text-gray-900'}`}>
+                      {step.title}
+                    </p>
+                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${status.badge}`}>
+                      {status.label}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-gray-500">{step.desc}</p>
+                </div>
+
+                <span className="ml-auto hidden shrink-0 items-center gap-1 text-xs font-medium text-primary-600 group-hover:text-primary-800 sm:flex">
+                  {ONBOARDING_CTA[state]}
+                  <Icon path={P.chevron} className="h-4 w-4" />
+                </span>
+                <Icon path={P.chevron} className="h-4 w-4 shrink-0 text-gray-300 group-hover:text-primary-400 sm:hidden" />
+              </Link>
+            </li>
+          )
+        })}
+      </ol>
+    </section>
+  )
+}
+
 // ─── Panel wrapper ──────────────────────────────────────────────────────────────
 
 function Panel({
@@ -293,6 +411,7 @@ export default async function SchoolAdminPage() {
     studentsRes, teachersRes, parentsRes, activeYearRes, classesRes,
     attendanceTodayRes, outstandingRes, announcementsRes, assessmentsRes,
     sessions30Res, paymentsRes, absencesRes, examSessionRes,
+    timetableCountRes, attendanceAnyRes, gradesCountRes,
   ] = await Promise.all([
     supabase.from('students').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
     supabase.from('teachers').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('status', 'active'),
@@ -343,6 +462,10 @@ export default async function SchoolAdminPage() {
       .order('starts_on', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // Onboarding checklist: has any timetable slot / attendance session / grade?
+    supabase.from('timetable_slots').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
+    supabase.from('attendance_sessions').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
+    supabase.from('grades').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
   ])
 
   const studentCount = studentsRes.count ?? 0
@@ -410,6 +533,24 @@ export default async function SchoolAdminPage() {
   type ExamSessionRow = { id: string; name: string; status: string; starts_on: string; ends_on: string }
   const examSession = (examSessionRes.data as ExamSessionRow | null) ?? null
 
+  // ── Onboarding checklist ────────────────────────────────────────────────────
+  // Completion is derived from real data. The first not-yet-done step is shown
+  // as "En cours" (the next action); later undone steps are "À faire".
+  const timetableCount  = timetableCountRes.count  ?? 0
+  const attendanceTotal = attendanceAnyRes.count   ?? 0
+  const gradesCount     = gradesCountRes.count      ?? 0
+
+  const onboardingSteps: OnboardingStep[] = [
+    { iconPath: P.calendar,  title: 'Année scolaire',      desc: "Créez et activez l'année scolaire en cours.",        href: '/school/academic-years', done: activeYear !== null },
+    { iconPath: P.classes,   title: 'Classes',             desc: 'Créez les classes et leurs niveaux.',                href: '/school/classes',        done: classes.length > 0 },
+    { iconPath: P.teachers,  title: 'Enseignants',         desc: 'Ajoutez le corps enseignant de votre école.',        href: '/school/teachers',       done: teacherCount > 0 },
+    { iconPath: P.students,  title: 'Élèves',              desc: 'Inscrivez les élèves et leurs dossiers.',            href: '/school/students',       done: studentCount > 0 },
+    { iconPath: P.timetable, title: 'Emploi du temps',     desc: 'Configurez les horaires des classes.',               href: '/school/timetable',      done: timetableCount > 0 },
+    { iconPath: P.academic,  title: 'Présences & notes',   desc: 'Démarrez le suivi des présences et des notes.',      href: '/school/attendance',     done: attendanceTotal > 0 || gradesCount > 0 },
+  ]
+  const onboardingDone     = onboardingSteps.filter((s) => s.done).length
+  const onboardingComplete = onboardingDone === onboardingSteps.length
+
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   })
@@ -442,6 +583,13 @@ export default async function SchoolAdminPage() {
           </Link>
         </div>
       </div>
+
+      {/* ── Onboarding checklist ─────────────────────────────────────────────── */}
+      <OnboardingChecklist
+        steps={onboardingSteps}
+        doneCount={onboardingDone}
+        complete={onboardingComplete}
+      />
 
       {/* ── KPI grid ────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
