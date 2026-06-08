@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { NotificationBell } from '@/components/NotificationBell'
 import type { NotificationPreview } from '@/lib/notifications'
 
 // ─── SVG icon paths (Heroicons outline, 24px viewBox) ────────────────────────
+// The app uses an inline-Heroicon system everywhere; we stay consistent with it
+// (and the Senegal-inspired palette) rather than pulling in a new icon library.
 
 const P = {
   home:     'M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25',
@@ -30,6 +32,7 @@ const P = {
   calendar:  'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 16.5v2.25',
   timetable: 'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5m-9-6h.008v.008H12v-.008zM12 15h.008v.008H12V15zm0 2.25h.008v.008H12v-.008zM9.75 15h.008v.008H9.75V15zm0 2.25h.008v.008H9.75v-.008zM7.5 15h.008v.008H7.5V15zm0 2.25h.008v.008H7.5v-.008zm6.75-4.5h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V15zm0 2.25h.008v.008h-.008v-.008zm2.25-4.5h.008v.008H16.5v-.008zm0 2.25h.008v.008H16.5V15z',
   ranking:   'M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.504-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 002.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 012.916.52 6.003 6.003 0 01-5.395 4.972m0 0a6.726 6.726 0 01-2.749 1.35m0 0a6.772 6.772 0 01-3.044 0',
+  chevronDown: 'm19.5 8.25-7.5 7.5-7.5-7.5',
 }
 
 function Icon({ path, className = 'h-5 w-5 shrink-0' }: { path: string; className?: string }) {
@@ -47,84 +50,156 @@ function Icon({ path, className = 'h-5 w-5 shrink-0' }: { path: string; classNam
   )
 }
 
-// ─── Nav items config ─────────────────────────────────────────────────────────
+// ─── Navigation config ────────────────────────────────────────────────────────
+// Grouped into functional sections so the structure of the platform is obvious
+// at a glance. All routes are unchanged from the previous flat list.
 
 type NavItem = {
   label: string
-  href?: string
+  href: string
   iconPath: string
-  soon?: boolean
 }
 
-const MAIN_NAV: NavItem[] = [
-  { label: 'Tableau de bord', href: '/school',               iconPath: P.home     },
-  { label: 'Élèves',          href: '/school/students',      iconPath: P.students },
-  { label: 'Admissions',      href: '/school/admissions',    iconPath: P.inbox    },
-  { label: 'Enseignants',          href: '/school/teachers',  iconPath: P.teachers },
-  { label: 'Parents',          href: '/school/parents',       iconPath: P.parents  },
-  { label: 'Comptes',          href: '/school/users',         iconPath: P.key      },
-  { label: 'Années scolaires', href: '/school/academic-years', iconPath: P.calendar },
-  { label: 'Classes',          href: '/school/classes',      iconPath: P.classes  },
-  { label: 'Présences',        href: '/school/attendance',   iconPath: P.clock      },
-  { label: 'Emploi du temps',  href: '/school/timetable',    iconPath: P.timetable  },
-  { label: 'Annonces',         href: '/school/announcements', iconPath: P.megaphone  },
-  { label: 'Académique',       href: '/school/academics',    iconPath: P.academic   },
-  { label: 'Notes & bulletins',  href: '/school/academics/bulletins', iconPath: P.document },
-  { label: 'Examens',           href: '/school/exams',        iconPath: P.academic   },
-  { label: 'Classement',        href: '/school/academics/rankings', iconPath: P.ranking },
-  { label: 'Paiements',         href: '/school/finance',     iconPath: P.money    },
+type NavSection = {
+  id: string
+  title: string
+  iconPath: string
+  items: NavItem[]
+}
+
+// Standalone home link, shown above the grouped sections.
+const HOME_ITEM: NavItem = { label: 'Tableau de bord', href: '/school', iconPath: P.home }
+
+const NAV_SECTIONS: NavSection[] = [
+  {
+    id: 'organisation',
+    title: 'Organisation scolaire',
+    iconPath: P.building,
+    items: [
+      { label: 'Années scolaires', href: '/school/academic-years', iconPath: P.calendar  },
+      { label: 'Classes',          href: '/school/classes',         iconPath: P.classes   },
+      { label: 'Emploi du temps',  href: '/school/timetable',       iconPath: P.timetable },
+    ],
+  },
+  {
+    id: 'eleves',
+    title: 'Gestion des élèves',
+    iconPath: P.students,
+    items: [
+      { label: 'Élèves',     href: '/school/students',   iconPath: P.students },
+      { label: 'Admissions', href: '/school/admissions', iconPath: P.inbox    },
+      { label: 'Parents',    href: '/school/parents',    iconPath: P.parents  },
+    ],
+  },
+  {
+    id: 'personnel',
+    title: 'Personnel',
+    iconPath: P.teachers,
+    items: [
+      { label: 'Enseignants', href: '/school/teachers', iconPath: P.teachers },
+      { label: 'Comptes',     href: '/school/users',    iconPath: P.key      },
+    ],
+  },
+  {
+    id: 'academique',
+    title: 'Suivi académique',
+    iconPath: P.academic,
+    items: [
+      { label: 'Présences',        href: '/school/attendance',          iconPath: P.clock    },
+      { label: 'Examens',          href: '/school/exams',               iconPath: P.academic },
+      { label: 'Notes & bulletins', href: '/school/academics/bulletins', iconPath: P.document },
+      { label: 'Classement',       href: '/school/academics/rankings',  iconPath: P.ranking  },
+    ],
+  },
+  {
+    id: 'finance',
+    title: 'Finance',
+    iconPath: P.money,
+    items: [
+      { label: 'Paiements', href: '/school/finance', iconPath: P.money },
+    ],
+  },
+  {
+    id: 'communication',
+    title: 'Communication',
+    iconPath: P.megaphone,
+    items: [
+      { label: 'Annonces',      href: '/school/announcements', iconPath: P.megaphone },
+      { label: 'Notifications', href: '/notifications',        iconPath: P.bell      },
+    ],
+  },
+  {
+    id: 'support',
+    title: 'Support',
+    iconPath: P.help,
+    items: [
+      { label: 'Aide', href: '/school/help', iconPath: P.help },
+    ],
+  },
 ]
 
-const BOTTOM_NAV: NavItem[] = [
-  { label: 'Notifications', href: '/notifications', iconPath: P.bell },
-  { label: 'Aide',          href: '/school/help',   iconPath: P.help },
+// Every href in the sidebar — used for longest-prefix active resolution.
+const ALL_HREFS: string[] = [
+  HOME_ITEM.href,
+  ...NAV_SECTIONS.flatMap((s) => s.items.map((i) => i.href)),
 ]
 
-// ─── Active-state helper ─────────────────────────────────────────────────────
+const STORAGE_KEY = 'edusen.schoolSidebar.sections'
 
-function isActive(href: string, pathname: string): boolean {
-  if (href === '/school') return pathname === '/school'
-  return pathname === href || pathname.startsWith(href + '/')
+// ─── Active-state resolution ──────────────────────────────────────────────────
+// Returns the single href that best matches the current path. The longest
+// matching href wins, so a parent route (e.g. /school) never lights up at the
+// same time as a deeper child (e.g. /school/academics/rankings). The home link
+// (/school) only matches on an exact path, since every school route is nested
+// under it.
+
+function resolveActiveHref(pathname: string): string | null {
+  let best: string | null = null
+  for (const href of ALL_HREFS) {
+    if (href === '/school') continue
+    if (pathname === href || pathname.startsWith(href + '/')) {
+      if (!best || href.length > best.length) best = href
+    }
+  }
+  if (!best && pathname === '/school') return '/school'
+  return best
 }
 
 // ─── Single nav item ─────────────────────────────────────────────────────────
 
 function NavRow({
   item,
-  pathname,
+  active,
   unreadCount = 0,
+  hidden = false,
+  indented = false,
   onClick,
 }: {
   item: NavItem
-  pathname: string
+  active: boolean
   unreadCount?: number
+  hidden?: boolean
+  indented?: boolean
   onClick?: () => void
 }) {
-  const active = item.href ? isActive(item.href, pathname) : false
-
-  if (item.soon) {
-    return (
-      <span className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/40 cursor-not-allowed select-none">
-        <Icon path={item.iconPath} />
-        <span className="flex-1 truncate">{item.label}</span>
-        <span className="shrink-0 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-white/40">
-          Bientôt
-        </span>
-      </span>
-    )
-  }
-
   return (
     <Link
-      href={item.href!}
+      href={item.href}
       onClick={onClick}
-      className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+      // A collapsed section keeps its links in the DOM for the animation, so we
+      // remove them from the tab order and the a11y tree while hidden.
+      tabIndex={hidden ? -1 : undefined}
+      aria-hidden={hidden || undefined}
+      aria-current={active ? 'page' : undefined}
+      className={`group flex items-center gap-3 rounded-lg py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
+        indented ? 'pl-9 pr-3' : 'px-3'
+      } ${
         active
           ? 'bg-white/95 text-primary-700 shadow-sm'
           : 'text-white/80 hover:bg-white/10 hover:text-white'
       }`}
     >
-      <Icon path={item.iconPath} />
+      <Icon path={item.iconPath} className="h-5 w-5 shrink-0" />
       <span className="flex-1 truncate">{item.label}</span>
       {item.href === '/notifications' && unreadCount > 0 && (
         <span className="shrink-0 inline-flex items-center justify-center min-w-[1.2rem] h-5 rounded-full bg-accent-400 px-1 text-[10px] font-bold text-white">
@@ -132,6 +207,165 @@ function NavRow({
         </span>
       )}
     </Link>
+  )
+}
+
+// ─── Collapsible section ───────────────────────────────────────────────────────
+
+function NavGroup({
+  section,
+  variant,
+  open,
+  activeHref,
+  unreadCount,
+  onToggle,
+  onNavigate,
+}: {
+  section: NavSection
+  variant: 'desktop' | 'mobile'
+  open: boolean
+  activeHref: string | null
+  unreadCount: number
+  onToggle: () => void
+  onNavigate?: () => void
+}) {
+  const btnId   = `nav-sec-btn-${variant}-${section.id}`
+  const panelId = `nav-sec-panel-${variant}-${section.id}`
+
+  return (
+    <div className="border-t border-white/5 pt-1 first:border-t-0 first:pt-0">
+      <button
+        type="button"
+        id={btnId}
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={onToggle}
+        className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+      >
+        <Icon path={section.iconPath} className="h-4 w-4 shrink-0 text-white/45 group-hover:text-white/70" />
+        <span className="flex-1 truncate text-[11px] font-semibold uppercase tracking-wider text-white/50 group-hover:text-white/75">
+          {section.title}
+        </span>
+        <Icon
+          path={P.chevronDown}
+          className={`h-4 w-4 shrink-0 text-white/40 transition-transform duration-200 ${open ? '' : '-rotate-90'}`}
+        />
+      </button>
+
+      {/* The 0fr→1fr grid trick animates height smoothly without measuring it. */}
+      <div
+        id={panelId}
+        role="region"
+        aria-labelledby={btnId}
+        className={`grid transition-[grid-template-rows] duration-200 ease-out ${
+          open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+        }`}
+      >
+        <div className="overflow-hidden">
+          <div className="space-y-0.5 pb-1 pt-0.5">
+            {section.items.map((item) => (
+              <NavRow
+                key={item.href}
+                item={item}
+                active={item.href === activeHref}
+                unreadCount={unreadCount}
+                hidden={!open}
+                indented
+                onClick={onNavigate}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Sectioned navigation ──────────────────────────────────────────────────────
+// Rendered once per layout (desktop aside + mobile drawer). Each instance keeps
+// its own expand/collapse state: desktop defaults to all-expanded (and persists
+// to localStorage); the mobile drawer defaults to collapsed with only the active
+// section open, and remounts fresh each time the drawer opens.
+
+function SectionedNav({
+  variant,
+  activeHref,
+  unreadCount,
+  onNavigate,
+}: {
+  variant: 'desktop' | 'mobile'
+  activeHref: string | null
+  unreadCount: number
+  onNavigate?: () => void
+}) {
+  const activeSectionId = useMemo(
+    () => NAV_SECTIONS.find((s) => s.items.some((i) => i.href === activeHref))?.id ?? null,
+    [activeHref],
+  )
+
+  // Deterministic defaults (identical on server and first client render).
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
+    const state: Record<string, boolean> = {}
+    for (const s of NAV_SECTIONS) {
+      state[s.id] = variant === 'desktop' ? true : s.id === activeSectionId
+    }
+    return state
+  })
+
+  // Desktop only: hydrate the remembered state after mount (avoids SSR mismatch).
+  useEffect(() => {
+    if (variant !== 'desktop') return
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY)
+      if (raw) {
+        const saved = JSON.parse(raw) as Record<string, boolean>
+        setExpanded((prev) => ({ ...prev, ...saved }))
+      }
+    } catch {
+      /* ignore unavailable/corrupt storage */
+    }
+  }, [variant])
+
+  function toggle(id: string) {
+    setExpanded((prev) => {
+      const next = { ...prev, [id]: !prev[id] }
+      if (variant === 'desktop') {
+        try {
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+        } catch {
+          /* ignore */
+        }
+      }
+      return next
+    })
+  }
+
+  return (
+    <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Navigation principale">
+      {/* Home (ungrouped) */}
+      <div className="pb-1">
+        <NavRow
+          item={HOME_ITEM}
+          active={HOME_ITEM.href === activeHref}
+          onClick={onNavigate}
+        />
+      </div>
+
+      <div className="space-y-1">
+        {NAV_SECTIONS.map((section) => (
+          <NavGroup
+            key={section.id}
+            section={section}
+            variant={variant}
+            open={Boolean(expanded[section.id])}
+            activeHref={activeHref}
+            unreadCount={unreadCount}
+            onToggle={() => toggle(section.id)}
+            onNavigate={onNavigate}
+          />
+        ))}
+      </div>
+    </nav>
   )
 }
 
@@ -147,6 +381,7 @@ type SidebarProps = {
 export function Sidebar({ schoolName, userEmail, unreadCount, recent }: SidebarProps) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
+  const activeHref = resolveActiveHref(pathname)
 
   // Close on Escape
   useEffect(() => {
@@ -166,85 +401,72 @@ export function Sidebar({ schoolName, userEmail, unreadCount, recent }: SidebarP
     .join('')
     .toUpperCase()
 
-  const sidebarContent = (
-    <div className="flex h-full flex-col bg-primary-700">
-      {/* School header */}
-      <div className="flex h-16 shrink-0 items-center gap-3 bg-primary-600 px-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/15 text-sm font-bold text-white">
-          {initials}
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-white">{displayName}</p>
-          <p className="text-xs text-white/60">Administration scolaire</p>
-        </div>
-        <div className="ml-auto flex items-center">
-          <NotificationBell unreadCount={unreadCount} items={recent} role="school_admin" variant="dark" align="left" />
-          {/* Close button — mobile only */}
-          <button
-            className="rounded-md p-1 text-white/60 hover:bg-white/10 hover:text-white lg:hidden"
-            onClick={() => setOpen(false)}
-            aria-label="Fermer le menu"
-          >
-            <Icon path={P.x} className="h-5 w-5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Main navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
-        {MAIN_NAV.map((item) => (
-          <NavRow
-            key={item.label}
-            item={item}
-            pathname={pathname}
-            onClick={() => setOpen(false)}
-          />
-        ))}
-
-        <div className="my-3 border-t border-white/10" />
-
-        {BOTTOM_NAV.map((item) => (
-          <NavRow
-            key={item.label}
-            item={item}
-            pathname={pathname}
-            unreadCount={unreadCount}
-            onClick={() => setOpen(false)}
-          />
-        ))}
-      </nav>
-
-      {/* User footer */}
-      <div className="shrink-0 border-t border-white/10 px-3 py-3">
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/20 text-xs font-semibold text-white">
-            {userEmail.slice(0, 1).toUpperCase()}
+  function sidebarContent(variant: 'desktop' | 'mobile') {
+    return (
+      <div className="flex h-full flex-col bg-primary-700">
+        {/* School header */}
+        <div className="flex h-16 shrink-0 items-center gap-3 bg-primary-600 px-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/15 text-sm font-bold text-white">
+            {initials}
           </div>
-          <p className="flex-1 truncate text-xs text-white/70">{userEmail}</p>
-          <form action="/auth/signout" method="post">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-white">{displayName}</p>
+            <p className="text-xs text-white/60">Administration scolaire</p>
+          </div>
+          <div className="ml-auto flex items-center">
+            <NotificationBell unreadCount={unreadCount} items={recent} role="school_admin" variant="dark" align="left" />
+            {/* Close button — mobile only */}
             <button
-              type="submit"
-              title="Déconnexion"
-              className="rounded p-1.5 text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+              className="rounded-md p-1 text-white/60 hover:bg-white/10 hover:text-white lg:hidden"
+              onClick={() => setOpen(false)}
+              aria-label="Fermer le menu"
             >
-              <Icon path={P.signout} className="h-4 w-4" />
+              <Icon path={P.x} className="h-5 w-5" />
             </button>
-          </form>
+          </div>
+        </div>
+
+        {/* Grouped navigation */}
+        <SectionedNav
+          variant={variant}
+          activeHref={activeHref}
+          unreadCount={unreadCount}
+          onNavigate={() => setOpen(false)}
+        />
+
+        {/* User footer */}
+        <div className="shrink-0 border-t border-white/10 px-3 py-3">
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/20 text-xs font-semibold text-white">
+              {userEmail.slice(0, 1).toUpperCase()}
+            </div>
+            <p className="flex-1 truncate text-xs text-white/70">{userEmail}</p>
+            <form action="/auth/signout" method="post">
+              <button
+                type="submit"
+                title="Déconnexion"
+                className="rounded p-1.5 text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+              >
+                <Icon path={P.signout} className="h-4 w-4" />
+              </button>
+            </form>
+          </div>
         </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <>
       {/* ── Desktop sidebar (always visible) ──────────────────────────────── */}
-      <aside className="hidden w-64 shrink-0 lg:block">{sidebarContent}</aside>
+      <aside className="hidden w-64 shrink-0 lg:block">{sidebarContent('desktop')}</aside>
 
       {/* ── Mobile: fixed top header ───────────────────────────────────────── */}
       <header className="fixed inset-x-0 top-0 z-20 flex h-14 items-center justify-between border-b border-sand-200 bg-white px-4 lg:hidden">
         <button
           onClick={() => setOpen(true)}
           aria-label="Ouvrir le menu"
+          aria-expanded={open}
           className="rounded-md p-2 text-gray-600 hover:bg-sand-100 hover:text-gray-900"
         >
           <Icon path={P.bars} className="h-5 w-5" />
@@ -266,7 +488,7 @@ export function Sidebar({ schoolName, userEmail, unreadCount, recent }: SidebarP
             onClick={() => setOpen(false)}
           />
           <aside className="fixed inset-y-0 left-0 z-40 w-72 lg:hidden">
-            {sidebarContent}
+            {sidebarContent('mobile')}
           </aside>
         </>
       )}
