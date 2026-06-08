@@ -1,10 +1,17 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import { EditSubjectForm } from './_form'
+import { deleteSubject } from '../../../actions'
 
-type Props = { params: { subjectId: string } }
+const DELETE_ERRORS: Record<string, string> = {
+  inuse:    "Cette matière est assignée à une ou plusieurs classes et ne peut pas être supprimée. Retirez-la d'abord de ces classes.",
+  readonly: 'Cet établissement est en lecture seule. Les modifications sont désactivées.',
+  delete:   'Erreur lors de la suppression. Veuillez réessayer.',
+}
 
-export default async function EditSubjectPage({ params }: Props) {
+type Props = { params: { subjectId: string }; searchParams: { error?: string } }
+
+export default async function EditSubjectPage({ params, searchParams }: Props) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -30,6 +37,8 @@ export default async function EditSubjectPage({ params }: Props) {
   type Subject = { id: string; name: string; code: string | null; coefficient: number | null }
   const subject = subjectData as Subject
 
+  const errorMessage = searchParams.error ? (DELETE_ERRORS[searchParams.error] ?? '') : ''
+
   return (
     <div className="space-y-6">
 
@@ -44,9 +53,32 @@ export default async function EditSubjectPage({ params }: Props) {
         <p className="text-primary-300 text-sm mt-0.5">{subject.name}</p>
       </div>
 
+      {errorMessage && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4">
+          <p className="text-sm text-red-700">{errorMessage}</p>
+        </div>
+      )}
+
       {/* ── Form card ───────────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-sand-200 bg-white px-6 py-6 shadow-sm">
         <EditSubjectForm subject={subject} />
+      </div>
+
+      {/* ── Danger zone : delete ────────────────────────────────────────────── */}
+      <div className="rounded-xl border border-red-200 bg-red-50/50 px-6 py-5">
+        <h2 className="text-sm font-semibold text-red-800">Supprimer la matière</h2>
+        <p className="mt-1 text-xs text-gray-500">
+          Suppression possible uniquement si la matière n&apos;est assignée à aucune classe.
+        </p>
+        <form action={deleteSubject} className="mt-3">
+          <input type="hidden" name="subject_id" value={subject.id} />
+          <button
+            type="submit"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 shadow-sm transition-colors hover:bg-red-600 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-1"
+          >
+            Supprimer cette matière
+          </button>
+        </form>
       </div>
 
     </div>

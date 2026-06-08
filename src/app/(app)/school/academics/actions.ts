@@ -166,6 +166,52 @@ export async function updateSubject(
   redirect('/school/academics/subjects')
 }
 
+// ── Delete subject (only when safe) ────────────────────────────────────────────
+// A subject can be removed only while it is not assigned to any class. Deleting
+// an assigned subject would cascade through class_subjects → timetable slots,
+// assessments and grades, so we refuse and ask the admin to detach it first.
+
+export async function deleteSubject(formData: FormData): Promise<void> {
+  const { schoolId, actor } = await getSchoolId()
+
+  const parsed = z.string().uuid().safeParse(formData.get('subject_id'))
+  if (!parsed.success) redirect('/school/academics/subjects')
+  const subjectId = parsed.data
+  const supabase = createClient()
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(`/school/academics/subjects/${subjectId}/edit?error=readonly`)
+  }
+
+  const { count } = await supabase
+    .from('class_subjects')
+    .select('id', { count: 'exact', head: true })
+    .eq('school_id', schoolId)
+    .eq('subject_id', subjectId)
+  if ((count ?? 0) > 0) {
+    redirect(`/school/academics/subjects/${subjectId}/edit?error=inuse`)
+  }
+
+  const { error } = await supabase
+    .from('subjects')
+    .delete()
+    .eq('id', subjectId)
+    .eq('school_id', schoolId)
+
+  if (error) {
+    logSupabaseError(error, { action: 'deleteSubject', schoolId, userId: actor.id, entityIds: { subjectId } })
+    redirect(`/school/academics/subjects/${subjectId}/edit?error=delete`)
+  }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'subject_deleted', resourceType: 'subject', resourceId: subjectId,
+    metadata: {},
+  })
+
+  redirect('/school/academics/subjects')
+}
+
 // ── Assign subject to class ───────────────────────────────────────────────────
 
 const AssignSubjectSchema = z.object({

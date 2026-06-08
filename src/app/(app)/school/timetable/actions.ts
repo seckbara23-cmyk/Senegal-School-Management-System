@@ -153,7 +153,7 @@ async function validateSlot(
     .eq('class_id', d.class_id)
     .eq('day_of_week', d.day_of_week)
   if (overlaps((classSlots ?? []) as SlotTimeRow[], startMin, endMin, slotId)) {
-    return { ok: false, state: { errors: { _form: ['Cette classe a déjà un cours à cet horaire.'] } } }
+    return { ok: false, state: { errors: { _form: ['Cette classe a déjà un cours sur ce créneau.'] } } }
   }
 
   // Teacher conflict: same teacher, same day, overlapping time — scoped to the
@@ -168,7 +168,7 @@ async function validateSlot(
       .eq('teacher_id', teacher_id)
       .eq('day_of_week', d.day_of_week)
     if (overlaps((teacherSlots ?? []) as SlotTimeRow[], startMin, endMin, slotId)) {
-      return { ok: false, state: { errors: { _form: ['Cet enseignant est déjà occupé à cet horaire.'] } } }
+      return { ok: false, state: { errors: { _form: ['Cet enseignant est déjà occupé sur ce créneau.'] } } }
     }
   }
 
@@ -186,7 +186,7 @@ async function validateSlot(
     const sameRoom = ((roomSlots ?? []) as (SlotTimeRow & { room: string | null })[])
       .filter((r) => (r.room ?? '').trim().toLowerCase() === room.toLowerCase())
     if (overlaps(sameRoom, startMin, endMin, slotId)) {
-      return { ok: false, state: { errors: { _form: ['Cette salle est déjà occupée à cet horaire.'] } } }
+      return { ok: false, state: { errors: { _form: ['Cette salle est déjà occupée sur ce créneau.'] } } }
     }
   }
 

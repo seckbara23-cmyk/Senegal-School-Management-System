@@ -76,9 +76,10 @@ const NAV_SECTIONS: NavSection[] = [
     title: 'Organisation scolaire',
     iconPath: P.building,
     items: [
-      { label: 'Années scolaires', href: '/school/academic-years', iconPath: P.calendar  },
-      { label: 'Classes',          href: '/school/classes',         iconPath: P.classes   },
-      { label: 'Emploi du temps',  href: '/school/timetable',       iconPath: P.timetable },
+      { label: 'Années scolaires', href: '/school/academic-years',     iconPath: P.calendar  },
+      { label: 'Classes',          href: '/school/classes',            iconPath: P.classes   },
+      { label: 'Matières',         href: '/school/academics/subjects', iconPath: P.academic  },
+      { label: 'Emploi du temps',  href: '/school/timetable',          iconPath: P.timetable },
     ],
   },
   {

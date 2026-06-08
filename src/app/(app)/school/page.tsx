@@ -122,9 +122,10 @@ const MODULE_GROUPS: ModuleGroupDef[] = [
     helper: 'Structure et planning',
     iconPath: P.building,
     items: [
-      { label: 'Années scolaires', href: '/school/academic-years', desc: 'Années & périodes',   iconPath: P.calendar  },
-      { label: 'Classes',          href: '/school/classes',         desc: 'Classes et effectifs', iconPath: P.classes   },
-      { label: 'Emploi du temps',  href: '/school/timetable',       desc: 'Horaires des classes', iconPath: P.timetable },
+      { label: 'Années scolaires', href: '/school/academic-years',     desc: 'Années & périodes',    iconPath: P.calendar  },
+      { label: 'Classes',          href: '/school/classes',            desc: 'Classes et effectifs', iconPath: P.classes   },
+      { label: 'Matières',         href: '/school/academics/subjects', desc: 'Matières enseignées',  iconPath: P.academic  },
+      { label: 'Emploi du temps',  href: '/school/timetable',          desc: 'Horaires des classes', iconPath: P.timetable },
     ],
   },
   {
@@ -411,7 +412,7 @@ export default async function SchoolAdminPage() {
     studentsRes, teachersRes, parentsRes, activeYearRes, classesRes,
     attendanceTodayRes, outstandingRes, announcementsRes, assessmentsRes,
     sessions30Res, paymentsRes, absencesRes, examSessionRes,
-    timetableCountRes, attendanceAnyRes, gradesCountRes,
+    timetableCountRes, attendanceAnyRes, gradesCountRes, subjectsCountRes,
   ] = await Promise.all([
     supabase.from('students').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
     supabase.from('teachers').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('status', 'active'),
@@ -466,6 +467,7 @@ export default async function SchoolAdminPage() {
     supabase.from('timetable_slots').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
     supabase.from('attendance_sessions').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
     supabase.from('grades').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
+    supabase.from('subjects').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
   ])
 
   const studentCount = studentsRes.count ?? 0
@@ -539,10 +541,12 @@ export default async function SchoolAdminPage() {
   const timetableCount  = timetableCountRes.count  ?? 0
   const attendanceTotal = attendanceAnyRes.count   ?? 0
   const gradesCount     = gradesCountRes.count      ?? 0
+  const subjectCount    = subjectsCountRes.count    ?? 0
 
   const onboardingSteps: OnboardingStep[] = [
-    { iconPath: P.calendar,  title: 'Année scolaire',      desc: "Créez et activez l'année scolaire en cours.",        href: '/school/academic-years', done: activeYear !== null },
-    { iconPath: P.classes,   title: 'Classes',             desc: 'Créez les classes et leurs niveaux.',                href: '/school/classes',        done: classes.length > 0 },
+    { iconPath: P.calendar,  title: 'Année scolaire',      desc: "Créez et activez l'année scolaire en cours.",        href: '/school/academic-years',     done: activeYear !== null },
+    { iconPath: P.classes,   title: 'Classes',             desc: 'Créez les classes et leurs niveaux.',                href: '/school/classes',            done: classes.length > 0 },
+    { iconPath: P.academic,  title: 'Matières',            desc: 'Définissez les matières enseignées.',                href: '/school/academics/subjects', done: subjectCount > 0 },
     { iconPath: P.teachers,  title: 'Enseignants',         desc: 'Ajoutez le corps enseignant de votre école.',        href: '/school/teachers',       done: teacherCount > 0 },
     { iconPath: P.students,  title: 'Élèves',              desc: 'Inscrivez les élèves et leurs dossiers.',            href: '/school/students',       done: studentCount > 0 },
     { iconPath: P.timetable, title: 'Emploi du temps',     desc: 'Configurez les horaires des classes.',               href: '/school/timetable',      done: timetableCount > 0 },

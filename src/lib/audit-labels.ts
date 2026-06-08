@@ -32,6 +32,7 @@ export const ACTION_LABELS: Record<string, string> = {
   // Structure académique
   subject_created:               'Matière créée',
   subject_updated:               'Matière modifiée',
+  subject_deleted:               'Matière supprimée',
   subject_assigned_to_class:     'Matière assignée à une classe',
   subject_removed_from_class:    'Matière retirée d’une classe',
   teacher_assigned_to_subject:   'Enseignant assigné à une matière',
@@ -109,7 +110,7 @@ export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Admissions',           actions: ['admission_created', 'admission_status_changed', 'admission_converted'] },
   { label: 'Documents',            actions: ['document_uploaded', 'document_deleted'] },
   { label: 'Années scolaires',     actions: ['academic_year_created', 'academic_year_updated', 'academic_year_status_changed'] },
-  { label: 'Structure académique', actions: ['subject_created', 'subject_updated', 'subject_assigned_to_class', 'subject_removed_from_class', 'teacher_assigned_to_subject', 'teacher_assignment_created', 'teacher_assignment_removed', 'academic_period_created', 'assessment_created', 'grades_saved'] },
+  { label: 'Structure académique', actions: ['subject_created', 'subject_updated', 'subject_deleted', 'subject_assigned_to_class', 'subject_removed_from_class', 'teacher_assigned_to_subject', 'teacher_assignment_created', 'teacher_assignment_removed', 'academic_period_created', 'assessment_created', 'grades_saved'] },
   { label: 'Emploi du temps',      actions: ['timetable_slot_created', 'timetable_slot_updated', 'timetable_slot_deleted'] },
   { label: 'Sessions d’examen',    actions: ['exam_session_created', 'exam_session_updated', 'exam_session_activated', 'exam_session_completed', 'exam_session_archived', 'exam_results_published', 'exam_results_unpublished'] },
   { label: 'Annonces',             actions: ['announcement_published'] },
