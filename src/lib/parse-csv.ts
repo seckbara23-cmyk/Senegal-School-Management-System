@@ -94,3 +94,62 @@ export function readClassRows(grid: string[][]): ParsedClassRow[] {
   }
   return out
 }
+
+// ─── Subjects (name, code, coefficient) ───────────────────────────────────────
+
+export type ParsedSubjectRow = {
+  line:        number
+  name:        string
+  code:        string
+  coefficient: string   // raw text; numeric validation happens here
+  error:       string | null
+}
+
+const SUBJECT_HEADER_ALIASES: Record<string, 'name' | 'code' | 'coefficient'> = {
+  name: 'name', nom: 'name', matiere: 'name', 'matière': 'name',
+  code: 'code',
+  coefficient: 'coefficient', coef: 'coefficient', coeff: 'coefficient',
+}
+
+/**
+ * Map raw CSV rows to subject rows with per-row validation. The first row is
+ * treated as a header when it contains a recognised column name; otherwise the
+ * columns are assumed to be name, code, coefficient in order. Only `name` is
+ * required; `coefficient`, if present, must be a number > 0 and <= 100.
+ */
+export function readSubjectRows(grid: string[][]): ParsedSubjectRow[] {
+  if (grid.length === 0) return []
+
+  const header = grid[0].map((h) => h.trim().toLowerCase())
+  const looksLikeHeader = header.some((h) => h in SUBJECT_HEADER_ALIASES)
+
+  let nameIdx = 0, codeIdx = 1, coefIdx = 2
+  let dataStart = 0
+  if (looksLikeHeader) {
+    nameIdx = header.findIndex((h) => SUBJECT_HEADER_ALIASES[h] === 'name')
+    codeIdx = header.findIndex((h) => SUBJECT_HEADER_ALIASES[h] === 'code')
+    coefIdx = header.findIndex((h) => SUBJECT_HEADER_ALIASES[h] === 'coefficient')
+    dataStart = 1
+  }
+
+  const out: ParsedSubjectRow[] = []
+  for (let r = dataStart; r < grid.length; r++) {
+    const cells = grid[r]
+    const name = (nameIdx >= 0 ? cells[nameIdx] : '')?.trim() ?? ''
+    const code = (codeIdx >= 0 ? cells[codeIdx] : '')?.trim() ?? ''
+    const coefficient = (coefIdx >= 0 ? cells[coefIdx] : '')?.trim() ?? ''
+
+    let error: string | null = null
+    if (!name)                  error = 'Le nom de la matière est requis.'
+    else if (name.length > 100)  error = 'Nom trop long (100 caractères max).'
+    else if (code.length > 20)   error = 'Code trop long (20 caractères max).'
+    else if (coefficient !== '') {
+      const n = Number(coefficient.replace(',', '.'))
+      if (!Number.isFinite(n) || n <= 0)  error = 'Coefficient invalide (nombre > 0).'
+      else if (n > 100)                   error = 'Coefficient trop élevé (100 max).'
+    }
+
+    out.push({ line: r + 1, name, code, coefficient, error })
+  }
+  return out
+}
