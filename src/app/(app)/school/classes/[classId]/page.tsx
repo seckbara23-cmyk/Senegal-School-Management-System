@@ -64,7 +64,7 @@ function DetailRow({ label, value }: { label: string; value: string | null | und
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type Props = { params: { classId: string }; searchParams: { error?: string } }
+type Props = { params: { classId: string }; searchParams: { error?: string; promoted?: string } }
 
 export default async function ClassDetailPage({ params, searchParams }: Props) {
   const supabase = createClient()
@@ -129,6 +129,10 @@ export default async function ClassDetailPage({ params, searchParams }: Props) {
   const displayName = [cls.name, cls.section].filter(Boolean).join(' — ')
   const yr = cls.academic_years
   const errorMessage = searchParams.error ? (CLASS_ERRORS[searchParams.error] ?? '') : ''
+  const promotedCount = searchParams.promoted !== undefined ? Number(searchParams.promoted) : null
+  const promotedMessage = promotedCount !== null && Number.isFinite(promotedCount) && promotedCount > 0
+    ? `${promotedCount} élève${promotedCount !== 1 ? 's' : ''} promu${promotedCount !== 1 ? 's' : ''} vers cette classe.`
+    : ''
   const canDelete = enrollments.length === 0 && classSubjects.length === 0
 
   return (
@@ -146,6 +150,11 @@ export default async function ClassDetailPage({ params, searchParams }: Props) {
       {errorMessage && (
         <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4">
           <p className="text-sm text-red-700">{errorMessage}</p>
+        </div>
+      )}
+      {promotedMessage && (
+        <div role="status" className="rounded-lg border border-primary-200 bg-primary-50 p-4">
+          <p className="text-sm font-medium text-primary-800">{promotedMessage}</p>
         </div>
       )}
 
@@ -172,6 +181,15 @@ export default async function ClassDetailPage({ params, searchParams }: Props) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
             </svg>
             Modifier
+          </a>
+          <a
+            href={`/school/classes/${cls.id}/promote`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-sand-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-sand-50 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 transition-colors"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />
+            </svg>
+            Promouvoir
           </a>
           <a
             href={`/school/classes/${cls.id}/enroll`}

@@ -466,6 +466,75 @@ export async function transferStudent(formData: FormData): Promise<void> {
   redirect(`/school/classes/${target_class_id}`)
 }
 
+// ─── Promote a class (bulk move active students to another class) ─────────────
+// End-of-year workflow: every ACTIVE student of the source class is moved to a
+// target class (typically next year's). Source enrollments are marked
+// 'transferred'; active enrollments are created/reactivated in the target.
+
+const PromoteSchema = z.object({
+  source_class_id: z.string().uuid('Classe source invalide.'),
+  target_class_id: z.string().uuid('Classe cible invalide.'),
+})
+
+export async function promoteClass(formData: FormData): Promise<void> {
+  const ctx = await resolveAdmin()
+  if (!ctx) redirect('/school')
+  const { supabase, schoolId, actor } = ctx!
+
+  const parsed = PromoteSchema.safeParse({
+    source_class_id: formData.get('source_class_id'),
+    target_class_id: formData.get('target_class_id'),
+  })
+  if (!parsed.success) redirect('/school/classes')
+  const { source_class_id, target_class_id } = parsed.data
+
+  if (source_class_id === target_class_id) redirect(`/school/classes/${source_class_id}/promote?error=same`)
+  if (!(await isSchoolWritable(supabase, schoolId))) redirect(`/school/classes/${source_class_id}/promote?error=readonly`)
+
+  // Verify both classes belong to this school.
+  const { data: clsData } = await supabase
+    .from('classes').select('id, academic_year_id').in('id', [source_class_id, target_class_id]).eq('school_id', schoolId)
+  const rows = (clsData ?? []) as { id: string; academic_year_id: string }[]
+  const source = rows.find((r) => r.id === source_class_id)
+  const target = rows.find((r) => r.id === target_class_id)
+  if (!source || !target) redirect(`/school/classes/${source_class_id}/promote?error=invalid`)
+  const targetYear = target.academic_year_id
+
+  // Active students of the source class.
+  const { data: enr } = await supabase
+    .from('student_class_enrollments').select('student_id')
+    .eq('school_id', schoolId).eq('class_id', source_class_id).eq('status', 'active')
+  const studentIds = ((enr ?? []) as { student_id: string }[]).map((e) => e.student_id)
+  if (studentIds.length === 0) redirect(`/school/classes/${source_class_id}/promote?error=empty`)
+
+  // Mark the source enrollments as transferred.
+  await supabase
+    .from('student_class_enrollments')
+    .update({ status: 'transferred' })
+    .eq('school_id', schoolId).eq('class_id', source_class_id).eq('status', 'active')
+
+  // Create / reactivate active enrollments in the target class.
+  const now = new Date().toISOString()
+  const targetRows = studentIds.map((id) => ({
+    school_id: schoolId, student_id: id, class_id: target_class_id, academic_year_id: targetYear, status: 'active', enrolled_at: now,
+  }))
+  const { error } = await supabase
+    .from('student_class_enrollments')
+    .upsert(targetRows, { onConflict: 'student_id,class_id,academic_year_id' })
+  if (error) {
+    logSupabaseError(error, { action: 'promoteClass', schoolId, userId: actor.id, entityIds: { source_class_id, target_class_id, count: studentIds.length } })
+    redirect(`/school/classes/${source_class_id}/promote?error=server`)
+  }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'class_promoted', resourceType: 'class', resourceId: source_class_id,
+    metadata: { source_class_id, target_class_id, target_year: targetYear, moved: studentIds.length },
+  })
+
+  redirect(`/school/classes/${target_class_id}?promoted=${studentIds.length}`)
+}
+
 // ─── Update class ───────────────────────────────────────────────────────────────
 
 export type UpdateClassState = {
