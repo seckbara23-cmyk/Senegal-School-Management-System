@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect } from 'react'
+import { captureError } from '@/lib/monitoring'
 
 // Error boundary for the authenticated (app) area. Rendered inside the root
-// layout, so the design system applies. Sentry capture is wired in lib/monitoring.
+// layout, so the design system applies.
 
 export default function AppError({
   error,
@@ -13,8 +14,8 @@ export default function AppError({
   reset: () => void
 }) {
   useEffect(() => {
-    // Logged so it surfaces in server/browser consoles and Vercel logs.
     console.error('[app-error]', error)
+    captureError(error, { boundary: '(app)/error', digest: error.digest })
   }, [error])
 
   return (

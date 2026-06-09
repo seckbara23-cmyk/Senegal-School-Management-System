@@ -1,5 +1,8 @@
 'use client'
 
+import { useEffect } from 'react'
+import { captureError } from '@/lib/monitoring'
+
 // Root-level error boundary. It replaces the root layout entirely, so the app's
 // global stylesheet is NOT loaded here — we use inline styles (Senegal palette)
 // to stay self-contained. Catches errors thrown in the root layout itself.
@@ -11,6 +14,10 @@ export default function GlobalError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  useEffect(() => {
+    captureError(error, { boundary: 'global-error', digest: error.digest })
+  }, [error])
+
   return (
     <html lang="fr">
       <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: '#F7F3EB', color: '#1f2937' }}>

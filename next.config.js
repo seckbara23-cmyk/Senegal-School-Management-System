@@ -6,7 +6,15 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 const supabaseWs  = supabaseUrl
   ? supabaseUrl.replace(/^https?:\/\//, 'wss://')
   : ''
-const connectSrc = ["'self'", supabaseUrl, supabaseWs]
+const connectSrc = [
+  "'self'",
+  supabaseUrl,
+  supabaseWs,
+  // Sentry error-monitoring ingest (no-op unless a DSN is configured).
+  'https://*.sentry.io',
+  'https://*.ingest.sentry.io',
+  'https://*.ingest.de.sentry.io',
+]
   .filter(Boolean)
   .join(' ')
 
@@ -59,6 +67,8 @@ const securityHeaders = [
 ]
 
 const nextConfig = {
+  // Required for the Sentry instrumentation hook on Next.js 14.
+  experimental: { instrumentationHook: true },
   async headers() {
     return [
       {
@@ -73,4 +83,10 @@ const nextConfig = {
   },
 }
 
-module.exports = nextConfig
+// Wrap with Sentry. Source-map upload is skipped automatically when no
+// SENTRY_AUTH_TOKEN is present, so local/CI builds never need network access.
+const { withSentryConfig } = require('@sentry/nextjs')
+
+module.exports = withSentryConfig(nextConfig, {
+  silent: true,
+})

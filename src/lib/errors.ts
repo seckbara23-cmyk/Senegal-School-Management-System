@@ -38,7 +38,7 @@ export const GENERIC_ERROR_MESSAGE = 'Une erreur est survenue. Veuillez réessay
  * null/undefined error (e.g. an empty `.single()` result).
  */
 export function logSupabaseError(error: SupabaseLikeError, ctx: ErrorLogContext): void {
-  console.error(`[server-action-error] action=${ctx.action}`, {
+  const detail = {
     code: error?.code ?? null,
     message: error?.message ?? null,
     details: error?.details ?? null,
@@ -46,7 +46,15 @@ export function logSupabaseError(error: SupabaseLikeError, ctx: ErrorLogContext)
     schoolId: ctx.schoolId ?? null,
     userId: ctx.userId ?? null,
     entityIds: ctx.entityIds ?? {},
-  })
+  }
+  console.error(`[server-action-error] action=${ctx.action}`, detail)
+  // Surface to Sentry (no-op when no DSN). Lazy import so a missing/edge build
+  // never breaks the error path.
+  import('@/lib/monitoring')
+    .then(({ captureError }) =>
+      captureError(new Error(`[${ctx.action}] ${detail.code ?? ''} ${detail.message ?? ''}`.trim()), detail),
+    )
+    .catch(() => { /* ignore */ })
 }
 
 /**
