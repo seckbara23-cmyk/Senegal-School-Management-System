@@ -1,7 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { preloadDefaultSubjects } from '../actions'
 
-export default async function SubjectsPage() {
+const SUBJECT_ERRORS: Record<string, string> = {
+  readonly: 'Cet établissement est en lecture seule. Les modifications sont désactivées.',
+  preload:  'Erreur lors du chargement des matières par défaut. Veuillez réessayer.',
+}
+
+type Props = { searchParams: { created?: string; skipped?: string; loaded?: string; error?: string } }
+
+export default async function SubjectsPage({ searchParams }: Props) {
   const supabase = createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -33,6 +41,20 @@ export default async function SubjectsPage() {
   }
   const subjects = (rawSubjects ?? []) as SubjectRow[]
 
+  // Success / error banners from preload, template and import flows.
+  const created = searchParams.created !== undefined ? Number(searchParams.created) : null
+  const skipped = searchParams.skipped !== undefined ? Number(searchParams.skipped) : 0
+  let successMessage = ''
+  if (searchParams.loaded === '1') {
+    successMessage = created && created > 0
+      ? `${created} matière${created > 1 ? 's' : ''} ajoutée${created > 1 ? 's' : ''}, ${skipped} déjà existante${skipped > 1 ? 's' : ''}.`
+      : 'Toutes les matières par défaut sont déjà chargées.'
+  } else if (created !== null && Number.isFinite(created)) {
+    successMessage = `${created} matière${created !== 1 ? 's' : ''} créée${created !== 1 ? 's' : ''} avec succès` +
+      (skipped > 0 ? `, ${skipped} ignorée${skipped > 1 ? 's' : ''}` : '') + '.'
+  }
+  const errorMessage = searchParams.error ? (SUBJECT_ERRORS[searchParams.error] ?? '') : ''
+
   return (
     <div className="space-y-6">
 
@@ -48,14 +70,48 @@ export default async function SubjectsPage() {
               {subjects.length} matière{subjects.length !== 1 ? 's' : ''}
             </p>
           </div>
-          <a
-            href="/school/academics/subjects/new"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
-          >
-            + Nouvelle matière
-          </a>
+          <div className="flex flex-wrap items-center gap-2">
+            <form action={preloadDefaultSubjects}>
+              <button
+                type="submit"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-primary-600 bg-primary-700 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-600 transition-colors"
+              >
+                Charger les matières par défaut
+              </button>
+            </form>
+            <a
+              href="/school/academics/subjects/templates"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-primary-600 bg-primary-700 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-600 transition-colors"
+            >
+              Création rapide
+            </a>
+            <a
+              href="/school/academics/subjects/import"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-primary-600 bg-primary-700 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-600 transition-colors"
+            >
+              Import CSV
+            </a>
+            <a
+              href="/school/academics/subjects/new"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
+            >
+              + Nouvelle matière
+            </a>
+          </div>
         </div>
       </div>
+
+      {/* ── Banners ─────────────────────────────────────────────────────────── */}
+      {successMessage && (
+        <div role="status" className="rounded-lg border border-primary-200 bg-primary-50 p-4">
+          <p className="text-sm font-medium text-primary-800">{successMessage}</p>
+        </div>
+      )}
+      {errorMessage && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4">
+          <p className="text-sm text-red-700">{errorMessage}</p>
+        </div>
+      )}
 
       {/* ── Table / empty state ──────────────────────────────────────────────── */}
       {subjects.length === 0 ? (
