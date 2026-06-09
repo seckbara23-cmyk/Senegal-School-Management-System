@@ -27,7 +27,7 @@ export default function OfflinePage() {
           Vous êtes hors ligne
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-gray-500">
-          EduSen nécessite une connexion internet pour accéder aux données de
+          ScolaTech nécessite une connexion internet pour accéder aux données de
           votre établissement. Vérifiez votre connexion puis réessayez.
         </p>
 
@@ -41,7 +41,7 @@ export default function OfflinePage() {
       </div>
 
       <p className="mt-6 text-xs font-medium uppercase tracking-wider text-gray-400">
-        EduSen — Gestion scolaire
+        ScolaTech — Gestion scolaire
       </p>
     </main>
   )

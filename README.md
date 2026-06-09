@@ -1,6 +1,6 @@
-# School Management System
+# ScolaTech
 
-A multi-tenant school management SaaS for Senegal built with Next.js, TypeScript, Tailwind CSS, and Supabase.
+ScolaTech — plateforme de gestion scolaire pour les établissements sénégalais. A multi-tenant school management SaaS for Senegal built with Next.js, TypeScript, Tailwind CSS, and Supabase. Production: https://scolatech.app
 
 ## Getting Started
 

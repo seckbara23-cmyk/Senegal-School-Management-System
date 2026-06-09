@@ -1,4 +1,4 @@
-# Deployment runbook — EduSen
+# Deployment runbook — ScolaTech
 
 This project applies database migrations **manually** in the Supabase SQL editor
 (there is no automated migration runner). Production drifting from the repo is

@@ -7,11 +7,27 @@ import InstallPrompt from '@/components/InstallPrompt'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'EduSen — La gestion scolaire pour les écoles sénégalaises',
+  metadataBase: new URL('https://scolatech.app'),
+  title: 'ScolaTech',
   description:
-    'Plateforme de gestion scolaire tout-en-un pour les établissements au Sénégal. Gérez élèves, présences, paiements et communication en français.',
-  applicationName: 'EduSen',
+    'Plateforme de gestion scolaire pour les établissements sénégalais.',
+  applicationName: 'ScolaTech',
   manifest: '/manifest.json',
+  openGraph: {
+    title: 'ScolaTech',
+    description:
+      'Plateforme de gestion scolaire pour les établissements sénégalais.',
+    url: 'https://scolatech.app',
+    siteName: 'ScolaTech',
+    locale: 'fr_SN',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'ScolaTech',
+    description:
+      'Plateforme de gestion scolaire pour les établissements sénégalais.',
+  },
   icons: {
     icon: [
       { url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' },
@@ -26,7 +42,7 @@ export const metadata: Metadata = {
   // not read the web app manifest for standalone display / status bar.
   appleWebApp: {
     capable: true,
-    title: 'EduSen',
+    title: 'ScolaTech',
     statusBarStyle: 'default',
   },
 }

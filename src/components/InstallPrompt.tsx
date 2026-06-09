@@ -11,7 +11,7 @@ interface BeforeInstallPromptEvent extends Event {
 const DISMISS_KEY = 'edusen-install-dismissed'
 
 /**
- * Small, non-intrusive "Installer EduSen" banner shown only when the browser
+ * Small, non-intrusive "Installer ScolaTech" banner shown only when the browser
  * actually offers installation (Chromium fires `beforeinstallprompt`). It is
  * dismissible and remembers the dismissal, never blocks the page (renders
  * nothing until the event fires), and hides once the app is installed. iOS
@@ -83,7 +83,7 @@ export default function InstallPrompt() {
   return (
     <div
       role="dialog"
-      aria-label="Installer EduSen"
+      aria-label="Installer ScolaTech"
       className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-sm rounded-2xl border border-sand-200 bg-white p-4 shadow-2xl shadow-primary-900/15 sm:left-4 sm:right-auto"
     >
       <div className="flex items-start gap-3">
@@ -93,9 +93,9 @@ export default function InstallPrompt() {
           </svg>
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-gray-900">Installer EduSen</p>
+          <p className="text-sm font-semibold text-gray-900">Installer ScolaTech</p>
           <p className="mt-0.5 text-xs leading-relaxed text-gray-500">
-            Ajoutez EduSen à votre écran d’accueil pour un accès rapide.
+            Ajoutez ScolaTech à votre écran d’accueil pour un accès rapide.
           </p>
           <div className="mt-3 flex items-center gap-2">
             <button

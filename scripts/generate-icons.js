@@ -1,5 +1,5 @@
 /**
- * Generates the branded EduSen PWA app icons — a white columned-institution
+ * Generates the branded ScolaTech PWA app icons — a white columned-institution
  * mark on a Senegal-green plate — using ONLY built-in Node modules (zlib).
  * We deliberately avoid adding `sharp`/`canvas` just to rasterise icons.
  *
@@ -184,4 +184,4 @@ for (const { name, size, mode } of icons) {
   fs.writeFileSync(path.join(OUT_DIR, name), png)
   console.log(`  ✓ ${name} (${size}px, ${mode}, ${png.length}b)`)
 }
-console.log('\nDone — branded EduSen icons written to public/icons.')
+console.log('\nDone — branded ScolaTech icons written to public/icons.')
