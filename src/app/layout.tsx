@@ -15,6 +15,7 @@ export const metadata: Metadata = {
     icon: [
       { url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' },
       { url: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png' },
+      { url: '/icons/icon-maskable-512x512.png', sizes: '512x512', type: 'image/png' },
     ],
     apple: [
       { url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
@@ -30,9 +31,9 @@ export const metadata: Metadata = {
 }
 
 // theme-color tints the mobile browser chrome and the installed PWA title bar.
-// Matches the Senegal-green header band (primary-800) used across the app.
+// Matches the manifest theme_color (Senegal green).
 export const viewport: Viewport = {
-  themeColor: '#054D2C',
+  themeColor: '#0F7A3F',
   width: 'device-width',
   initialScale: 1,
 }

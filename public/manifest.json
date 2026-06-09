@@ -1,26 +1,33 @@
 {
-  "name": "EduSen — Gestion scolaire",
+  "name": "EduSen",
   "short_name": "EduSen",
-  "description": "Plateforme de gestion scolaire pour les établissements au Sénégal : élèves, présences, paiements et communication.",
+  "description": "Plateforme de gestion scolaire pour les établissements sénégalais",
   "lang": "fr",
   "dir": "ltr",
-  "start_url": "/",
+  "start_url": "/login",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#054D2C",
+  "orientation": "portrait",
+  "background_color": "#F8F5ED",
+  "theme_color": "#0F7A3F",
   "icons": [
     {
       "src": "/icons/icon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "/icons/apple-touch-icon.png",

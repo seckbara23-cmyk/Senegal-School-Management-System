@@ -1,7 +1,7 @@
 // Cache version — bump this any time you change what gets cached.
 // Bumping forces every older cache (including any that wrongly stored an
 // app document or RSC payload) to be deleted on the next activation.
-const CACHE_NAME = 'school-management-v4'
+const CACHE_NAME = 'school-management-v5'
 
 // Static, non-sensitive, app-shell-independent assets that are safe to
 // precache. HTML navigation requests and React Server Component (RSC) payloads
@@ -16,6 +16,7 @@ const STATIC_ASSETS = [
   OFFLINE_URL,
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
+  '/icons/icon-maskable-512x512.png',
   '/icons/apple-touch-icon.png',
 ]
 
