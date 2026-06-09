@@ -13,26 +13,33 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   if (!user) redirect('/login')
 
-  // School name + tenant status for the sidebar header — take the first active
-  // membership. Fails gracefully: if no membership exists the sidebar shows ''.
-  const { data: membership } = await supabase
+  // School context for the sidebar header + tenant lifecycle gate. We consider
+  // ALL active memberships (a user may belong to more than one school), so a
+  // suspended tenant cannot be bypassed by a nondeterministic single-row pick.
+  const { data: membershipsData } = await supabase
     .from('school_memberships')
     .select('schools(name, subscription_status)')
     .eq('user_id', user.id)
     .eq('status', 'active')
-    .limit(1)
-    .maybeSingle()
 
-  const membershipSchool =
-    (membership?.schools as unknown as { name: string; subscription_status: string } | null) ?? null
-  const schoolName = membershipSchool?.name ?? ''
+  type MSchool = { name: string; subscription_status: string }
+  const schools = ((membershipsData ?? []) as unknown as { schools: MSchool | null }[])
+    .map((m) => m.schools)
+    .filter((s): s is MSchool => s !== null)
+
+  const writableSchool = schools.find((s) => s.subscription_status === 'active') ?? null
+  const blockedSchool =
+    schools.find((s) => s.subscription_status === 'suspended' || s.subscription_status === 'archived') ?? null
+  // Prefer an active school's name for the sidebar; fall back to any membership.
+  const schoolName = (writableSchool ?? schools[0])?.name ?? ''
 
   // ── Tenant lifecycle gate ───────────────────────────────────────────────────
-  // A school user whose tenant is suspended or archived is blocked from every
-  // school module; data is left untouched. Super admins are never gated — they
-  // are identified by global_role and manage tenants from /super-admin.
-  if (membershipSchool?.subscription_status === 'suspended' ||
-      membershipSchool?.subscription_status === 'archived') {
+  // Block only when the user has NO active school — i.e. EVERY tenant they
+  // belong to is suspended or archived. A user who also belongs to an active
+  // school keeps access to it (data stays isolated by RLS + per-action write
+  // guards). Super admins are never gated — they manage tenants from
+  // /super-admin and are identified by global_role.
+  if (schools.length > 0 && !writableSchool && blockedSchool) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('global_role')
@@ -42,8 +49,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if ((profile as { global_role: string } | null)?.global_role !== 'super_admin') {
       return (
         <TenantUnavailable
-          status={membershipSchool.subscription_status as 'suspended' | 'archived'}
-          schoolName={membershipSchool.name}
+          status={blockedSchool.subscription_status as 'suspended' | 'archived'}
+          schoolName={blockedSchool.name}
           userEmail={user.email ?? ''}
         />
       )
