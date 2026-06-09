@@ -39,84 +39,86 @@ function BrandMark({ className = 'h-5 w-5' }: { className?: string }) {
 }
 
 // ─── Educational illustration ──────────────────────────────────────────────────
-// A custom flat scene — a baobab (the emblematic tree of Senegal) sheltering an
-// open book, under a warm sun. Drawn from scratch in the brand palette so the
-// page never reads as generic stock-photo SaaS.
-function BaobabScene({ className = '' }: { className?: string }) {
+// A custom flat scene built around a school: a façade with a clock pediment and
+// a gold pennant, fronted by a stack of textbooks crowned with a graduation cap,
+// under a warm sun. Drawn from scratch in the brand palette so the page reads
+// unmistakably as an education platform — never generic stock-photo SaaS.
+function EduScene({ className = '' }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 320 300"
       className={className}
       role="img"
-      aria-label="Illustration : un baobab abritant un livre ouvert sous le soleil, symbole de l'éducation au Sénégal"
+      aria-label="Illustration : une école avec une horloge et un drapeau, des manuels scolaires et une toque de diplômé, sous le soleil"
     >
       {/* Stage */}
       <rect x="10" y="10" width="300" height="280" rx="32" fill={SAND} />
 
       {/* Sun + rays (top-right) */}
       <g stroke={GOLD} strokeWidth="4" strokeLinecap="round">
-        <line x1="248" y1="34" x2="248" y2="22" />
-        <line x1="284" y1="70" x2="296" y2="70" />
-        <line x1="274" y1="44" x2="283" y2="35" />
-        <line x1="222" y1="44" x2="213" y2="35" />
-        <line x1="221" y1="96" x2="212" y2="105" />
-        <line x1="275" y1="96" x2="284" y2="105" />
+        <line x1="258" y1="52" x2="258" y2="40" />
+        <line x1="290" y1="84" x2="302" y2="84" />
+        <line x1="282" y1="60" x2="291" y2="51" />
+        <line x1="234" y1="60" x2="225" y2="51" />
+        <line x1="234" y1="108" x2="225" y2="117" />
       </g>
-      <circle cx="248" cy="70" r="26" fill={GOLD} />
+      <circle cx="258" cy="84" r="20" fill={GOLD} />
 
       {/* Ground shadow */}
-      <ellipse cx="150" cy="256" rx="118" ry="15" fill="#EDE8DC" />
+      <ellipse cx="160" cy="258" rx="120" ry="14" fill="#EDE8DC" />
 
-      {/* Baobab trunk — the characteristic fat, bottle-shaped silhouette */}
-      <path
-        d="M126 256 C 120 214 112 184 134 160 L 168 160 C 190 184 182 214 176 256 Z"
-        fill="#9A6B33"
-      />
-      <path
-        d="M134 160 C 116 184 122 214 128 256 L 138 256 C 134 214 132 186 146 162 Z"
-        fill="#7A5226"
-        opacity="0.55"
-      />
+      {/* ── School building ──────────────────────────────────────────────── */}
+      {/* Flagpole + gold pennant rising from the apex */}
+      <line x1="160" y1="112" x2="160" y2="84" stroke="#7A5226" strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M160 86 L182 92 L160 98 Z" fill={GOLD} />
 
-      {/* Splayed branches reaching into the canopy */}
-      <g stroke="#7A5226" strokeWidth="6" strokeLinecap="round" fill="none">
-        <path d="M150 168 C 150 140 120 128 104 120" />
-        <path d="M150 168 C 150 140 182 126 200 120" />
-        <path d="M150 166 L 150 120" />
-        <path d="M150 150 C 150 138 132 130 126 122" />
-        <path d="M150 150 C 150 138 170 130 176 122" />
+      {/* Pediment roof */}
+      <path d="M104 152 L216 152 L160 110 Z" fill={GREEN} />
+      <path d="M104 152 L216 152 L160 110 Z" fill={GREEN_DARK} opacity="0.18" />
+
+      {/* Walls */}
+      <rect x="116" y="152" width="88" height="98" rx="3" fill="#FFFFFF" />
+      <rect x="116" y="152" width="88" height="98" rx="3" fill="none" stroke="#E6E0D4" strokeWidth="2" />
+
+      {/* Clock in the pediment */}
+      <circle cx="160" cy="135" r="9" fill="#FFFFFF" stroke={GOLD} strokeWidth="2.5" />
+      <path d="M160 135 L160 130 M160 135 L164 137" stroke={GREEN_DARK} strokeWidth="1.6" strokeLinecap="round" />
+
+      {/* Windows with mullions */}
+      <g>
+        <rect x="128" y="170" width="20" height="26" rx="2" fill={SAND} stroke={GREEN} strokeWidth="2" />
+        <path d="M138 170 L138 196 M128 183 L148 183" stroke={GREEN} strokeWidth="1.4" />
+        <rect x="172" y="170" width="20" height="26" rx="2" fill={SAND} stroke={GREEN} strokeWidth="2" />
+        <path d="M182 170 L182 196 M172 183 L192 183" stroke={GREEN} strokeWidth="1.4" />
       </g>
 
-      {/* Foliage — overlapping flat blobs */}
-      <circle cx="150" cy="104" r="48" fill={GREEN} />
-      <circle cx="104" cy="118" r="31" fill={GREEN_DARK} />
-      <circle cx="198" cy="116" r="33" fill={GREEN_DARK} />
-      <circle cx="124" cy="86" r="27" fill={GREEN} />
-      <circle cx="180" cy="86" r="25" fill={GREEN} />
-      <circle cx="150" cy="78" r="26" fill={GREEN} />
+      {/* Arched doorway */}
+      <path d="M150 250 L150 218 A10 10 0 0 1 170 218 L170 250 Z" fill={GREEN_DARK} />
+      <circle cx="165" cy="234" r="1.8" fill={GOLD} />
 
-      {/* Fruit dots */}
-      <g fill={GOLD}>
-        <circle cx="120" cy="108" r="4" />
-        <circle cx="168" cy="96" r="4" />
-        <circle cx="150" cy="124" r="4" />
-        <circle cx="190" cy="118" r="3.5" />
+      {/* Steps */}
+      <rect x="108" y="250" width="104" height="6" rx="2" fill="#E6E0D4" />
+      <rect x="100" y="256" width="120" height="6" rx="2" fill="#DDD6C7" />
+
+      {/* ── Books + graduation cap (front-left) ──────────────────────────── */}
+      {/* Stacked textbooks */}
+      <rect x="52" y="240" width="58" height="11" rx="2.5" fill={GREEN} />
+      <rect x="57" y="229" width="50" height="11" rx="2.5" fill={GOLD} />
+      <rect x="54" y="218" width="55" height="11" rx="2.5" fill={GREEN_DARK} />
+      {/* Page edges */}
+      <g stroke="#FFFFFF" strokeWidth="1.4" opacity="0.7">
+        <line x1="104" y1="243" x2="104" y2="248" />
+        <line x1="101" y1="232" x2="101" y2="237" />
+        <line x1="103" y1="221" x2="103" y2="226" />
       </g>
 
-      {/* Open book at the base */}
-      <path d="M98 256 L150 242 L150 262 L98 270 Z" fill="#FFFFFF" />
-      <path d="M202 256 L150 242 L150 262 L202 270 Z" fill="#FFFFFF" />
-      <path d="M98 256 L150 242 L150 246 L98 260 Z" fill={GREEN} opacity="0.12" />
-      <path d="M202 256 L150 242 L150 246 L202 260 Z" fill={GREEN} opacity="0.12" />
-      <g stroke="#DDD8CE" strokeWidth="2.5" strokeLinecap="round">
-        <line x1="110" y1="256" x2="142" y2="248" />
-        <line x1="112" y1="262" x2="142" y2="254" />
-        <line x1="190" y1="256" x2="158" y2="248" />
-        <line x1="188" y1="262" x2="158" y2="254" />
-      </g>
-      {/* Centre spine + gold bookmark */}
-      <path d="M150 242 L150 262" stroke={GREEN_DARK} strokeWidth="3" strokeLinecap="round" />
-      <path d="M150 242 L160 242 L160 256 L155 251 L150 256 Z" fill={GOLD} />
+      {/* Graduation cap resting on the stack */}
+      <ellipse cx="81" cy="214" rx="11" ry="5" fill="#3A3A3A" />
+      <path d="M81 196 L108 206 L81 216 L54 206 Z" fill="#2A2A2A" />
+      <circle cx="81" cy="206" r="2.6" fill={GOLD} />
+      {/* Tassel */}
+      <path d="M81 206 L104 206 L104 222" fill="none" stroke={GOLD} strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="104" cy="224" r="2.6" fill={GOLD} />
     </svg>
   )
 }
@@ -313,12 +315,12 @@ export default function LoginPage() {
 
         {/* Illustration + messaging */}
         <div className="relative max-w-md">
-          <BaobabScene className="mb-10 w-full max-w-xs drop-shadow-xl" />
+          <EduScene className="mb-10 w-full max-w-xs drop-shadow-xl" />
           <h1 className="text-3xl font-bold leading-snug tracking-tight text-white">
             Plateforme de gestion scolaire pour les établissements sénégalais
           </h1>
           <p className="mt-4 text-base leading-relaxed text-primary-100">
-            Pour une administration scolaire moderne, au service des élèves, des enseignants et des familles.
+            Centralisez la gestion des élèves, enseignants, parents, notes, présences et paiements dans un espace sécurisé.
           </p>
         </div>
 
