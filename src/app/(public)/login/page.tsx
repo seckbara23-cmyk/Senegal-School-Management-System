@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useState } from 'react'
+import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 export const dynamic = 'force-dynamic'
@@ -19,11 +20,8 @@ function getSafeRedirect(value: string | null): string {
 }
 
 // ─── Shared brand tokens ──────────────────────────────────────────────────────
-// The exact Senegal-inspired palette from the brief, used in the inline SVG
-// illustration (Tailwind utilities cover everything else via the design system).
-const GREEN = '#0F7B45'
-const GREEN_DARK = '#075E36'
-const SAND = '#F7F3EB'
+// Senegal-inspired gold accent for the textile pattern and identity marks
+// (Tailwind utilities cover everything else via the design system).
 const GOLD = '#D9A441'
 
 // EduSen mark — the same building glyph used in the landing page header.
@@ -34,91 +32,6 @@ function BrandMark({ className = 'h-5 w-5' }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6} aria-hidden="true">
       <path strokeLinecap="round" strokeLinejoin="round" d={BUILDING_ICON} />
-    </svg>
-  )
-}
-
-// ─── Educational illustration ──────────────────────────────────────────────────
-// A custom flat scene built around a school: a façade with a clock pediment and
-// a gold pennant, fronted by a stack of textbooks crowned with a graduation cap,
-// under a warm sun. Drawn from scratch in the brand palette so the page reads
-// unmistakably as an education platform — never generic stock-photo SaaS.
-function EduScene({ className = '' }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 320 300"
-      className={className}
-      role="img"
-      aria-label="Illustration : une école avec une horloge et un drapeau, des manuels scolaires et une toque de diplômé, sous le soleil"
-    >
-      {/* Stage */}
-      <rect x="10" y="10" width="300" height="280" rx="32" fill={SAND} />
-
-      {/* Sun + rays (top-right) */}
-      <g stroke={GOLD} strokeWidth="4" strokeLinecap="round">
-        <line x1="258" y1="52" x2="258" y2="40" />
-        <line x1="290" y1="84" x2="302" y2="84" />
-        <line x1="282" y1="60" x2="291" y2="51" />
-        <line x1="234" y1="60" x2="225" y2="51" />
-        <line x1="234" y1="108" x2="225" y2="117" />
-      </g>
-      <circle cx="258" cy="84" r="20" fill={GOLD} />
-
-      {/* Ground shadow */}
-      <ellipse cx="160" cy="258" rx="120" ry="14" fill="#EDE8DC" />
-
-      {/* ── School building ──────────────────────────────────────────────── */}
-      {/* Flagpole + gold pennant rising from the apex */}
-      <line x1="160" y1="112" x2="160" y2="84" stroke="#7A5226" strokeWidth="2.5" strokeLinecap="round" />
-      <path d="M160 86 L182 92 L160 98 Z" fill={GOLD} />
-
-      {/* Pediment roof */}
-      <path d="M104 152 L216 152 L160 110 Z" fill={GREEN} />
-      <path d="M104 152 L216 152 L160 110 Z" fill={GREEN_DARK} opacity="0.18" />
-
-      {/* Walls */}
-      <rect x="116" y="152" width="88" height="98" rx="3" fill="#FFFFFF" />
-      <rect x="116" y="152" width="88" height="98" rx="3" fill="none" stroke="#E6E0D4" strokeWidth="2" />
-
-      {/* Clock in the pediment */}
-      <circle cx="160" cy="135" r="9" fill="#FFFFFF" stroke={GOLD} strokeWidth="2.5" />
-      <path d="M160 135 L160 130 M160 135 L164 137" stroke={GREEN_DARK} strokeWidth="1.6" strokeLinecap="round" />
-
-      {/* Windows with mullions */}
-      <g>
-        <rect x="128" y="170" width="20" height="26" rx="2" fill={SAND} stroke={GREEN} strokeWidth="2" />
-        <path d="M138 170 L138 196 M128 183 L148 183" stroke={GREEN} strokeWidth="1.4" />
-        <rect x="172" y="170" width="20" height="26" rx="2" fill={SAND} stroke={GREEN} strokeWidth="2" />
-        <path d="M182 170 L182 196 M172 183 L192 183" stroke={GREEN} strokeWidth="1.4" />
-      </g>
-
-      {/* Arched doorway */}
-      <path d="M150 250 L150 218 A10 10 0 0 1 170 218 L170 250 Z" fill={GREEN_DARK} />
-      <circle cx="165" cy="234" r="1.8" fill={GOLD} />
-
-      {/* Steps */}
-      <rect x="108" y="250" width="104" height="6" rx="2" fill="#E6E0D4" />
-      <rect x="100" y="256" width="120" height="6" rx="2" fill="#DDD6C7" />
-
-      {/* ── Books + graduation cap (front-left) ──────────────────────────── */}
-      {/* Stacked textbooks */}
-      <rect x="52" y="240" width="58" height="11" rx="2.5" fill={GREEN} />
-      <rect x="57" y="229" width="50" height="11" rx="2.5" fill={GOLD} />
-      <rect x="54" y="218" width="55" height="11" rx="2.5" fill={GREEN_DARK} />
-      {/* Page edges */}
-      <g stroke="#FFFFFF" strokeWidth="1.4" opacity="0.7">
-        <line x1="104" y1="243" x2="104" y2="248" />
-        <line x1="101" y1="232" x2="101" y2="237" />
-        <line x1="103" y1="221" x2="103" y2="226" />
-      </g>
-
-      {/* Graduation cap resting on the stack */}
-      <ellipse cx="81" cy="214" rx="11" ry="5" fill="#3A3A3A" />
-      <path d="M81 196 L108 206 L81 216 L54 206 Z" fill="#2A2A2A" />
-      <circle cx="81" cy="206" r="2.6" fill={GOLD} />
-      {/* Tassel */}
-      <path d="M81 206 L104 206 L104 222" fill="none" stroke={GOLD} strokeWidth="1.8" strokeLinecap="round" />
-      <circle cx="104" cy="224" r="2.6" fill={GOLD} />
     </svg>
   )
 }
@@ -313,15 +226,31 @@ export default function LoginPage() {
           <span className="text-2xl font-bold tracking-tight text-white">EduSen</span>
         </div>
 
-        {/* Illustration + messaging */}
-        <div className="relative max-w-md">
-          <EduScene className="mb-10 w-full max-w-xs drop-shadow-xl" />
-          <h1 className="text-3xl font-bold leading-snug tracking-tight text-white">
+        {/* Messaging + hero image */}
+        <div className="relative max-w-lg">
+          <span className="inline-block rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-primary-100 ring-1 ring-white/15">
+            Logiciel de gestion scolaire
+          </span>
+          <h1 className="mt-5 text-3xl font-bold leading-snug tracking-tight text-white xl:text-[2.05rem]">
             Plateforme de gestion scolaire pour les établissements sénégalais
           </h1>
-          <p className="mt-4 text-base leading-relaxed text-primary-100">
+          <p className="mt-4 max-w-md text-base leading-relaxed text-primary-100">
             Centralisez la gestion des élèves, enseignants, parents, notes, présences et paiements dans un espace sécurisé.
           </p>
+
+          {/* Hero image — the visual centerpiece. Native ratio is 3:2, so
+              object-cover keeps it crisp without stretching, and the fixed
+              aspect-ratio box reserves space to prevent layout shift. */}
+          <div className="relative mt-9 aspect-[3/2] w-full overflow-hidden rounded-2xl shadow-2xl shadow-primary-950/40 ring-1 ring-white/15">
+            <Image
+              src="/Images/School.png"
+              alt="Établissement scolaire moderne au Sénégal"
+              fill
+              priority
+              sizes="(min-width: 1024px) 44vw, 100vw"
+              className="object-cover"
+            />
+          </div>
         </div>
 
         {/* Footer accent */}
