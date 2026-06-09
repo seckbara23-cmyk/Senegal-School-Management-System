@@ -278,6 +278,12 @@ export default async function BulletinPage({ params, searchParams }: Props) {
           <span className="text-xs text-gray-400">
             {allStudentIds.length} élève{allStudentIds.length !== 1 ? 's' : ''} dans la classe
           </span>
+          <a
+            href={`/school/academics/bulletins/${student.id}/annual`}
+            className="rounded-lg border border-sand-300 bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-sand-50 transition-colors"
+          >
+            Bilan annuel
+          </a>
           <PrintButton />
         </div>
       </div>

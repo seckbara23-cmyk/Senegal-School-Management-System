@@ -360,6 +360,12 @@ export default async function BulletinsPage({ searchParams }: Props) {
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       <a
+                        href={`/school/academics/bulletins/${s.studentId}/annual`}
+                        className="mr-3 text-xs font-medium text-gray-500 hover:text-gray-700 hover:underline"
+                      >
+                        Annuel
+                      </a>
+                      <a
                         href={`/school/academics/bulletins/${s.studentId}?period_id=${selectedPeriodId}`}
                         className="text-xs font-medium text-primary-600 hover:text-primary-800 hover:underline"
                       >
