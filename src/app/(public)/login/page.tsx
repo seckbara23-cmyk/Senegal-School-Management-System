@@ -24,7 +24,7 @@ function getSafeRedirect(value: string | null): string {
 // (Tailwind utilities cover everything else via the design system).
 const GOLD = '#D9A441'
 
-// EduSen mark — the same building glyph used in the landing page header.
+// ScolaTech mark — the same building glyph used in the landing page header.
 const BUILDING_ICON =
   'M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21'
 
@@ -223,7 +223,7 @@ export default function LoginPage() {
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white ring-1 ring-white/20">
             <BrandMark className="h-6 w-6" />
           </div>
-          <span className="text-2xl font-bold tracking-tight text-white">EduSen</span>
+          <span className="text-2xl font-bold tracking-tight text-white">ScolaTech</span>
         </div>
 
         {/* Messaging + hero image */}
@@ -270,7 +270,7 @@ export default function LoginPage() {
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-600 text-white shadow-sm">
                 <BrandMark className="h-5 w-5" />
               </div>
-              <span className="text-xl font-bold tracking-tight text-gray-900">EduSen</span>
+              <span className="text-xl font-bold tracking-tight text-gray-900">ScolaTech</span>
             </div>
             <p className="mt-3 text-sm leading-relaxed text-gray-500">
               Plateforme de gestion scolaire pour les établissements sénégalais

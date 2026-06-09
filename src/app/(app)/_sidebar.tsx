@@ -119,7 +119,7 @@ const NAV_SECTIONS: NavSection[] = [
     iconPath: P.money,
     items: [
       { label: 'Paiements',        href: '/school/finance', iconPath: P.money    },
-      { label: 'Abonnement EduSen', href: '/school/billing', iconPath: P.document },
+      { label: 'Abonnement ScolaTech', href: '/school/billing', iconPath: P.document },
     ],
   },
   {

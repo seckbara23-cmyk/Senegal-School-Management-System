@@ -190,7 +190,7 @@ export async function cancelSubscription(formData: FormData): Promise<void> {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SaaS BILLING LEDGER (Phase 50.4)
-// Internal billing of schools for their EduSen subscription. Separate from the
+// Internal billing of schools for their ScolaTech subscription. Separate from the
 // student-fee tables. Manual recording only — no external provider.
 // ═══════════════════════════════════════════════════════════════════════════
 

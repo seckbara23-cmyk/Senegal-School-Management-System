@@ -215,7 +215,7 @@ export default function LandingPage() {
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white">
               <Icon path={BUILDING_ICON} className="h-4 w-4" />
             </div>
-            <span className="text-lg font-bold tracking-tight text-gray-900">EduSen</span>
+            <span className="text-lg font-bold tracking-tight text-gray-900">ScolaTech</span>
           </div>
           <a
             href="/login"
@@ -356,7 +356,7 @@ export default function LandingPage() {
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-600 text-white">
                 <Icon path={BUILDING_ICON} className="h-4 w-4" />
               </div>
-              <span className="text-sm font-semibold text-white">EduSen</span>
+              <span className="text-sm font-semibold text-white">ScolaTech</span>
             </div>
 
             {/* Nav */}
@@ -371,7 +371,7 @@ export default function LandingPage() {
 
             {/* Legal */}
             <p className="text-xs text-primary-300">
-              {`© ${new Date().getFullYear()} EduSen — Conçu pour les écoles du Sénégal`}
+              {`© ${new Date().getFullYear()} ScolaTech — Conçu pour les écoles du Sénégal`}
             </p>
           </div>
         </div>

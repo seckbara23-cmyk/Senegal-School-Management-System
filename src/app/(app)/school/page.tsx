@@ -169,7 +169,7 @@ const MODULE_GROUPS: ModuleGroupDef[] = [
     iconPath: P.money,
     items: [
       { label: 'Paiements',         href: '/school/finance', desc: 'Frais, factures, paiements',      iconPath: P.money    },
-      { label: 'Abonnement EduSen', href: '/school/billing', desc: "Factures et abonnement de l'école", iconPath: P.document },
+      { label: 'Abonnement ScolaTech', href: '/school/billing', desc: "Factures et abonnement de l'école", iconPath: P.document },
     ],
   },
   {

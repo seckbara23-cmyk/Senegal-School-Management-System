@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
-// School-admin READ-ONLY view of the school's own EduSen SaaS subscription
+// School-admin READ-ONLY view of the school's own ScolaTech SaaS subscription
 // invoices and payments. RLS (migration 040) restricts rows to this school.
 // This is the SaaS subscription billing — distinct from student fees (/school/finance).
 
@@ -68,7 +68,7 @@ export default async function SchoolBillingPage() {
         <div className="mb-1">
           <a href="/school" className="text-primary-300 hover:text-white text-sm">← Tableau de bord</a>
         </div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">Abonnement EduSen</h1>
+        <h1 className="text-2xl font-bold text-white tracking-tight">Abonnement ScolaTech</h1>
         <p className="text-primary-300 text-sm mt-0.5">Factures et paiements de l&apos;abonnement de votre établissement (lecture seule).</p>
       </div>
 
@@ -152,7 +152,7 @@ export default async function SchoolBillingPage() {
           )}
 
           <p className="text-xs text-gray-400">
-            Pour toute question sur votre abonnement, contactez l&apos;équipe EduSen. Les paiements sont
+            Pour toute question sur votre abonnement, contactez l&apos;équipe ScolaTech. Les paiements sont
             enregistrés manuellement par l&apos;administrateur de la plateforme.
           </p>
         </>

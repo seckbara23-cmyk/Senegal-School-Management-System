@@ -74,7 +74,7 @@ export function HelpGuide({
         </section>
       ))}
 
-      <p className="text-center text-xs text-gray-400">EduSen — Guide intégré · v1</p>
+      <p className="text-center text-xs text-gray-400">ScolaTech — Guide intégré · v1</p>
     </div>
   )
 }

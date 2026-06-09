@@ -255,11 +255,11 @@ const SECTIONS: HelpSection[] = [
   },
   {
     id: 'abonnement',
-    title: 'Abonnement EduSen',
+    title: 'Abonnement ScolaTech',
     body: (
       <>
         <p><strong>Accès :</strong> <code>/school/billing</code> (lecture seule).</p>
-        <p>Factures et paiements de l&apos;abonnement de votre établissement <strong>auprès d&apos;EduSen</strong>. À ne pas confondre avec les frais de scolarité payés par les familles (module Finance).</p>
+        <p>Factures et paiements de l&apos;abonnement de votre établissement <strong>auprès d&apos;ScolaTech</strong>. À ne pas confondre avec les frais de scolarité payés par les familles (module Finance).</p>
       </>
     ),
   },
@@ -268,7 +268,7 @@ const SECTIONS: HelpSection[] = [
     title: 'Analyses & rapports',
     body: (
       <>
-        <p>EduSen n&apos;a pas de module « Analytics » séparé. Les analyses se trouvent dans :</p>
+        <p>ScolaTech n&apos;a pas de module « Analytics » séparé. Les analyses se trouvent dans :</p>
         <ul>
           <li>Tableau de bord (KPI) — <code>/school</code></li>
           <li>Rapport financier — <code>/school/finance/reports</code></li>
@@ -319,7 +319,7 @@ const SECTIONS: HelpSection[] = [
         <tbody>
           <tr><td>Modules vides</td><td>Activez une année scolaire.</td></tr>
           <tr><td>« Matricule déjà utilisé »</td><td>Choisissez un numéro d&apos;admission unique.</td></tr>
-          <tr><td>« Limite atteinte » (élèves/enseignants)</td><td>Plafond de la formule ; contactez EduSen.</td></tr>
+          <tr><td>« Limite atteinte » (élèves/enseignants)</td><td>Plafond de la formule ; contactez ScolaTech.</td></tr>
           <tr><td>« Séance déjà existante »</td><td>Une seule séance par classe/date ; ouvrez l&apos;existante.</td></tr>
           <tr><td>Publication d&apos;examen bloquée</td><td>Session « Terminée » + 100 % des notes.</td></tr>
           <tr><td>Paiement refusé</td><td>Le montant dépasse le solde restant.</td></tr>
