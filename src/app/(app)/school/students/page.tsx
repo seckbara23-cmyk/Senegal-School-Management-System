@@ -58,7 +58,7 @@ function buildUrl(q: string, page: number): string {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 type Props = {
-  searchParams: { q?: string | string[]; page?: string | string[] }
+  searchParams: { q?: string | string[]; page?: string | string[]; created?: string; skipped?: string; enrolled?: string }
 }
 
 export default async function StudentsPage({ searchParams }: Props) {
@@ -92,6 +92,16 @@ export default async function StudentsPage({ searchParams }: Props) {
   const page    = Math.max(1, Number(rawPage) || 1)
   const from    = (page - 1) * PAGE_SIZE
   const to      = from + PAGE_SIZE - 1
+
+  // CSV-import success banner.
+  const created = searchParams.created !== undefined ? Number(searchParams.created) : null
+  const skipped = searchParams.skipped !== undefined ? Number(searchParams.skipped) : 0
+  const enrolled = searchParams.enrolled !== undefined ? Number(searchParams.enrolled) : 0
+  const importMessage = created !== null && Number.isFinite(created)
+    ? `${created} élève${created !== 1 ? 's' : ''} importé${created !== 1 ? 's' : ''} avec succès` +
+      (enrolled > 0 ? ` et inscrit${enrolled !== 1 ? 's' : ''} en classe` : '') +
+      (skipped > 0 ? `, ${skipped} ignoré${skipped !== 1 ? 's' : ''}` : '') + '.'
+    : ''
 
   // ── Supabase query (search + pagination) ─────────────────────────────────
   // school_id is ALWAYS taken from the DB membership — never from the URL.
@@ -148,6 +158,15 @@ export default async function StudentsPage({ searchParams }: Props) {
             </span>
           )}
           <a
+            href="/school/students/import"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-sand-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-sand-50 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 transition-colors"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            Importer
+          </a>
+          <a
             href="/school/students/new"
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 transition-colors"
           >
@@ -158,6 +177,13 @@ export default async function StudentsPage({ searchParams }: Props) {
           </a>
         </div>
       </div>
+
+      {/* ── Import success banner ─────────────────────────────────────────── */}
+      {importMessage && (
+        <div role="status" className="rounded-lg border border-primary-200 bg-primary-50 p-4">
+          <p className="text-sm font-medium text-primary-800">{importMessage}</p>
+        </div>
+      )}
 
       {/* ── Search form ───────────────────────────────────────────────────── */}
       <form

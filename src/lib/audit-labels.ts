@@ -62,6 +62,9 @@ export const ACTION_LABELS: Record<string, string> = {
   // Personnes
   student_created:               'Élève créé',
   student_updated:               'Élève modifié',
+  students_bulk_created:         'Élèves importés en lot',
+  student_transferred:           'Élève transféré',
+  class_promoted:                'Classe promue',
   teacher_created:               'Enseignant créé',
   teacher_updated:               'Enseignant modifié',
   teacher_status_changed:        'Statut enseignant modifié',
@@ -110,7 +113,7 @@ export const ACTION_LABELS: Record<string, string> = {
 
 export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Finance',              actions: ['fee_item_created', 'invoice_created', 'payment_recorded', 'bulk_invoices_created', 'invoice_cancelled'] },
-  { label: 'Classes & inscriptions', actions: ['class_created', 'class_updated', 'class_deleted', 'classes_bulk_created', 'students_enrolled', 'enrollment_withdrawn'] },
+  { label: 'Classes & inscriptions', actions: ['class_created', 'class_updated', 'class_deleted', 'classes_bulk_created', 'students_enrolled', 'enrollment_withdrawn', 'student_transferred', 'class_promoted'] },
   { label: 'Admissions',           actions: ['admission_created', 'admission_status_changed', 'admission_converted'] },
   { label: 'Documents',            actions: ['document_uploaded', 'document_deleted'] },
   { label: 'Années scolaires',     actions: ['academic_year_created', 'academic_year_updated', 'academic_year_status_changed'] },
@@ -118,7 +121,7 @@ export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Emploi du temps',      actions: ['timetable_slot_created', 'timetable_slot_updated', 'timetable_slot_deleted'] },
   { label: 'Sessions d’examen',    actions: ['exam_session_created', 'exam_session_updated', 'exam_session_activated', 'exam_session_completed', 'exam_session_archived', 'exam_results_published', 'exam_results_unpublished'] },
   { label: 'Annonces',             actions: ['announcement_published'] },
-  { label: 'Personnes',            actions: ['student_created', 'student_updated', 'teacher_created', 'teacher_updated', 'teacher_status_changed', 'parent_created', 'parent_updated', 'parent_status_changed', 'parent_student_linked', 'parent_student_unlinked'] },
+  { label: 'Personnes',            actions: ['student_created', 'student_updated', 'students_bulk_created', 'teacher_created', 'teacher_updated', 'teacher_status_changed', 'parent_created', 'parent_updated', 'parent_status_changed', 'parent_student_linked', 'parent_student_unlinked'] },
   { label: 'Présences (admin)',    actions: ['admin_attendance_session_created', 'admin_attendance_records_saved'] },
   { label: 'Portail enseignant',   actions: ['teacher_attendance_session_created', 'teacher_attendance_records_saved', 'teacher_assessment_created', 'teacher_grades_saved'] },
   { label: 'Comptes & rôles',      actions: ['user_created', 'role_linked', 'role_unlinked', 'user_deactivated', 'user_reactivated', 'password_reset_link_generated'] },

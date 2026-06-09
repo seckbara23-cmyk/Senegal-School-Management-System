@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { formatServerActionError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE, canAddStudent, logLimitBlocked, STUDENT_LIMIT_REACHED_MESSAGE } from '@/lib/tenant'
+import { parseCsv, readStudentRows } from '@/lib/parse-csv'
 
 // Unique-constraint name → friendly field message (see migration 002).
 const STUDENT_CONSTRAINTS = {
@@ -313,4 +314,124 @@ export async function updateStudent(
   })
 
   redirect(`/school/students/${studentId}`)
+}
+
+// ─── Import students from CSV ──────────────────────────────────────────────────
+// Blocked entirely if any row is structurally invalid. Duplicates (existing
+// admission_number, or repeated in-file) are skipped, not errors. Optionally
+// enrolls every imported student into a chosen class. School resolved server-side.
+
+export type ImportStudentsState = {
+  errors?: { _form?: string[] }
+  rowErrors?: { line: number; message: string }[]
+}
+
+export async function importStudentsFromCsv(
+  _prevState: ImportStudentsState,
+  formData: FormData,
+): Promise<ImportStudentsState> {
+  const supabase = createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { errors: { _form: ['Non autorisé.'] } }
+
+  const { data: memberships } = await supabase
+    .from('school_memberships')
+    .select('school_id')
+    .eq('user_id', user.id)
+    .eq('role', 'school_admin')
+    .eq('status', 'active')
+  if (!memberships || memberships.length === 0) return { errors: { _form: ['Non autorisé.'] } }
+  const schoolId = memberships[0].school_id as string
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
+  const csvText = String(formData.get('csv_text') ?? '')
+  if (!csvText.trim()) return { errors: { _form: ['Aucune donnée à importer. Choisissez un fichier CSV.'] } }
+
+  const rows = readStudentRows(parseCsv(csvText))
+  if (rows.length === 0) return { errors: { _form: ['Le fichier ne contient aucun élève.'] } }
+
+  const rowErrors = rows.filter((r) => r.error).map((r) => ({ line: r.line, message: `Ligne ${r.line} : ${r.error}` }))
+  if (rowErrors.length > 0) {
+    return { errors: { _form: ["Le fichier contient des erreurs. Corrigez-les puis réessayez (aucun élève n'a été importé)."] }, rowErrors }
+  }
+
+  // Optional class assignment — verify it belongs to this school (never trusted).
+  let enrollClass: { id: string; academic_year_id: string } | null = null
+  const classIdRaw = (formData.get('class_id') as string | null)?.trim()
+  if (classIdRaw) {
+    const { data: cls } = await supabase
+      .from('classes').select('id, academic_year_id').eq('id', classIdRaw).eq('school_id', schoolId).maybeSingle()
+    if (!cls) return { errors: { _form: ['Classe sélectionnée introuvable.'] } }
+    enrollClass = cls as { id: string; academic_year_id: string }
+  }
+
+  // Dedup by admission_number (existing in school + in-file).
+  const { data: existing } = await supabase.from('students').select('admission_number').eq('school_id', schoolId)
+  const seen = new Set(((existing ?? []) as { admission_number: string }[]).map((s) => s.admission_number.trim().toLowerCase()))
+
+  const toCreate: { school_id: string; first_name: string; last_name: string; admission_number: string; gender: string | null; date_of_birth: string | null; status: string }[] = []
+  let skipped = 0
+  for (const r of rows) {
+    const key = r.admission_number.toLowerCase()
+    if (seen.has(key)) { skipped++; continue }
+    seen.add(key)
+    toCreate.push({
+      school_id:        schoolId,
+      first_name:       r.first_name,
+      last_name:        r.last_name,
+      admission_number: r.admission_number,
+      gender:           r.gender || null,
+      date_of_birth:    r.date_of_birth || null,
+      status:           r.status || 'active',
+    })
+  }
+
+  let created = 0
+  let enrolled = 0
+  if (toCreate.length > 0) {
+    const { data: inserted, error } = await supabase.from('students').insert(toCreate).select('id')
+    if (error) {
+      return {
+        errors: {
+          _form: [formatServerActionError(error, {
+            action: 'importStudentsFromCsv', schoolId, userId: user.id,
+            entityIds: { count: toCreate.length },
+            constraints: STUDENT_CONSTRAINTS,
+            fallback: "Erreur lors de l'import des élèves. Veuillez réessayer.",
+          })._form?.[0] ?? "Erreur lors de l'import des élèves. Veuillez réessayer."],
+        },
+      }
+    }
+    const newIds = ((inserted ?? []) as { id: string }[]).map((s) => s.id)
+    created = newIds.length
+
+    if (enrollClass && newIds.length > 0) {
+      const now = new Date().toISOString()
+      const enrollRows = newIds.map((id) => ({
+        school_id:        schoolId,
+        student_id:       id,
+        class_id:         enrollClass!.id,
+        academic_year_id: enrollClass!.academic_year_id,
+        status:           'active',
+        enrolled_at:      now,
+      }))
+      // Best-effort: students are already created; enrollment failure is non-fatal.
+      const { error: enrErr } = await supabase
+        .from('student_class_enrollments')
+        .upsert(enrollRows, { onConflict: 'student_id,class_id,academic_year_id' })
+      if (!enrErr) enrolled = enrollRows.length
+    }
+
+    await logAuditEvent(supabase, {
+      actorId: user.id, actorEmail: user.email, schoolId,
+      action: 'students_bulk_created', resourceType: 'student', resourceId: schoolId,
+      metadata: { source: 'import', created, skipped, enrolled, class_id: enrollClass?.id ?? null },
+    })
+  }
+
+  redirect(`/school/students?created=${created}&skipped=${skipped}${enrolled ? `&enrolled=${enrolled}` : ''}`)
 }
