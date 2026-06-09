@@ -93,6 +93,83 @@ export default async function TeacherDashboard() {
   // Count unique classes
   const uniqueClassIds = new Set(classSubjects.map((cs) => cs.class_id))
 
+  // ── Today's operational widgets ──────────────────────────────────────────────
+  const dow = ((new Date().getDay() + 6) % 7) + 1 // Mon=1 … Sun=7
+  const todayISO = new Date().toISOString().slice(0, 10)
+  const todayLabel = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+
+  // Active year (drives the timetable scope).
+  const { data: ayData } = await supabase
+    .from('academic_years').select('id').eq('school_id', schoolId).eq('is_active', true).maybeSingle()
+  const activeYearId = (ayData as { id: string } | null)?.id ?? null
+
+  // Today's timetable slots for this teacher.
+  type SlotRow = {
+    id: string; start_time: string; end_time: string; room: string | null; class_id: string
+    classes: { name: string; section: string | null } | null
+    class_subjects: { subjects: { name: string } | null } | null
+  }
+  let todaySlots: SlotRow[] = []
+  if (activeYearId) {
+    const { data } = await supabase
+      .from('timetable_slots')
+      .select('id, start_time, end_time, room, class_id, classes!class_id(name, section), class_subjects!class_subject_id(subjects!subject_id(name))')
+      .eq('school_id', schoolId).eq('teacher_id', teacher.id).eq('academic_year_id', activeYearId).eq('day_of_week', dow)
+      .order('start_time', { ascending: true })
+    todaySlots = (data ?? []) as unknown as SlotRow[]
+  }
+  const hhmm = (t: string) => t.slice(0, 5)
+  const classLabelOf = (c: { name: string; section: string | null } | null) => (c ? [c.name, c.section].filter(Boolean).join(' ') : '—')
+
+  // Pending attendance: classes the teacher teaches today with no session today.
+  const todayClassIds = Array.from(new Set(todaySlots.map((s) => s.class_id)))
+  let pendingAttendance: { class_id: string; label: string }[] = []
+  if (todayClassIds.length > 0) {
+    const { data: sess } = await supabase
+      .from('attendance_sessions').select('class_id')
+      .eq('school_id', schoolId).eq('session_date', todayISO).in('class_id', todayClassIds)
+    const done = new Set(((sess ?? []) as { class_id: string }[]).map((s) => s.class_id))
+    const labelByClass = new Map<string, string>()
+    for (const s of todaySlots) labelByClass.set(s.class_id, classLabelOf(s.classes))
+    pendingAttendance = todayClassIds.filter((id) => !done.has(id)).map((id) => ({ class_id: id, label: labelByClass.get(id) ?? '—' }))
+  }
+
+  // Pending grading: the teacher's assessments not fully graded.
+  const csClassMap = new Map(classSubjects.map((cs) => [cs.id, cs.class_id]))
+  type PendingAssessment = { id: string; title: string; label: string }
+  let pendingGrading: PendingAssessment[] = []
+  if (assignedClassSubjectIds.length > 0) {
+    const { data: allAssess } = await supabase
+      .from('assessments')
+      .select('id, title, class_subject_id, class_subjects!class_subject_id(classes!class_id(name), subjects!subject_id(name))')
+      .eq('school_id', schoolId).in('class_subject_id', assignedClassSubjectIds)
+    type A2 = { id: string; title: string; class_subject_id: string; class_subjects: { classes: { name: string } | null; subjects: { name: string } | null } | null }
+    const allAssessments = (allAssess ?? []) as unknown as A2[]
+    const assessmentIds = allAssessments.map((a) => a.id)
+    const classIds = Array.from(new Set(allAssessments.map((a) => csClassMap.get(a.class_subject_id)).filter(Boolean) as string[]))
+
+    const enrolledByClass = new Map<string, number>()
+    if (classIds.length > 0) {
+      const { data: enr } = await supabase
+        .from('student_class_enrollments').select('class_id')
+        .eq('school_id', schoolId).eq('status', 'active').in('class_id', classIds)
+      for (const e of (enr ?? []) as { class_id: string }[]) enrolledByClass.set(e.class_id, (enrolledByClass.get(e.class_id) ?? 0) + 1)
+    }
+    const gradedByAssessment = new Map<string, number>()
+    if (assessmentIds.length > 0) {
+      const { data: g } = await supabase.from('grades').select('assessment_id').eq('school_id', schoolId).in('assessment_id', assessmentIds)
+      for (const r of (g ?? []) as { assessment_id: string }[]) gradedByAssessment.set(r.assessment_id, (gradedByAssessment.get(r.assessment_id) ?? 0) + 1)
+    }
+    pendingGrading = allAssessments
+      .filter((a) => {
+        const classId = csClassMap.get(a.class_subject_id)
+        const expected = classId ? (enrolledByClass.get(classId) ?? 0) : 0
+        return expected > 0 && (gradedByAssessment.get(a.id) ?? 0) < expected
+      })
+      .map((a) => ({ id: a.id, title: a.title, label: `${a.class_subjects?.classes?.name ?? ''} · ${a.class_subjects?.subjects?.name ?? ''}` }))
+      .slice(0, 8)
+  }
+
   return (
     <div className="space-y-6 pb-8">
 
@@ -125,6 +202,77 @@ export default async function TeacherDashboard() {
           </a>
         ))}
       </div>
+
+      {/* ── Today: timetable ─────────────────────────────────────────────────── */}
+      {assignedClassSubjectIds.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">
+            Aujourd&apos;hui — <span className="capitalize">{todayLabel}</span>
+          </h2>
+          <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
+            {todaySlots.length === 0 ? (
+              <p className="px-5 py-6 text-center text-sm text-gray-400">Aucun cours programmé aujourd&apos;hui.</p>
+            ) : (
+              <ul className="divide-y divide-sand-100">
+                {todaySlots.map((s) => (
+                  <li key={s.id} className="flex items-center gap-4 px-5 py-3">
+                    <span className="w-24 shrink-0 font-mono text-xs text-gray-500">{hhmm(s.start_time)}–{hhmm(s.end_time)}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-gray-900">{s.class_subjects?.subjects?.name ?? 'Matière'}</p>
+                      <p className="truncate text-xs text-gray-500">{classLabelOf(s.classes)}{s.room ? ` · ${s.room}` : ''}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ── Pending attendance ───────────────────────────────────────────────── */}
+      {pendingAttendance.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-amber-600">
+            Présences en attente
+          </h2>
+          <div className="space-y-2">
+            {pendingAttendance.map((p) => (
+              <a
+                key={p.class_id}
+                href="/teacher/attendance/new"
+                className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-5 py-3.5 shadow-sm transition-colors hover:bg-amber-100"
+              >
+                <span className="text-sm font-medium text-amber-900">{p.label}</span>
+                <span className="shrink-0 text-xs font-semibold text-amber-700">Marquer les présences →</span>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── Pending grading ──────────────────────────────────────────────────── */}
+      {pendingGrading.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">
+            Notes en attente
+          </h2>
+          <div className="space-y-2">
+            {pendingGrading.map((a) => (
+              <a
+                key={a.id}
+                href={`/teacher/grades/${a.id}`}
+                className="flex items-center justify-between gap-3 rounded-xl border border-sand-200 bg-white px-5 py-3.5 shadow-sm transition-colors hover:border-primary-200 hover:bg-primary-50"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-gray-900">{a.title}</p>
+                  <p className="truncate text-xs text-gray-500">{a.label}</p>
+                </div>
+                <span className="shrink-0 text-xs font-semibold text-primary-700">Saisir les notes →</span>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ── No assignments state ─────────────────────────────────────────────── */}
       {assignedClassSubjectIds.length === 0 && (
