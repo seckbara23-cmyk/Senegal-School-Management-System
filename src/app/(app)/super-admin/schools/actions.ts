@@ -7,6 +7,7 @@ import { redirect }          from 'next/navigation'
 import { z }                 from 'zod'
 import { logSupabaseError }  from '@/lib/errors'
 import { logAuditEvent }     from '@/lib/audit'
+import { preloadDefaultSubjectsForSchool } from '@/lib/subject-templates'
 
 // ─── Super-admin guard ─────────────────────────────────────────────────────────
 // Returns the authenticated super_admin actor, or null when not authorised.
@@ -198,6 +199,22 @@ export async function createSchoolWithAdmin(
     }
   } catch (e) {
     logSupabaseError(e as { message?: string }, { action: 'createSchoolWithAdmin:subscription', userId: actor.id, entityIds: { schoolId } })
+  }
+
+  // ── Step 4b: preload the default subject catalogue (best-effort) ────────────
+  // schoolId is the server-created id (never client-supplied). Failures never
+  // block school creation.
+  try {
+    const res = await preloadDefaultSubjectsForSchool(admin, schoolId)
+    if (res.created > 0) {
+      await logAuditEvent(admin, {
+        actorId: actor.id, actorEmail: actor.email, schoolId,
+        action: 'subjects_bulk_created', resourceType: 'subject', resourceId: schoolId,
+        metadata: { source: 'preload_on_create', created: res.created, skipped: res.skipped },
+      })
+    }
+  } catch (e) {
+    logSupabaseError(e as { message?: string }, { action: 'createSchoolWithAdmin:preloadSubjects', userId: actor.id, entityIds: { schoolId } })
   }
 
   // ── Step 5: audit events (best-effort via shared helper) ────────────────────
