@@ -422,31 +422,32 @@ export async function recordPayment(
     .lt('paid_at',  `${payYear + 1}-01-01T00:00:00.000Z`)
   const receiptNumber = `REC-${payYear}-${String((paymentCount ?? 0) + 1).padStart(6, '0')}`
 
-  // Insert payment
-  const { data: paymentRow, error: paymentError } = await supabase
-    .from('student_payments')
-    .insert({
-      school_id:      schoolId,
-      student_id:     inv.student_id,
-      invoice_id:     invoice_id,
-      amount:         amount,
-      payment_method: payment_method,
-      reference:      reference ?? null,
-      notes:          notes ?? null,
-      receipt_number: receiptNumber,
-      created_by:     user.id,
-    })
-    .select('id')
-    .single()
+  // Record the payment atomically: the RPC locks the invoice, re-validates, and
+  // updates amount_paid + status in one transaction (migration 042). This fixes
+  // the lost-update race of a separate insert + read-modify-write.
+  const { data: rpcData, error: rpcError } = await supabase.rpc('record_student_payment', {
+    p_invoice_id:     invoice_id,
+    p_amount:         amount,
+    p_payment_method: payment_method,
+    p_receipt_number: receiptNumber,
+    p_reference:      reference ?? null,
+    p_notes:          notes ?? null,
+  })
 
-  if (paymentError || !paymentRow) {
-    // receipt_number is generated from a COUNT and can collide under concurrency.
-    if (paymentError?.code === '23505') {
-      logSupabaseError(paymentError, { action: 'recordPayment', schoolId, userId: user.id, entityIds: { invoice_id, receiptNumber } })
+  const rpcRow = (rpcData as { payment_id: string; new_status: string }[] | null)?.[0]
+  if (rpcError || !rpcRow) {
+    const msg = rpcError?.message ?? ''
+    if (rpcError?.code === '23505') {
+      logSupabaseError(rpcError, { action: 'recordPayment', schoolId, userId: user.id, entityIds: { invoice_id, receiptNumber } })
       return { errors: { _form: ['Numéro de reçu déjà utilisé. Veuillez réessayer.'] } }
     }
+    if (msg.includes('amount_exceeds_balance')) return { errors: { amount: ['Le solde a changé entre-temps. Veuillez réessayer.'] } }
+    if (msg.includes('invoice_paid'))           return { errors: { _form: ['Cette facture est déjà réglée.'] } }
+    if (msg.includes('invoice_cancelled'))      return { errors: { _form: ['Cette facture est annulée.'] } }
+    if (msg.includes('school_readonly'))        return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+    if (msg.includes('forbidden'))              return { errors: { _form: ['Non autorisé.'] } }
     return {
-      errors: formatServerActionError(paymentError, {
+      errors: formatServerActionError(rpcError, {
         action: 'recordPayment',
         schoolId,
         userId: user.id,
@@ -456,20 +457,8 @@ export async function recordPayment(
     }
   }
 
-  const paymentId = (paymentRow as { id: string }).id
-
-  // Recompute invoice status
-  const newAmountPaid = inv.amount_paid + amount
-  const newStatus =
-    newAmountPaid >= inv.total_amount ? 'paid'
-    : newAmountPaid > 0              ? 'partial'
-    :                                  'unpaid'
-
-  await supabase
-    .from('student_invoices')
-    .update({ amount_paid: newAmountPaid, status: newStatus })
-    .eq('id', invoice_id)
-    .eq('school_id', schoolId)
+  const paymentId = rpcRow.payment_id
+  const newStatus = rpcRow.new_status
 
   await logAuditEvent(supabase, {
     actorId: user.id, actorEmail: user.email, schoolId,
@@ -639,14 +628,14 @@ export async function cancelInvoice(
 
   const { data: raw } = await supabase
     .from('student_invoices')
-    .select('id, status')
+    .select('id, status, amount_paid')
     .eq('id', invoice_id)
     .eq('school_id', schoolId)
     .maybeSingle()
 
   if (!raw) return { errors: { _form: ['Facture introuvable.'] } }
 
-  type InvRow = { id: string; status: string }
+  type InvRow = { id: string; status: string; amount_paid: number }
   const inv = raw as InvRow
 
   if (inv.status === 'paid') {
@@ -654,6 +643,11 @@ export async function cancelInvoice(
   }
   if (inv.status === 'cancelled') {
     return { errors: { _form: ['Cette facture est déjà annulée.'] } }
+  }
+  // Block cancelling an invoice that already has payments — cancelling would
+  // orphan those payments and skew reconciliation. Reverse the payments first.
+  if (inv.amount_paid > 0) {
+    return { errors: { _form: ['Cette facture a déjà des paiements enregistrés et ne peut pas être annulée. Annulez ou remboursez d\'abord les paiements.'] } }
   }
 
   const { error } = await supabase

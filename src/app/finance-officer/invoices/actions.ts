@@ -120,31 +120,33 @@ export async function recordFinanceOfficerPayment(
     .lt('paid_at',  `${payYear + 1}-01-01T00:00:00.000Z`)
   const receiptNumber = `REC-${payYear}-${String((paymentCount ?? 0) + 1).padStart(6, '0')}`
 
-  // Insert the payment (RLS: "Finance officers can record payments").
-  const { data: paymentRow, error: paymentError } = await supabase
-    .from('student_payments')
-    .insert({
-      school_id:      schoolId,
-      student_id:     inv.student_id,
-      invoice_id:     invoice_id,
-      amount:         amount,
-      payment_method: payment_method,
-      reference:      reference ?? null,
-      notes:          notes ?? null,
-      receipt_number: receiptNumber,
-      paid_at:        paidAtIso,
-      created_by:     user.id,
-    })
-    .select('id')
-    .single()
+  // Record the payment atomically via the shared RPC (migration 042): it locks
+  // the invoice, re-validates, inserts the payment and updates amount_paid +
+  // status in one transaction — fixing the lost-update race.
+  const { data: rpcData, error: rpcError } = await supabase.rpc('record_student_payment', {
+    p_invoice_id:     invoice_id,
+    p_amount:         amount,
+    p_payment_method: payment_method,
+    p_receipt_number: receiptNumber,
+    p_reference:      reference ?? null,
+    p_notes:          notes ?? null,
+    p_paid_at:        paidAtIso,
+  })
 
-  if (paymentError || !paymentRow) {
-    if (paymentError?.code === '23505') {
-      logSupabaseError(paymentError, { action: 'recordFinanceOfficerPayment', schoolId, userId: user.id, entityIds: { invoice_id, receiptNumber } })
+  const rpcRow = (rpcData as { payment_id: string; new_status: string }[] | null)?.[0]
+  if (rpcError || !rpcRow) {
+    const msg = rpcError?.message ?? ''
+    if (rpcError?.code === '23505') {
+      logSupabaseError(rpcError, { action: 'recordFinanceOfficerPayment', schoolId, userId: user.id, entityIds: { invoice_id, receiptNumber } })
       return { errors: { _form: ['Numéro de reçu déjà utilisé. Veuillez réessayer.'] } }
     }
+    if (msg.includes('amount_exceeds_balance')) return { errors: { amount: ['Le solde a changé entre-temps. Veuillez réessayer.'] } }
+    if (msg.includes('invoice_paid'))           return { errors: { _form: ['Cette facture est déjà réglée.'] } }
+    if (msg.includes('invoice_cancelled'))      return { errors: { _form: ['Cette facture est annulée.'] } }
+    if (msg.includes('school_readonly'))        return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+    if (msg.includes('forbidden'))              return { errors: { _form: ['Non autorisé.'] } }
     return {
-      errors: formatServerActionError(paymentError, {
+      errors: formatServerActionError(rpcError, {
         action: 'recordFinanceOfficerPayment',
         schoolId,
         userId: user.id,
@@ -154,20 +156,8 @@ export async function recordFinanceOfficerPayment(
     }
   }
 
-  const paymentId = (paymentRow as { id: string }).id
-
-  // Recompute invoice status (RLS: "Finance officers can update invoice payment status").
-  const newAmountPaid = inv.amount_paid + amount
-  const newStatus =
-    newAmountPaid >= inv.total_amount ? 'paid'
-    : newAmountPaid > 0              ? 'partial'
-    :                                  'unpaid'
-
-  await supabase
-    .from('student_invoices')
-    .update({ amount_paid: newAmountPaid, status: newStatus })
-    .eq('id', invoice_id)
-    .eq('school_id', schoolId)
+  const paymentId = rpcRow.payment_id
+  const newStatus = rpcRow.new_status
 
   await logAuditEvent(supabase, {
     actorId: user.id, actorEmail: user.email, schoolId,
