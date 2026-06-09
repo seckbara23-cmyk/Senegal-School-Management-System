@@ -8,6 +8,8 @@ import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 import { notifyAssessmentCreated } from '@/lib/notification-events'
 import { validateExamSessionForAssessment } from '@/lib/exam-sessions'
+import { getSubjectTemplate, preloadDefaultSubjectsForSchool } from '@/lib/subject-templates'
+import { parseCsv, readSubjectRows } from '@/lib/parse-csv'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -210,6 +212,152 @@ export async function deleteSubject(formData: FormData): Promise<void> {
   })
 
   redirect('/school/academics/subjects')
+}
+
+// ── Preload default subject catalogue ─────────────────────────────────────────
+// One-click button. School is resolved from the authenticated admin context;
+// only missing subjects are inserted (case-insensitive), existing ones are
+// untouched. Audited.
+
+export async function preloadDefaultSubjects(): Promise<void> {
+  const { schoolId, actor } = await getSchoolId()
+  const supabase = createClient()
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect('/school/academics/subjects?error=readonly')
+  }
+
+  const res = await preloadDefaultSubjectsForSchool(supabase, schoolId)
+  if (res.failed) {
+    redirect('/school/academics/subjects?error=preload')
+  }
+  if (res.created > 0) {
+    await logAuditEvent(supabase, {
+      actorId: actor.id, actorEmail: actor.email, schoolId,
+      action: 'subjects_bulk_created', resourceType: 'subject', resourceId: schoolId,
+      metadata: { source: 'preload', created: res.created, skipped: res.skipped },
+    })
+  }
+  redirect(`/school/academics/subjects?loaded=1&created=${res.created}&skipped=${res.skipped}`)
+}
+
+// ── Bulk create from a subject template ───────────────────────────────────────
+
+export type SubjectTemplateState = { errors?: { _form?: string[] } }
+
+export async function createSubjectsFromTemplate(
+  _prevState: SubjectTemplateState,
+  formData: FormData,
+): Promise<SubjectTemplateState> {
+  const { schoolId, actor } = await getSchoolId()
+  const supabase = createClient()
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
+  const template = getSubjectTemplate(String(formData.get('template_key') ?? ''))
+  if (!template) return { errors: { _form: ['Modèle invalide.'] } }
+
+  const { data: existing } = await supabase.from('subjects').select('name').eq('school_id', schoolId)
+  const have = new Set(((existing ?? []) as { name: string }[]).map((s) => s.name.trim().toLowerCase()))
+
+  const toCreate = template.subjects.filter((s) => !have.has(s.name.toLowerCase()))
+  const skipped = template.subjects.length - toCreate.length
+
+  let created = 0
+  if (toCreate.length > 0) {
+    const rows = toCreate.map((s) => ({ school_id: schoolId, name: s.name, code: s.code, coefficient: s.coefficient }))
+    const { data, error } = await supabase.from('subjects').insert(rows).select('id')
+    if (error) {
+      return {
+        errors: {
+          _form: [formatServerActionError(error, {
+            action: 'createSubjectsFromTemplate', schoolId, userId: actor.id,
+            entityIds: { template: template.key, count: toCreate.length },
+            fallback: 'Erreur lors de la création des matières. Veuillez réessayer.',
+          })._form?.[0] ?? 'Erreur lors de la création des matières.'],
+        },
+      }
+    }
+    created = (data ?? []).length
+    await logAuditEvent(supabase, {
+      actorId: actor.id, actorEmail: actor.email, schoolId,
+      action: 'subjects_bulk_created', resourceType: 'subject', resourceId: schoolId,
+      metadata: { source: 'template', template: template.key, created, skipped },
+    })
+  }
+
+  redirect(`/school/academics/subjects?created=${created}&skipped=${skipped}`)
+}
+
+// ── Import subjects from CSV ───────────────────────────────────────────────────
+// Blocked entirely if any row is structurally invalid (safer than partial).
+// Duplicates (already present, or repeated in-file) are skipped, not errors.
+
+export type SubjectImportState = {
+  errors?: { _form?: string[] }
+  rowErrors?: { line: number; message: string }[]
+}
+
+export async function importSubjectsFromCsv(
+  _prevState: SubjectImportState,
+  formData: FormData,
+): Promise<SubjectImportState> {
+  const { schoolId, actor } = await getSchoolId()
+  const supabase = createClient()
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
+  const csvText = String(formData.get('csv_text') ?? '')
+  if (!csvText.trim()) return { errors: { _form: ['Aucune donnée à importer. Choisissez un fichier CSV.'] } }
+
+  const rows = readSubjectRows(parseCsv(csvText))
+  if (rows.length === 0) return { errors: { _form: ['Le fichier ne contient aucune matière.'] } }
+
+  const rowErrors = rows.filter((r) => r.error).map((r) => ({ line: r.line, message: `Ligne ${r.line} : ${r.error}` }))
+  if (rowErrors.length > 0) {
+    return { errors: { _form: ["Le fichier contient des erreurs. Corrigez-les puis réessayez (aucune matière n'a été importée)."] }, rowErrors }
+  }
+
+  const { data: existing } = await supabase.from('subjects').select('name').eq('school_id', schoolId)
+  const seen = new Set(((existing ?? []) as { name: string }[]).map((s) => s.name.trim().toLowerCase()))
+
+  const toCreate: { school_id: string; name: string; code: string | null; coefficient: number | null }[] = []
+  let skipped = 0
+  for (const r of rows) {
+    const key = r.name.toLowerCase()
+    if (seen.has(key)) { skipped++; continue }
+    seen.add(key)
+    const coef = r.coefficient ? Number(r.coefficient.replace(',', '.')) : null
+    toCreate.push({ school_id: schoolId, name: r.name, code: r.code || null, coefficient: coef })
+  }
+
+  let created = 0
+  if (toCreate.length > 0) {
+    const { data, error } = await supabase.from('subjects').insert(toCreate).select('id')
+    if (error) {
+      return {
+        errors: {
+          _form: [formatServerActionError(error, {
+            action: 'importSubjectsFromCsv', schoolId, userId: actor.id,
+            entityIds: { count: toCreate.length },
+            fallback: "Erreur lors de l'import des matières. Veuillez réessayer.",
+          })._form?.[0] ?? "Erreur lors de l'import des matières."],
+        },
+      }
+    }
+    created = (data ?? []).length
+    await logAuditEvent(supabase, {
+      actorId: actor.id, actorEmail: actor.email, schoolId,
+      action: 'subjects_bulk_created', resourceType: 'subject', resourceId: schoolId,
+      metadata: { source: 'import', created, skipped },
+    })
+  }
+
+  redirect(`/school/academics/subjects?created=${created}&skipped=${skipped}`)
 }
 
 // ── Assign subject to class ───────────────────────────────────────────────────
