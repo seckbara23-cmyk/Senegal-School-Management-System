@@ -16,6 +16,9 @@ export const ACTION_LABELS: Record<string, string> = {
   invoice_cancelled:             'Facture annulée',
   // Classes / inscriptions
   class_created:                 'Classe créée',
+  class_updated:                 'Classe modifiée',
+  class_deleted:                 'Classe supprimée',
+  classes_bulk_created:          'Classes créées en lot',
   students_enrolled:             'Élèves inscrits',
   enrollment_withdrawn:          'Inscription retirée',
   // Admissions
@@ -106,7 +109,7 @@ export const ACTION_LABELS: Record<string, string> = {
 
 export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Finance',              actions: ['fee_item_created', 'invoice_created', 'payment_recorded', 'bulk_invoices_created', 'invoice_cancelled'] },
-  { label: 'Classes & inscriptions', actions: ['class_created', 'students_enrolled', 'enrollment_withdrawn'] },
+  { label: 'Classes & inscriptions', actions: ['class_created', 'class_updated', 'class_deleted', 'classes_bulk_created', 'students_enrolled', 'enrollment_withdrawn'] },
   { label: 'Admissions',           actions: ['admission_created', 'admission_status_changed', 'admission_converted'] },
   { label: 'Documents',            actions: ['document_uploaded', 'document_deleted'] },
   { label: 'Années scolaires',     actions: ['academic_year_created', 'academic_year_updated', 'academic_year_status_changed'] },

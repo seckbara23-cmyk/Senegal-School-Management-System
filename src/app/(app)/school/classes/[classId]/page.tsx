@@ -1,6 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
-import { withdrawEnrollment } from '../actions'
+import { withdrawEnrollment, deleteClass } from '../actions'
+
+const CLASS_ERRORS: Record<string, string> = {
+  has_students: 'Cette classe contient des élèves inscrits. Elle ne peut pas être supprimée.',
+  in_use:       "Cette classe est utilisée dans l'emploi du temps ou les évaluations. Elle ne peut pas être supprimée.",
+  readonly:     'Cet établissement est en lecture seule. Les modifications sont désactivées.',
+  delete:       'Erreur lors de la suppression de la classe. Veuillez réessayer.',
+  withdraw:     "Erreur lors du retrait de l'élève. Veuillez réessayer.",
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -56,9 +64,9 @@ function DetailRow({ label, value }: { label: string; value: string | null | und
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type Props = { params: { classId: string } }
+type Props = { params: { classId: string }; searchParams: { error?: string } }
 
-export default async function ClassDetailPage({ params }: Props) {
+export default async function ClassDetailPage({ params, searchParams }: Props) {
   const supabase = createClient()
 
   const {
@@ -120,6 +128,8 @@ export default async function ClassDetailPage({ params }: Props) {
 
   const displayName = [cls.name, cls.section].filter(Boolean).join(' — ')
   const yr = cls.academic_years
+  const errorMessage = searchParams.error ? (CLASS_ERRORS[searchParams.error] ?? '') : ''
+  const canDelete = enrollments.length === 0 && classSubjects.length === 0
 
   return (
     <div className="space-y-6">
@@ -132,6 +142,12 @@ export default async function ClassDetailPage({ params }: Props) {
         <span className="mx-2 select-none" aria-hidden="true">/</span>
         <span className="truncate max-w-[16rem] font-medium text-gray-900">{displayName}</span>
       </nav>
+
+      {errorMessage && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4">
+          <p className="text-sm text-red-700">{errorMessage}</p>
+        </div>
+      )}
 
       {/* Page header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -148,6 +164,15 @@ export default async function ClassDetailPage({ params }: Props) {
           <span className="inline-flex items-center rounded-full bg-sand-100 px-3 py-1 text-sm font-medium text-gray-600">
             {yr.name}
           </span>
+          <a
+            href={`/school/classes/${cls.id}/edit`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-sand-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-sand-50 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 transition-colors"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+            </svg>
+            Modifier
+          </a>
           <a
             href={`/school/classes/${cls.id}/enroll`}
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 transition-colors"
@@ -338,6 +363,32 @@ export default async function ClassDetailPage({ params }: Props) {
           </a>
         </div>
       )}
+
+      {/* Danger zone : delete */}
+      <div className="rounded-xl border border-red-200 bg-red-50/50 px-6 py-5">
+        <h2 className="text-sm font-semibold text-red-800">Supprimer la classe</h2>
+        {canDelete ? (
+          <>
+            <p className="mt-1 text-xs text-gray-500">
+              Cette classe est vide et n&apos;est pas utilisée. Sa suppression est définitive.
+            </p>
+            <form action={deleteClass} className="mt-3">
+              <input type="hidden" name="class_id" value={cls.id} />
+              <button
+                type="submit"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 shadow-sm transition-colors hover:bg-red-600 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-1"
+              >
+                Supprimer cette classe
+              </button>
+            </form>
+          </>
+        ) : (
+          <p className="mt-1 text-xs text-gray-500">
+            Suppression impossible : cette classe contient des élèves inscrits ou des matières
+            (emploi du temps, évaluations). Retirez d&apos;abord ces éléments.
+          </p>
+        )}
+      </div>
 
       {/* Back link */}
       <a

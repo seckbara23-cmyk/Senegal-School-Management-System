@@ -23,7 +23,9 @@ type ClassRow = {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function ClassesPage() {
+type Props = { searchParams: { created?: string; skipped?: string; deleted?: string } }
+
+export default async function ClassesPage({ searchParams }: Props) {
   const supabase = createClient()
 
   const {
@@ -86,6 +88,17 @@ export default async function ClassesPage() {
 
   const totalClasses = classes.length
 
+  // Success banners from bulk create / import / delete.
+  const created = Number(searchParams.created ?? '')
+  const skipped = Number(searchParams.skipped ?? '')
+  const showCreated = Number.isFinite(created) && (searchParams.created !== undefined)
+  const successMessage = showCreated
+    ? `${created} classe${created !== 1 ? 's' : ''} créée${created !== 1 ? 's' : ''} avec succès.` +
+      (Number.isFinite(skipped) && skipped > 0 ? ` ${skipped} déjà existante${skipped !== 1 ? 's' : ''} ignorée${skipped !== 1 ? 's' : ''}.` : '')
+    : searchParams.deleted === '1'
+      ? 'Classe supprimée avec succès.'
+      : ''
+
   return (
     <div className="space-y-5">
 
@@ -110,16 +123,41 @@ export default async function ClassesPage() {
             </span>
           )}
           <a
+            href="/school/classes/templates"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-sand-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-sand-50 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 transition-colors"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+            </svg>
+            Création rapide
+          </a>
+          <a
+            href="/school/classes/import"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-sand-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-sand-50 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 transition-colors"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            Importer
+          </a>
+          <a
             href="/school/classes/new"
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 transition-colors"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
-            Ajouter une classe
+            Nouvelle classe
           </a>
         </div>
       </div>
+
+      {/* ── Success banner ──────────────────────────────────────────────────── */}
+      {successMessage && (
+        <div role="status" className="rounded-lg border border-primary-200 bg-primary-50 p-4">
+          <p className="text-sm font-medium text-primary-800">{successMessage}</p>
+        </div>
+      )}
 
       {/* ── Error ───────────────────────────────────────────────────────────── */}
       {error && (

@@ -6,6 +6,28 @@ import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
+import { getClassTemplate } from '@/lib/class-templates'
+import { parseCsv, readClassRows } from '@/lib/parse-csv'
+
+// ─── Shared admin guard ───────────────────────────────────────────────────────
+// Returns the resolved school + actor, or null when the caller is not an active
+// school admin (the caller decides how to respond).
+async function resolveAdmin() {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  const { data: membership } = await supabase
+    .from('school_memberships')
+    .select('school_id')
+    .eq('user_id', user.id)
+    .eq('role', 'school_admin')
+    .eq('status', 'active')
+    .maybeSingle()
+
+  if (!membership) return null
+  return { supabase, schoolId: (membership as { school_id: string }).school_id, actor: user }
+}
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -367,4 +389,262 @@ export async function withdrawEnrollment(formData: FormData): Promise<void> {
   })
 
   redirect(`/school/classes/${classId}`)
+}
+
+// ─── Update class ───────────────────────────────────────────────────────────────
+
+export type UpdateClassState = {
+  errors?: { name?: string[]; level?: string[]; section?: string[]; _form?: string[] }
+}
+
+export async function updateClass(
+  _prevState: UpdateClassState,
+  formData: FormData,
+): Promise<UpdateClassState> {
+  const ctx = await resolveAdmin()
+  if (!ctx) return { errors: { _form: ['Non autorisé.'] } }
+  const { supabase, schoolId, actor } = ctx
+
+  const classId = z.string().uuid().safeParse(formData.get('class_id'))
+  if (!classId.success) return { errors: { _form: ['Identifiant de classe invalide.'] } }
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
+  const parsed = ClassFieldsSchema.safeParse({
+    name:    formData.get('name'),
+    level:   formData.get('level'),
+    section: formData.get('section'),
+  })
+  if (!parsed.success) {
+    return { errors: parsed.error.flatten().fieldErrors as UpdateClassState['errors'] }
+  }
+
+  // Scope by id AND school_id — prevents cross-school edits (RLS is the 2nd layer).
+  const { error } = await supabase
+    .from('classes')
+    .update({
+      name:    parsed.data.name,
+      level:   parsed.data.level   ?? null,
+      section: parsed.data.section ?? null,
+    })
+    .eq('id', classId.data)
+    .eq('school_id', schoolId)
+
+  if (error) {
+    return {
+      errors: formatServerActionError(error, {
+        action: 'updateClass', schoolId, userId: actor.id,
+        entityIds: { classId: classId.data, name: parsed.data.name },
+        fallback: 'Erreur lors de la mise à jour de la classe. Veuillez réessayer.',
+      }) as UpdateClassState['errors'],
+    }
+  }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'class_updated', resourceType: 'class', resourceId: classId.data,
+    metadata: { name: parsed.data.name, level: parsed.data.level ?? null, section: parsed.data.section ?? null },
+  })
+
+  redirect(`/school/classes/${classId.data}`)
+}
+
+// ─── Delete class (only when safe) ────────────────────────────────────────────
+// The schema has no archive column, so we hard-delete ONLY when the class is
+// empty and unused. A class with active enrollments, attendance sessions,
+// timetable slots, or subject assignments (which carry assessments/grades) is
+// blocked with a clear French message — its dependents would otherwise be
+// cascade-deleted.
+
+export async function deleteClass(formData: FormData): Promise<void> {
+  const ctx = await resolveAdmin()
+  if (!ctx) redirect('/school/classes')
+  const { supabase, schoolId, actor } = ctx!
+
+  const parsed = z.string().uuid().safeParse(formData.get('class_id'))
+  if (!parsed.success) redirect('/school/classes')
+  const classId = parsed.data
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(`/school/classes/${classId}?error=readonly`)
+  }
+
+  // Confirm the class belongs to this school.
+  const { data: cls } = await supabase
+    .from('classes').select('id').eq('id', classId).eq('school_id', schoolId).maybeSingle()
+  if (!cls) redirect('/school/classes')
+
+  // Dependency checks (counts only — head requests).
+  const [enrollRes, attendanceRes, timetableRes, subjectsRes] = await Promise.all([
+    supabase.from('student_class_enrollments').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('class_id', classId).eq('status', 'active'),
+    supabase.from('attendance_sessions').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('class_id', classId),
+    supabase.from('timetable_slots').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('class_id', classId),
+    supabase.from('class_subjects').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('class_id', classId),
+  ])
+
+  if ((enrollRes.count ?? 0) > 0) {
+    redirect(`/school/classes/${classId}?error=has_students`)
+  }
+  if ((attendanceRes.count ?? 0) > 0 || (timetableRes.count ?? 0) > 0 || (subjectsRes.count ?? 0) > 0) {
+    redirect(`/school/classes/${classId}?error=in_use`)
+  }
+
+  const { error } = await supabase.from('classes').delete().eq('id', classId).eq('school_id', schoolId)
+  if (error) {
+    logSupabaseError(error, { action: 'deleteClass', schoolId, userId: actor.id, entityIds: { classId } })
+    redirect(`/school/classes/${classId}?error=delete`)
+  }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'class_deleted', resourceType: 'class', resourceId: classId, metadata: {},
+  })
+
+  redirect('/school/classes?deleted=1')
+}
+
+// ─── Bulk create from a structure template ────────────────────────────────────
+
+export type TemplateState = { errors?: { _form?: string[] } }
+
+async function verifyYear(supabase: ReturnType<typeof createClient>, schoolId: string, yearId: string): Promise<boolean> {
+  const { data } = await supabase.from('academic_years').select('id').eq('id', yearId).eq('school_id', schoolId).maybeSingle()
+  return !!data
+}
+
+export async function createClassesFromTemplate(
+  _prevState: TemplateState,
+  formData: FormData,
+): Promise<TemplateState> {
+  const ctx = await resolveAdmin()
+  if (!ctx) return { errors: { _form: ['Non autorisé.'] } }
+  const { supabase, schoolId, actor } = ctx
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
+  const yearId = z.string().uuid().safeParse(formData.get('academic_year_id'))
+  if (!yearId.success || !(await verifyYear(supabase, schoolId, yearId.data))) {
+    return { errors: { _form: ['Veuillez sélectionner une année scolaire valide.'] } }
+  }
+
+  const template = getClassTemplate(String(formData.get('template_key') ?? ''))
+  if (!template) return { errors: { _form: ['Modèle invalide.'] } }
+
+  // Skip names that already exist for this year (case-insensitive).
+  const { data: existing } = await supabase
+    .from('classes').select('name').eq('school_id', schoolId).eq('academic_year_id', yearId.data)
+  const existingNames = new Set(((existing ?? []) as { name: string }[]).map((c) => c.name.trim().toLowerCase()))
+
+  const toCreate = template.classes.filter((c) => !existingNames.has(c.name.toLowerCase()))
+  const skipped = template.classes.length - toCreate.length
+
+  let created = 0
+  if (toCreate.length > 0) {
+    const rows = toCreate.map((c) => ({
+      school_id: schoolId, academic_year_id: yearId.data, name: c.name, level: c.level, section: c.section,
+    }))
+    const { data, error } = await supabase.from('classes').insert(rows).select('id')
+    if (error) {
+      return {
+        errors: {
+          _form: [formatServerActionError(error, {
+            action: 'createClassesFromTemplate', schoolId, userId: actor.id,
+            entityIds: { template: template.key, count: toCreate.length },
+            fallback: 'Erreur lors de la création des classes. Veuillez réessayer.',
+          })._form?.[0] ?? 'Erreur lors de la création des classes.'],
+        },
+      }
+    }
+    created = (data ?? []).length
+    await logAuditEvent(supabase, {
+      actorId: actor.id, actorEmail: actor.email, schoolId,
+      action: 'classes_bulk_created', resourceType: 'class', resourceId: yearId.data,
+      metadata: { source: 'template', template: template.key, created, skipped, academic_year_id: yearId.data },
+    })
+  }
+
+  redirect(`/school/classes?created=${created}&skipped=${skipped}`)
+}
+
+// ─── Import classes from a CSV file ───────────────────────────────────────────
+// The whole import is blocked if ANY data row is invalid (the safer choice — no
+// partially-correct file is committed). Duplicates (already in the year, or
+// repeated within the file) are NOT errors: they are silently skipped and
+// reported in the success count.
+
+export type ImportState = {
+  errors?: { _form?: string[] }
+  rowErrors?: { line: number; message: string }[]
+}
+
+export async function importClasses(
+  _prevState: ImportState,
+  formData: FormData,
+): Promise<ImportState> {
+  const ctx = await resolveAdmin()
+  if (!ctx) return { errors: { _form: ['Non autorisé.'] } }
+  const { supabase, schoolId, actor } = ctx
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
+  const yearId = z.string().uuid().safeParse(formData.get('academic_year_id'))
+  if (!yearId.success || !(await verifyYear(supabase, schoolId, yearId.data))) {
+    return { errors: { _form: ['Veuillez sélectionner une année scolaire valide.'] } }
+  }
+
+  const csvText = String(formData.get('csv_text') ?? '')
+  if (!csvText.trim()) return { errors: { _form: ['Aucune donnée à importer. Choisissez un fichier CSV.'] } }
+
+  const rows = readClassRows(parseCsv(csvText))
+  if (rows.length === 0) return { errors: { _form: ['Le fichier ne contient aucune classe.'] } }
+
+  // Block the whole import on any invalid row.
+  const rowErrors = rows.filter((r) => r.error).map((r) => ({ line: r.line, message: `Ligne ${r.line} : ${r.error}` }))
+  if (rowErrors.length > 0) {
+    return { errors: { _form: ["Le fichier contient des erreurs. Corrigez-les puis réessayez (aucune classe n'a été importée)."] }, rowErrors }
+  }
+
+  // Duplicates: skip rows already present this year, and de-dup within the file.
+  const { data: existing } = await supabase
+    .from('classes').select('name').eq('school_id', schoolId).eq('academic_year_id', yearId.data)
+  const seen = new Set(((existing ?? []) as { name: string }[]).map((c) => c.name.trim().toLowerCase()))
+
+  const toCreate: { school_id: string; academic_year_id: string; name: string; level: string | null; section: string | null }[] = []
+  let skipped = 0
+  for (const r of rows) {
+    const key = r.name.toLowerCase()
+    if (seen.has(key)) { skipped++; continue }
+    seen.add(key)
+    toCreate.push({ school_id: schoolId, academic_year_id: yearId.data, name: r.name, level: r.level || null, section: r.section || null })
+  }
+
+  let created = 0
+  if (toCreate.length > 0) {
+    const { data, error } = await supabase.from('classes').insert(toCreate).select('id')
+    if (error) {
+      return {
+        errors: {
+          _form: [formatServerActionError(error, {
+            action: 'importClasses', schoolId, userId: actor.id,
+            entityIds: { count: toCreate.length },
+            fallback: "Erreur lors de l'import des classes. Veuillez réessayer.",
+          })._form?.[0] ?? "Erreur lors de l'import des classes."],
+        },
+      }
+    }
+    created = (data ?? []).length
+    await logAuditEvent(supabase, {
+      actorId: actor.id, actorEmail: actor.email, schoolId,
+      action: 'classes_bulk_created', resourceType: 'class', resourceId: yearId.data,
+      metadata: { source: 'import', created, skipped, academic_year_id: yearId.data },
+    })
+  }
+
+  redirect(`/school/classes?created=${created}&skipped=${skipped}`)
 }
