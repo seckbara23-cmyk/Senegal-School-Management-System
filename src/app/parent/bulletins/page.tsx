@@ -343,6 +343,22 @@ export default async function ParentBulletinsPage({ searchParams }: { searchPara
       {/* ── Bulletin ─────────────────────────────────────────────────────────── */}
       {hasData && (
         <>
+          {/* Printable report-card links */}
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={`/parent/bulletins/${selectedChildId}?period_id=${selectedPeriodId}`}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 transition-colors"
+            >
+              Imprimer le bulletin
+            </a>
+            <a
+              href={`/parent/bulletins/${selectedChildId}?period_id=annual`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-sand-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-sand-50 transition-colors"
+            >
+              Bulletin annuel
+            </a>
+          </div>
+
           {/* Identity banner */}
           <div className="rounded-xl border border-sand-200 bg-white shadow-sm overflow-hidden">
             <div className="bg-primary-700 px-5 py-3">
