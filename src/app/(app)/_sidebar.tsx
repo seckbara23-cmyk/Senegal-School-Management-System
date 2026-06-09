@@ -106,10 +106,11 @@ const NAV_SECTIONS: NavSection[] = [
     title: 'Suivi académique',
     iconPath: P.academic,
     items: [
-      { label: 'Présences',        href: '/school/attendance',          iconPath: P.clock    },
-      { label: 'Examens',          href: '/school/exams',               iconPath: P.academic },
+      { label: 'Présences',        href: '/school/attendance',           iconPath: P.clock    },
+      { label: 'Évaluations',      href: '/school/academics/dashboard',  iconPath: P.document },
+      { label: 'Examens',          href: '/school/exams',                iconPath: P.academic },
       { label: 'Notes & bulletins', href: '/school/academics/bulletins', iconPath: P.document },
-      { label: 'Classement',       href: '/school/academics/rankings',  iconPath: P.ranking  },
+      { label: 'Classement',       href: '/school/academics/rankings',   iconPath: P.ranking  },
     ],
   },
   {

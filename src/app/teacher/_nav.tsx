@@ -21,6 +21,7 @@ const P = {
 const NAV = [
   { label: 'Tableau de bord', href: '/teacher',              icon: P.home,       exact: true  },
   { label: 'Mes classes',      href: '/teacher/classes',      icon: P.classes,    exact: false },
+  { label: 'Mes matières',     href: '/teacher/subjects',     icon: P.grades,     exact: false },
   { label: 'Notes',            href: '/teacher/grades',       icon: P.grades,     exact: false },
   { label: 'Présences',        href: '/teacher/attendance',   icon: P.attendance, exact: false },
   { label: 'Emploi du temps',  href: '/teacher/timetable',    icon: P.timetable,  exact: false },

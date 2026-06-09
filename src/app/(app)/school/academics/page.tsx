@@ -78,6 +78,22 @@ export default async function AcademicsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
         <a
+          href="/school/academics/dashboard"
+          className="group flex items-start gap-4 rounded-xl border border-primary-200 bg-primary-50 px-5 py-5 shadow-sm hover:border-primary-400 hover:shadow-md transition-all sm:col-span-2"
+        >
+          <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-white transition-colors">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+            </svg>
+          </div>
+          <div>
+            <p className="font-semibold text-primary-900">Tableau de bord académique</p>
+            <p className="mt-0.5 text-sm text-primary-700/70">Suivi des notes, saisie en attente et moyennes par classe</p>
+            <p className="mt-2 text-xs font-medium text-primary-700">Voir le tableau de bord →</p>
+          </div>
+        </a>
+
+        <a
           href="/school/academics/subjects"
           className="group flex items-start gap-4 rounded-xl border border-sand-200 bg-white px-5 py-5 shadow-sm hover:border-primary-300 hover:shadow-md transition-all"
         >
