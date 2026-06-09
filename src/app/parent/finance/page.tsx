@@ -259,8 +259,10 @@ export default async function ParentFinancePage({ searchParams }: { searchParams
                     <td className="px-4 py-3 text-right font-mono font-semibold text-emerald-600">
                       {fmtCurrency(p.amount)}
                     </td>
-                    <td className="hidden sm:table-cell px-4 py-3 text-xs text-gray-400 font-mono">
-                      {p.receipt_number ?? '—'}
+                    <td className="hidden sm:table-cell px-4 py-3 text-xs">
+                      <a href={`/parent/finance/payments/${p.id}`} className="font-mono text-primary-600 hover:text-primary-800 hover:underline">
+                        {p.receipt_number ?? 'Voir le reçu'}
+                      </a>
                     </td>
                   </tr>
                 ))}
