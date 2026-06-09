@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { emptyCounts, tallyStatuses, attendanceRate, rateTone, RATE_TEXT_CLASS } from '@/lib/attendance'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,6 +87,27 @@ export default async function AttendancePage({ searchParams }: Props) {
   const total      = totalCount ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
+  // ── Today's overview ────────────────────────────────────────────────────────
+  const todayISO = new Date().toISOString().slice(0, 10)
+  const { data: todaySessionsData } = await supabase
+    .from('attendance_sessions')
+    .select('id')
+    .eq('school_id', school.id)
+    .eq('session_date', todayISO)
+  const todaySessionIds = ((todaySessionsData ?? []) as { id: string }[]).map((s) => s.id)
+
+  let todayCounts = emptyCounts()
+  if (todaySessionIds.length > 0) {
+    const { data: todayRecs } = await supabase
+      .from('attendance_records')
+      .select('status')
+      .eq('school_id', school.id)
+      .in('session_id', todaySessionIds)
+    todayCounts = tallyStatuses((todayRecs ?? []) as { status: string }[])
+  }
+  const todayRate = attendanceRate(todayCounts)
+  const todayTone = rateTone(todayRate)
+
   return (
     <div className="space-y-5">
 
@@ -106,15 +128,26 @@ export default async function AttendancePage({ searchParams }: Props) {
             </h1>
             <p className="text-primary-300 text-sm mt-0.5">{school.name}</p>
           </div>
-          <a
-            href="/school/attendance/new"
-            className="inline-flex items-center gap-2 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            Nouvelle séance
-          </a>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href="/school/attendance/summary"
+              className="inline-flex items-center gap-2 rounded-lg border border-primary-600 bg-primary-700/40 px-4 py-2 text-sm font-semibold text-primary-100 hover:bg-primary-700 transition-colors"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+              </svg>
+              Statistiques
+            </a>
+            <a
+              href="/school/attendance/new"
+              className="inline-flex items-center gap-2 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Nouvelle séance
+            </a>
+          </div>
         </div>
 
         {total > 0 && (
@@ -124,6 +157,32 @@ export default async function AttendancePage({ searchParams }: Props) {
               séance{total !== 1 ? 's' : ''} enregistrée{total !== 1 ? 's' : ''}
             </p>
           </div>
+        )}
+      </div>
+
+      {/* ── Today's overview ────────────────────────────────────────────────── */}
+      <div>
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Aujourd&apos;hui</h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-xl border border-sand-200 bg-white p-4 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Présents</p>
+            <p className="mt-1 text-2xl font-bold text-emerald-700">{todayCounts.present}</p>
+          </div>
+          <div className="rounded-xl border border-sand-200 bg-white p-4 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Absents</p>
+            <p className="mt-1 text-2xl font-bold text-red-600">{todayCounts.absent}</p>
+          </div>
+          <div className="rounded-xl border border-sand-200 bg-white p-4 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">En retard</p>
+            <p className="mt-1 text-2xl font-bold text-amber-600">{todayCounts.late}</p>
+          </div>
+          <div className="rounded-xl border border-sand-200 bg-white p-4 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Assiduité</p>
+            <p className={`mt-1 text-2xl font-bold ${RATE_TEXT_CLASS[todayTone]}`}>{todayRate !== null ? `${todayRate}%` : '—'}</p>
+          </div>
+        </div>
+        {todayCounts.total === 0 && (
+          <p className="mt-2 text-xs text-gray-400">Aucune présence enregistrée aujourd&apos;hui.</p>
         )}
       </div>
 

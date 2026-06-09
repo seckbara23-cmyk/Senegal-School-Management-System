@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { tallyStatuses, attendanceRate as computeAttendanceRate, rateTone, RATE_TEXT_CLASS } from '@/lib/attendance'
 
 // ─── Icon helper ──────────────────────────────────────────────────────────────
 
@@ -418,7 +419,7 @@ export default async function SchoolAdminPage() {
     supabase.from('teachers').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('status', 'active'),
     supabase.from('parents').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('status', 'active'),
     supabase.from('academic_years').select('id, name, starts_on, ends_on').eq('school_id', schoolId).eq('is_active', true).maybeSingle(),
-    supabase.from('classes').select('id, academic_year_id').eq('school_id', schoolId),
+    supabase.from('classes').select('id, academic_year_id, name, section').eq('school_id', schoolId),
     supabase.from('attendance_sessions').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('session_date', todayISO),
     supabase
       .from('student_invoices')
@@ -477,7 +478,7 @@ export default async function SchoolAdminPage() {
   type YearRow = { id: string; name: string; starts_on: string; ends_on: string }
   const activeYear = (activeYearRes.data as YearRow | null) ?? null
 
-  type ClassRow = { id: string; academic_year_id: string }
+  type ClassRow = { id: string; academic_year_id: string; name: string; section: string | null }
   const classes = (classesRes.data ?? []) as ClassRow[]
   const activeClasses = activeYear
     ? classes.filter((c) => c.academic_year_id === activeYear.id).length
@@ -554,6 +555,40 @@ export default async function SchoolAdminPage() {
   ]
   const onboardingDone     = onboardingSteps.filter((s) => s.done).length
   const onboardingComplete = onboardingDone === onboardingSteps.length
+
+  // ── Today's attendance widgets ──────────────────────────────────────────────
+  // Present/absent/late counts, classes still pending, and who's absent today.
+  const { data: todaySessData } = await supabase
+    .from('attendance_sessions')
+    .select('id, class_id')
+    .eq('school_id', schoolId)
+    .eq('session_date', todayISO)
+  const todaySessList = (todaySessData ?? []) as { id: string; class_id: string }[]
+  const todaySessionIds = todaySessList.map((s) => s.id)
+  const classIdsWithSessionToday = new Set(todaySessList.map((s) => s.class_id))
+
+  type TodayRecord = {
+    status: string
+    students: { first_name: string; last_name: string } | null
+    attendance_sessions: { classes: { name: string; section: string | null } | null } | null
+  }
+  let todayRecords: TodayRecord[] = []
+  if (todaySessionIds.length > 0) {
+    const { data } = await supabase
+      .from('attendance_records')
+      .select('status, students!student_id(first_name, last_name), attendance_sessions!session_id(classes!class_id(name, section))')
+      .eq('school_id', schoolId)
+      .in('session_id', todaySessionIds)
+    todayRecords = (data ?? []) as unknown as TodayRecord[]
+  }
+  const todayCounts = tallyStatuses(todayRecords)
+  const todayRate   = computeAttendanceRate(todayCounts)
+  const todayTone   = rateTone(todayRate)
+  const absentToday = todayRecords.filter((r) => r.status === 'absent')
+
+  // Active-year classes that have no attendance session yet today.
+  const activeYearClasses = activeYear ? classes.filter((c) => c.academic_year_id === activeYear.id) : []
+  const pendingClasses = activeYearClasses.filter((c) => !classIdsWithSessionToday.has(c.id))
 
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -810,6 +845,70 @@ export default async function SchoolAdminPage() {
                   </span>
                 </li>
               ))}
+            </ul>
+          )}
+        </Panel>
+
+        {/* Today's attendance */}
+        <Panel title="Présence du jour" href="/school/attendance" linkLabel="Registre">
+          <div className="px-5 py-4">
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div>
+                <p className="text-2xl font-bold text-emerald-700">{todayCounts.present}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Présents</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-red-600">{todayCounts.absent}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Absents</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-amber-600">{todayCounts.late}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Retards</p>
+              </div>
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-sand-100 pt-3 text-sm">
+              <span className="text-gray-500">Assiduité du jour</span>
+              <span className={`font-bold ${RATE_TEXT_CLASS[todayTone]}`}>{todayRate !== null ? `${todayRate}%` : '—'}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between text-sm">
+              <span className="text-gray-500">Classes en attente</span>
+              <span className={`font-bold ${pendingClasses.length > 0 ? 'text-amber-600' : 'text-emerald-700'}`}>
+                {pendingClasses.length}{activeYearClasses.length > 0 ? `/${activeYearClasses.length}` : ''}
+              </span>
+            </div>
+            {pendingClasses.length > 0 && (
+              <p className="mt-1 truncate text-xs text-gray-400">
+                {pendingClasses.slice(0, 4).map((c) => [c.name, c.section].filter(Boolean).join(' ')).join(', ')}
+                {pendingClasses.length > 4 ? '…' : ''}
+              </p>
+            )}
+          </div>
+        </Panel>
+
+        {/* Students absent today */}
+        <Panel title="Élèves absents aujourd'hui" href="/school/attendance" linkLabel="Registre">
+          {absentToday.length === 0 ? (
+            <EmptyRow>Aucun élève absent aujourd&apos;hui.</EmptyRow>
+          ) : (
+            <ul className="divide-y divide-sand-100">
+              {absentToday.slice(0, 8).map((a, i) => (
+                <li key={i} className="flex items-center gap-3 px-5 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-gray-900">
+                      {a.students ? `${a.students.last_name} ${a.students.first_name}` : '—'}
+                    </p>
+                    <p className="truncate text-xs text-gray-500">
+                      {a.attendance_sessions?.classes
+                        ? [a.attendance_sessions.classes.name, a.attendance_sessions.classes.section].filter(Boolean).join(' ')
+                        : '—'}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">Absent</span>
+                </li>
+              ))}
+              {absentToday.length > 8 && (
+                <li className="px-5 py-2 text-center text-xs text-gray-400">+{absentToday.length - 8} autre(s)</li>
+              )}
             </ul>
           )}
         </Panel>
