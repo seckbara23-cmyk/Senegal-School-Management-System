@@ -113,8 +113,18 @@ export default async function AssignmentsPage({ searchParams }: Props) {
         <div className="mb-1">
           <a href="/school/academics" className="text-primary-300 hover:text-white text-sm">← Académique</a>
         </div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">Attributions classes</h1>
-        <p className="text-primary-300 text-sm mt-0.5">Assigner matières et enseignants aux classes</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-white tracking-tight">Attributions classes</h1>
+            <p className="text-primary-300 text-sm mt-0.5">Assigner matières et enseignants aux classes</p>
+          </div>
+          <a
+            href="/school/academics/assignments/matrix"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-primary-600 bg-primary-700 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-600 transition-colors"
+          >
+            Vue matricielle →
+          </a>
+        </div>
       </div>
 
       {/* ── Error banner ─────────────────────────────────────────────────────── */}

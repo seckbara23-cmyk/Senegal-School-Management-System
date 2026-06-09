@@ -428,19 +428,29 @@ const AssignTeacherSchema = z.object({
 export async function assignTeacher(formData: FormData): Promise<void> {
   const { schoolId, actor } = await getSchoolId()
 
+  // Optional return target so the matrix view can return to itself with its
+  // selected year. Allowlisted to two known paths to prevent open redirects.
+  const rt = String(formData.get('redirect_to') ?? '')
+  const base = rt === '/school/academics/assignments/matrix' ? rt : '/school/academics/assignments'
+  const yearRaw = formData.get('year')
+  const yq = (typeof yearRaw === 'string' && /^[0-9a-fA-F-]{36}$/.test(yearRaw)) ? `year=${yearRaw}` : ''
+  const back = (err?: string): never => {
+    const qs = [yq, err ? `error=${err}` : ''].filter(Boolean).join('&')
+    redirect(qs ? `${base}?${qs}` : base)
+  }
+
   const parsed = AssignTeacherSchema.safeParse({
     class_subject_id: formData.get('class_subject_id'),
     teacher_id:       formData.get('teacher_id') || undefined,
   })
 
-  if (!parsed.success) redirect('/school/academics/assignments?error=invalid')
+  // Direct redirect here (not via back()) so TS narrows parsed.success below.
+  if (!parsed.success) redirect(yq ? `${base}?${yq}&error=invalid` : `${base}?error=invalid`)
 
   const { class_subject_id, teacher_id } = parsed.data
   const supabase = createClient()
 
-  if (!(await isSchoolWritable(supabase, schoolId))) {
-    redirect('/school/academics/assignments?error=readonly')
-  }
+  if (!(await isSchoolWritable(supabase, schoolId))) back('readonly')
 
   // Verify class_subject belongs to this school
   const { data: cs } = await supabase
@@ -450,7 +460,7 @@ export async function assignTeacher(formData: FormData): Promise<void> {
     .eq('school_id', schoolId)
     .maybeSingle()
 
-  if (!cs) redirect('/school/academics/assignments?error=invalid')
+  if (!cs) back('invalid')
 
   let opError: { code?: string | null; message?: string | null; details?: string | null; hint?: string | null } | null = null
   if (!teacher_id) {
@@ -470,7 +480,7 @@ export async function assignTeacher(formData: FormData): Promise<void> {
       .eq('school_id', schoolId)
       .maybeSingle()
 
-    if (!teacher) redirect('/school/academics/assignments?error=invalid')
+    if (!teacher) back('invalid')
 
     const { error } = await supabase.from('teacher_subject_assignments').upsert(
       { school_id: schoolId, teacher_id, class_subject_id },
@@ -481,7 +491,7 @@ export async function assignTeacher(formData: FormData): Promise<void> {
 
   if (opError) {
     logSupabaseError(opError, { action: 'assignTeacher', schoolId, entityIds: { class_subject_id, teacher_id: teacher_id ?? null } })
-    redirect('/school/academics/assignments?error=server')
+    back('server')
   }
 
   await logAuditEvent(supabase, {
@@ -490,7 +500,7 @@ export async function assignTeacher(formData: FormData): Promise<void> {
     metadata: { class_subject_id, teacher_id: teacher_id ?? null, unassigned: !teacher_id },
   })
 
-  redirect('/school/academics/assignments')
+  back()
 }
 
 // ── Remove subject from class ─────────────────────────────────────────────────
