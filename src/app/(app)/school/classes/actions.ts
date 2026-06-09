@@ -391,6 +391,81 @@ export async function withdrawEnrollment(formData: FormData): Promise<void> {
   redirect(`/school/classes/${classId}`)
 }
 
+// ─── Transfer a student to another class ──────────────────────────────────────
+// Moves a student from their current active class to another class in the SAME
+// academic year: the current active enrollment(s) for that year are marked
+// 'transferred' and an active enrollment is created in the target class.
+
+const TransferSchema = z.object({
+  student_id:      z.string().uuid('Élève invalide.'),
+  target_class_id: z.string().uuid('Classe invalide.'),
+})
+
+export async function transferStudent(formData: FormData): Promise<void> {
+  const ctx = await resolveAdmin()
+  if (!ctx) redirect('/school')
+  const { supabase, schoolId, actor } = ctx!
+
+  const parsed = TransferSchema.safeParse({
+    student_id:      formData.get('student_id'),
+    target_class_id: formData.get('target_class_id'),
+  })
+  if (!parsed.success) redirect('/school/students')
+  const { student_id, target_class_id } = parsed.data
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    redirect(`/school/students/${student_id}/transfer?error=readonly`)
+  }
+
+  // Verify student + target class belong to this school.
+  const { data: stu } = await supabase
+    .from('students').select('id').eq('id', student_id).eq('school_id', schoolId).maybeSingle()
+  if (!stu) redirect('/school/students')
+
+  const { data: cls } = await supabase
+    .from('classes').select('id, academic_year_id').eq('id', target_class_id).eq('school_id', schoolId).maybeSingle()
+  if (!cls) redirect(`/school/students/${student_id}/transfer?error=invalid`)
+  const yearId = (cls as { academic_year_id: string }).academic_year_id
+
+  // Already actively enrolled in the target?
+  const { data: existingTarget } = await supabase
+    .from('student_class_enrollments')
+    .select('id, status')
+    .eq('school_id', schoolId).eq('student_id', student_id)
+    .eq('class_id', target_class_id).eq('academic_year_id', yearId)
+    .maybeSingle()
+  if (existingTarget && (existingTarget as { status: string }).status === 'active') {
+    redirect(`/school/students/${student_id}/transfer?error=already`)
+  }
+
+  // Mark current active enrollment(s) for this year as transferred.
+  await supabase
+    .from('student_class_enrollments')
+    .update({ status: 'transferred' })
+    .eq('school_id', schoolId).eq('student_id', student_id)
+    .eq('academic_year_id', yearId).eq('status', 'active')
+
+  // Enroll (or reactivate) in the target class.
+  const { error } = await supabase
+    .from('student_class_enrollments')
+    .upsert(
+      { school_id: schoolId, student_id, class_id: target_class_id, academic_year_id: yearId, status: 'active', enrolled_at: new Date().toISOString() },
+      { onConflict: 'student_id,class_id,academic_year_id' },
+    )
+  if (error) {
+    logSupabaseError(error, { action: 'transferStudent', schoolId, userId: actor.id, entityIds: { student_id, target_class_id } })
+    redirect(`/school/students/${student_id}/transfer?error=server`)
+  }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'student_transferred', resourceType: 'student', resourceId: student_id,
+    metadata: { student_id, target_class_id, academic_year_id: yearId },
+  })
+
+  redirect(`/school/classes/${target_class_id}`)
+}
+
 // ─── Update class ───────────────────────────────────────────────────────────────
 
 export type UpdateClassState = {
