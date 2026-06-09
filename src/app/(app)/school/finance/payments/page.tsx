@@ -33,12 +33,15 @@ const METHODS = [
 
 const VALID_METHODS = ['cash', 'bank_transfer', 'cheque', 'wave_manual', 'orange_money_manual', 'other']
 
+const PAGE_SIZE = 25
+
 type Props = {
   searchParams: {
     date_from?: string
     date_to?: string
     method?: string
     q?: string
+    page?: string
   }
 }
 
@@ -75,13 +78,17 @@ export default async function PaymentsLedgerPage({ searchParams }: Props) {
     studentIds = ((matched ?? []) as { id: string }[]).map((s) => s.id)
   }
 
+  const page = Math.max(1, Number(searchParams.page) || 1)
+  const from = (page - 1) * PAGE_SIZE
+  const to   = from + PAGE_SIZE - 1
+
   let query = supabase
     .from('student_payments')
     .select(`
       id, receipt_number, amount, payment_method, reference, paid_at,
       students!student_id(first_name, last_name),
       student_invoices!invoice_id(id, invoice_number, title)
-    `)
+    `, { count: 'exact' })
     .eq('school_id', schoolId)
     .order('paid_at', { ascending: false })
 
@@ -95,7 +102,20 @@ export default async function PaymentsLedgerPage({ searchParams }: Props) {
     query = query.or(orParts.join(','))
   }
 
-  const { data: rawPayments } = await query
+  const { data: rawPayments, count: totalCount } = await query.range(from, to)
+  const total      = totalCount ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  // Page links preserve all active filters.
+  const pageHref = (p: number) => {
+    const params = new URLSearchParams()
+    if (dateFrom) params.set('date_from', dateFrom)
+    if (dateTo)   params.set('date_to', dateTo)
+    if (method)   params.set('method', method)
+    if (q)        params.set('q', q)
+    if (p > 1)    params.set('page', String(p))
+    const qs = params.toString()
+    return qs ? `/school/finance/payments?${qs}` : '/school/finance/payments'
+  }
 
   type PaymentRow = {
     id: string
@@ -108,7 +128,8 @@ export default async function PaymentsLedgerPage({ searchParams }: Props) {
     student_invoices: { id: string; invoice_number: string; title: string } | null
   }
   const payments    = (rawPayments ?? []) as unknown as PaymentRow[]
-  const totalAmount = payments.reduce((s, p) => s + p.amount, 0)
+  // Page-scoped sum. The authoritative cross-page total lives on /school/finance/reports.
+  const pageAmount  = payments.reduce((s, p) => s + p.amount, 0)
   const hasFilter   = !!(dateFrom || dateTo || method || q)
 
   // CSV export carries the current filters.
@@ -131,8 +152,7 @@ export default async function PaymentsLedgerPage({ searchParams }: Props) {
             </div>
             <h1 className="text-2xl font-bold text-white tracking-tight">Journal des paiements</h1>
             <p className="text-primary-300 text-sm mt-0.5">
-              {payments.length} paiement{payments.length !== 1 ? 's' : ''}
-              {totalAmount > 0 ? ` · ${fmt(totalAmount)}` : ''}
+              {total} paiement{total !== 1 ? 's' : ''}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -216,22 +236,22 @@ export default async function PaymentsLedgerPage({ searchParams }: Props) {
         </div>
       </form>
 
-      {/* ── Total strip ─────────────────────────────────────────────────────── */}
+      {/* ── Strip (page-scoped amounts; full totals on the reports page) ──────── */}
       {payments.length > 0 && (
         <div className="overflow-hidden rounded-xl grid grid-cols-2 sm:grid-cols-3 shadow-sm">
           <div className="bg-emerald-600 px-5 py-4 text-center">
-            <p className="text-xl font-bold text-white">{fmt(totalAmount)}</p>
-            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-200 mt-0.5">Encaissé</p>
+            <p className="text-xl font-bold text-white">{fmt(pageAmount)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-200 mt-0.5">Encaissé (page)</p>
           </div>
           <div className="bg-primary-700 px-5 py-4 text-center">
-            <p className="text-xl font-bold text-white">{payments.length}</p>
+            <p className="text-xl font-bold text-white">{total}</p>
             <p className="text-xs font-semibold uppercase tracking-wider text-primary-200 mt-0.5">Paiements</p>
           </div>
           <div className="hidden sm:block bg-primary-600 px-5 py-4 text-center">
             <p className="text-xl font-bold text-white">
-              {fmt(Math.round(totalAmount / payments.length))}
+              {fmt(Math.round(pageAmount / payments.length))}
             </p>
-            <p className="text-xs font-semibold uppercase tracking-wider text-primary-200 mt-0.5">Moyenne</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary-200 mt-0.5">Moyenne (page)</p>
           </div>
         </div>
       )}
@@ -308,6 +328,28 @@ export default async function PaymentsLedgerPage({ searchParams }: Props) {
               ))}
             </tbody>
           </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Pagination ──────────────────────────────────────────────────────── */}
+      {total > PAGE_SIZE && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-500">
+            Paiements {from + 1}–{Math.min(to + 1, total)} sur {total}
+          </p>
+          <div className="flex items-center gap-2">
+            {page > 1 ? (
+              <a href={pageHref(page - 1)} className="rounded-lg border border-sand-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-sand-50 transition-colors">← Précédent</a>
+            ) : (
+              <span className="rounded-lg border border-sand-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-300 cursor-not-allowed">← Précédent</span>
+            )}
+            <span className="px-2 text-sm text-gray-400">{page} / {totalPages}</span>
+            {page < totalPages ? (
+              <a href={pageHref(page + 1)} className="rounded-lg border border-sand-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-sand-50 transition-colors">Suivant →</a>
+            ) : (
+              <span className="rounded-lg border border-sand-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-300 cursor-not-allowed">Suivant →</span>
+            )}
           </div>
         </div>
       )}

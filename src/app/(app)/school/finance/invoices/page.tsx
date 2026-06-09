@@ -24,8 +24,10 @@ const STATUS_CLASS: Record<string, string> = {
   cancelled: 'border-gray-200 bg-gray-100 text-gray-500',
 }
 
+const PAGE_SIZE = 25
+
 type Props = {
-  searchParams: { status?: string; created?: string; skipped?: string }
+  searchParams: { status?: string; created?: string; skipped?: string; page?: string }
 }
 
 export default async function InvoicesPage({ searchParams }: Props) {
@@ -53,9 +55,13 @@ export default async function InvoicesPage({ searchParams }: Props) {
   const VALID_FILTERS = ['unpaid', 'partial', 'paid', 'cancelled', 'overdue']
   const statusFilter = VALID_FILTERS.includes(searchParams.status ?? '') ? searchParams.status! : null
 
+  const page = Math.max(1, Number(searchParams.page) || 1)
+  const from = (page - 1) * PAGE_SIZE
+  const to   = from + PAGE_SIZE - 1
+
   let query = supabase
     .from('student_invoices')
-    .select('id, invoice_number, title, total_amount, amount_paid, status, due_date, students!student_id(first_name, last_name)')
+    .select('id, invoice_number, title, total_amount, amount_paid, status, due_date, students!student_id(first_name, last_name)', { count: 'exact' })
     .eq('school_id', schoolId)
     .order('created_at', { ascending: false })
 
@@ -65,7 +71,17 @@ export default async function InvoicesPage({ searchParams }: Props) {
     query = query.eq('status', statusFilter)
   }
 
-  const { data: rawInvoices } = await query
+  const { data: rawInvoices, count: totalCount } = await query.range(from, to)
+  const total      = totalCount ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  // Preserve the active status filter across page links.
+  const pageHref = (p: number) => {
+    const params = new URLSearchParams()
+    if (statusFilter) params.set('status', statusFilter)
+    if (p > 1) params.set('page', String(p))
+    const qs = params.toString()
+    return qs ? `/school/finance/invoices?${qs}` : '/school/finance/invoices'
+  }
 
   type InvoiceRow = {
     id: string
@@ -110,7 +126,7 @@ export default async function InvoicesPage({ searchParams }: Props) {
             </div>
             <h1 className="text-2xl font-bold text-white tracking-tight">Factures</h1>
             <p className="text-primary-300 text-sm mt-0.5">
-              {invoices.length} facture{invoices.length !== 1 ? 's' : ''}
+              {total} facture{total !== 1 ? 's' : ''}
               {filterLabel ? ` · ${filterLabel}` : ''}
             </p>
           </div>
@@ -273,6 +289,28 @@ export default async function InvoicesPage({ searchParams }: Props) {
               })}
             </tbody>
           </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Pagination ──────────────────────────────────────────────────────── */}
+      {total > PAGE_SIZE && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-500">
+            Factures {from + 1}–{Math.min(to + 1, total)} sur {total}
+          </p>
+          <div className="flex items-center gap-2">
+            {page > 1 ? (
+              <a href={pageHref(page - 1)} className="rounded-lg border border-sand-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-sand-50 transition-colors">← Précédent</a>
+            ) : (
+              <span className="rounded-lg border border-sand-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-300 cursor-not-allowed">← Précédent</span>
+            )}
+            <span className="px-2 text-sm text-gray-400">{page} / {totalPages}</span>
+            {page < totalPages ? (
+              <a href={pageHref(page + 1)} className="rounded-lg border border-sand-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-sand-50 transition-colors">Suivant →</a>
+            ) : (
+              <span className="rounded-lg border border-sand-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-300 cursor-not-allowed">Suivant →</span>
+            )}
           </div>
         </div>
       )}
