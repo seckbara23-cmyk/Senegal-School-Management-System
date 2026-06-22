@@ -1,10 +1,16 @@
-// ─── Minimal CSV parser (no dependencies) ─────────────────────────────────────
+// ─── CSV/grid parsing + tolerant import mapping ───────────────────────────────
 //
-// RFC-4180-ish: handles quoted fields, escaped quotes (""), commas and newlines
-// inside quotes, CRLF or LF line endings, and a leading UTF-8 BOM. Pure and
-// isomorphic so it can run both in the browser (import preview) and on the
-// server (authoritative re-validation). We avoid a heavy spreadsheet dependency;
-// CSV is opened and saved natively by Excel and Google Sheets.
+// parseCsv turns CSV text into a string[][] grid (also used for XLSX via the
+// sheet→CSV conversion). The readXRows functions then map a grid to validated
+// rows for each import flow. They are deliberately tolerant of real school
+// spreadsheets:
+//   • smart header detection — scan the first rows and skip title/blank lines
+//   • accent-insensitive French/English column aliases, any column order
+//   • value auto-cleanup (gender / status / relationship) before validation
+//   • repeated header rows inside the file are skipped, not treated as data
+// The SAME functions run in the browser preview and on the server, so preview
+// and final import behave identically. Validation is unchanged — normalisation
+// only canonicalises known synonyms; unknown/missing required fields still error.
 
 export function parseCsv(input: string): string[][] {
   let text = input
@@ -36,366 +42,377 @@ export function parseCsv(input: string): string[][] {
       field += c
     }
   }
-  // Flush the final field/row when the file doesn't end with a newline.
   if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row) }
 
-  // Drop fully-empty rows (e.g. trailing blank lines).
+  // Drop fully-empty rows (blank lines anywhere, incl. before the header).
   return rows.filter((r) => r.some((cell) => cell.trim() !== ''))
 }
 
-export type ParsedClassRow = {
-  line:    number          // 1-based source line (header = 1)
-  name:    string
-  level:   string
-  section: string
-  error:   string | null
+// ─── Normalisation helpers ─────────────────────────────────────────────────────
+
+// Accent-stripped, lowercased, whitespace-collapsed — for matching values.
+function stripAccentsLower(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
-const HEADER_ALIASES: Record<string, 'name' | 'level' | 'section'> = {
-  name: 'name', nom: 'name', classe: 'name',
-  level: 'level', niveau: 'level',
-  section: 'section',
+// Header-cell / alias key: same as above but also unifies apostrophes so
+// "Numéro d'admission" and "numero d'admission" match.
+function normKey(s: string): string {
+  return stripAccentsLower(s.replace(/[’‘`]/g, "'"))
 }
 
-/**
- * Map raw CSV rows to class rows with per-row validation. The first row is
- * treated as a header when it contains a recognised column name; otherwise the
- * columns are assumed to be name, level, section in order.
- */
-export function readClassRows(grid: string[][]): ParsedClassRow[] {
-  if (grid.length === 0) return []
+// ─── Generic header detection + column mapping ────────────────────────────────
 
-  const header = grid[0].map((h) => h.trim().toLowerCase())
-  const looksLikeHeader = header.some((h) => h in HEADER_ALIASES)
+type FieldSpec<K extends string> = { key: K; aliases: string[]; positional: number }
 
-  let nameIdx = 0, levelIdx = 1, sectionIdx = 2
-  let dataStart = 0
-  if (looksLikeHeader) {
-    nameIdx = header.findIndex((h) => HEADER_ALIASES[h] === 'name')
-    levelIdx = header.findIndex((h) => HEADER_ALIASES[h] === 'level')
-    sectionIdx = header.findIndex((h) => HEADER_ALIASES[h] === 'section')
-    dataStart = 1
+type Located<K extends string> = {
+  idx: Partial<Record<K, number>>
+  dataStart: number
+  skippedBefore: number
+  headerMatchCount: number
+  aliasMap: Map<string, K>
+}
+
+const SCAN_ROWS = 20
+
+function buildAliasMap<K extends string>(specs: FieldSpec<K>[]): Map<string, K> {
+  const m = new Map<string, K>()
+  for (const s of specs) {
+    m.set(normKey(s.key), s.key)
+    for (const a of s.aliases) m.set(normKey(a), s.key)
+  }
+  return m
+}
+
+// How many distinct known columns a row's cells map to.
+function countAliasMatches<K extends string>(cells: string[], aliasMap: Map<string, K>): number {
+  const seen = new Set<K>()
+  for (const cell of cells) {
+    const k = aliasMap.get(normKey(cell))
+    if (k && !seen.has(k)) seen.add(k)
+  }
+  return seen.size
+}
+
+// Find the real header row in the first SCAN_ROWS, skipping title rows before it.
+function locateColumns<K extends string>(grid: string[][], specs: FieldSpec<K>[]): Located<K> {
+  const aliasMap = buildAliasMap(specs)
+  const scan = Math.min(grid.length, SCAN_ROWS)
+
+  let bestRow = -1, bestCount = 0
+  for (let r = 0; r < scan; r++) {
+    const count = countAliasMatches(grid[r], aliasMap)
+    if (count > bestCount) { bestCount = count; bestRow = r }
   }
 
+  // Confident header: ≥2 matched columns anywhere in the scan window.
+  // Otherwise honour a single-match header only at row 0 (legacy behaviour).
+  let headerRow = -1
+  if (bestCount >= 2) headerRow = bestRow
+  else if (bestCount === 1 && bestRow === 0) headerRow = 0
+
+  if (headerRow >= 0) {
+    const idx: Partial<Record<K, number>> = {}
+    grid[headerRow].forEach((cell, i) => {
+      const k = aliasMap.get(normKey(cell))
+      if (k && idx[k] === undefined) idx[k] = i
+    })
+    return { idx, dataStart: headerRow + 1, skippedBefore: headerRow, headerMatchCount: countAliasMatches(grid[headerRow], aliasMap), aliasMap }
+  }
+
+  // Positional fallback (no recognisable header): assume default column order.
+  const idx: Partial<Record<K, number>> = {}
+  for (const s of specs) idx[s.key] = s.positional
+  return { idx, dataStart: 0, skippedBefore: 0, headerMatchCount: 0, aliasMap }
+}
+
+// ─── Result type + cleanup notes ──────────────────────────────────────────────
+
+export type ImportParseResult<T> = {
+  rows: T[]
+  skippedRows: number   // title rows before header + repeated header rows
+  notes: string[]       // short French notes for the preview banner
+}
+
+function recordNorm(map: Map<string, string>, label: string, raw: string, canonical: string): void {
+  if (!raw.trim() || stripAccentsLower(raw) === canonical) return
+  const key = `${label}|${raw.trim().toLowerCase()}`
+  if (!map.has(key)) map.set(key, `${label} « ${raw.trim()} » → ${canonical}`)
+}
+
+function makeNotes(skippedBefore: number, skippedRepeated: number, norm: Map<string, string>): string[] {
+  const notes: string[] = []
+  if (skippedBefore > 0) {
+    notes.push(`${skippedBefore} ligne${skippedBefore > 1 ? 's' : ''} ignorée${skippedBefore > 1 ? 's' : ''} automatiquement avant l'en-tête`)
+  }
+  if (skippedRepeated > 0) {
+    notes.push(`${skippedRepeated} ligne${skippedRepeated > 1 ? 's' : ''} d'en-tête répétée${skippedRepeated > 1 ? 's' : ''} ignorée${skippedRepeated > 1 ? 's' : ''}`)
+  }
+  const examples = Array.from(norm.values())
+  for (const e of examples.slice(0, 3)) notes.push(e)
+  if (examples.length > 3) notes.push(`… et ${examples.length - 3} autre${examples.length - 3 > 1 ? 's' : ''} valeur${examples.length - 3 > 1 ? 's' : ''} normalisée${examples.length - 3 > 1 ? 's' : ''}`)
+  return notes
+}
+
+// ─── Value normalisers ─────────────────────────────────────────────────────────
+
+const GENDERS = new Set(['male', 'female', 'other'])
+const STUDENT_STATUSES = new Set(['active', 'inactive', 'graduated'])
+const SIMPLE_STATUSES = new Set(['active', 'inactive'])
+
+function normGender(raw: string): string {
+  const k = stripAccentsLower(raw)
+  if (['male', 'm', 'masculin', 'homme', 'garcon'].includes(k)) return 'male'
+  if (['female', 'f', 'feminin', 'femme', 'fille'].includes(k)) return 'female'
+  if (['other', 'autre'].includes(k)) return 'other'
+  return k
+}
+
+function normStatus(raw: string): string {
+  const k = stripAccentsLower(raw)
+  if (['active', 'actif', 'inscrit', 'inscrite'].includes(k)) return 'active'
+  if (['inactive', 'inactif'].includes(k)) return 'inactive'
+  if (['graduated', 'diplome', 'diplomee'].includes(k)) return 'graduated'
+  return k
+}
+
+export function normaliseRelationship(value: string): 'father' | 'mother' | 'guardian' | 'other' {
+  const k = stripAccentsLower(value)
+  if (!k) return 'guardian'
+  if (['father', 'pere', 'papa'].includes(k)) return 'father'
+  if (['mother', 'mere', 'maman'].includes(k)) return 'mother'
+  if (['guardian', 'tuteur', 'tutrice', 'responsable', 'parent'].includes(k)) return 'guardian'
+  if (['other', 'autre'].includes(k)) return 'other'
+  return 'guardian' // 'parent' & unknowns map to guardian (the links CHECK forbids 'parent')
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// Shared per-row iteration context.
+function prepare<K extends string>(grid: string[][], specs: FieldSpec<K>[]) {
+  const loc = locateColumns(grid, specs)
+  const get = (cells: string[], key: K): string => {
+    const i = loc.idx[key]
+    return i !== undefined && i >= 0 ? ((cells[i] ?? '').trim()) : ''
+  }
+  // A data row that is actually a (repeated) header: as many alias matches as
+  // the detected header — real data never matches that many column labels.
+  const isRepeatedHeader = (cells: string[]): boolean =>
+    loc.headerMatchCount >= 2 && countAliasMatches(cells, loc.aliasMap) >= loc.headerMatchCount
+  return { loc, get, isRepeatedHeader }
+}
+
+// ─── Classes (name, level, section) ────────────────────────────────────────────
+
+export type ParsedClassRow = { line: number; name: string; level: string; section: string; error: string | null }
+
+const CLASS_SPECS: FieldSpec<'name' | 'level' | 'section'>[] = [
+  { key: 'name',    positional: 0, aliases: ['nom', 'classe', 'class'] },
+  { key: 'level',   positional: 1, aliases: ['niveau'] },
+  { key: 'section', positional: 2, aliases: [] },
+]
+
+export function readClassRows(grid: string[][]): ImportParseResult<ParsedClassRow> {
+  const { loc, get, isRepeatedHeader } = prepare(grid, CLASS_SPECS)
   const out: ParsedClassRow[] = []
-  for (let r = dataStart; r < grid.length; r++) {
+  let skippedRepeated = 0
+
+  for (let r = loc.dataStart; r < grid.length; r++) {
     const cells = grid[r]
-    const name    = (nameIdx    >= 0 ? cells[nameIdx]    : '')?.trim() ?? ''
-    const level   = (levelIdx   >= 0 ? cells[levelIdx]   : '')?.trim() ?? ''
-    const section = (sectionIdx >= 0 ? cells[sectionIdx] : '')?.trim() ?? ''
+    if (isRepeatedHeader(cells)) { skippedRepeated++; continue }
+    const name = get(cells, 'name'), level = get(cells, 'level'), section = get(cells, 'section')
 
     let error: string | null = null
-    if (!name)                 error = 'Le nom de la classe est requis.'
-    else if (name.length > 100) error = 'Nom trop long (100 caractères max).'
-    else if (level.length > 50) error = 'Niveau trop long (50 caractères max).'
+    if (!name)                    error = 'Le nom de la classe est requis.'
+    else if (name.length > 100)   error = 'Nom trop long (100 caractères max).'
+    else if (level.length > 50)   error = 'Niveau trop long (50 caractères max).'
     else if (section.length > 50) error = 'Section trop longue (50 caractères max).'
 
     out.push({ line: r + 1, name, level, section, error })
   }
-  return out
+  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, new Map()) }
 }
 
-// ─── Subjects (name, code, coefficient) ───────────────────────────────────────
+// ─── Subjects (name, code, coefficient) ────────────────────────────────────────
 
-export type ParsedSubjectRow = {
-  line:        number
-  name:        string
-  code:        string
-  coefficient: string   // raw text; numeric validation happens here
-  error:       string | null
-}
+export type ParsedSubjectRow = { line: number; name: string; code: string; coefficient: string; error: string | null }
 
-const SUBJECT_HEADER_ALIASES: Record<string, 'name' | 'code' | 'coefficient'> = {
-  name: 'name', nom: 'name', matiere: 'name', 'matière': 'name',
-  code: 'code',
-  coefficient: 'coefficient', coef: 'coefficient', coeff: 'coefficient',
-}
+const SUBJECT_SPECS: FieldSpec<'name' | 'code' | 'coefficient'>[] = [
+  { key: 'name',        positional: 0, aliases: ['nom', 'matiere', 'subject'] },
+  { key: 'code',        positional: 1, aliases: [] },
+  { key: 'coefficient', positional: 2, aliases: ['coef', 'coeff'] },
+]
 
-/**
- * Map raw CSV rows to subject rows with per-row validation. The first row is
- * treated as a header when it contains a recognised column name; otherwise the
- * columns are assumed to be name, code, coefficient in order. Only `name` is
- * required; `coefficient`, if present, must be a number > 0 and <= 100.
- */
-export function readSubjectRows(grid: string[][]): ParsedSubjectRow[] {
-  if (grid.length === 0) return []
-
-  const header = grid[0].map((h) => h.trim().toLowerCase())
-  const looksLikeHeader = header.some((h) => h in SUBJECT_HEADER_ALIASES)
-
-  let nameIdx = 0, codeIdx = 1, coefIdx = 2
-  let dataStart = 0
-  if (looksLikeHeader) {
-    nameIdx = header.findIndex((h) => SUBJECT_HEADER_ALIASES[h] === 'name')
-    codeIdx = header.findIndex((h) => SUBJECT_HEADER_ALIASES[h] === 'code')
-    coefIdx = header.findIndex((h) => SUBJECT_HEADER_ALIASES[h] === 'coefficient')
-    dataStart = 1
-  }
-
+export function readSubjectRows(grid: string[][]): ImportParseResult<ParsedSubjectRow> {
+  const { loc, get, isRepeatedHeader } = prepare(grid, SUBJECT_SPECS)
   const out: ParsedSubjectRow[] = []
-  for (let r = dataStart; r < grid.length; r++) {
+  let skippedRepeated = 0
+
+  for (let r = loc.dataStart; r < grid.length; r++) {
     const cells = grid[r]
-    const name = (nameIdx >= 0 ? cells[nameIdx] : '')?.trim() ?? ''
-    const code = (codeIdx >= 0 ? cells[codeIdx] : '')?.trim() ?? ''
-    const coefficient = (coefIdx >= 0 ? cells[coefIdx] : '')?.trim() ?? ''
+    if (isRepeatedHeader(cells)) { skippedRepeated++; continue }
+    const name = get(cells, 'name'), code = get(cells, 'code'), coefficient = get(cells, 'coefficient')
 
     let error: string | null = null
-    if (!name)                  error = 'Le nom de la matière est requis.'
+    if (!name)                   error = 'Le nom de la matière est requis.'
     else if (name.length > 100)  error = 'Nom trop long (100 caractères max).'
     else if (code.length > 20)   error = 'Code trop long (20 caractères max).'
     else if (coefficient !== '') {
       const n = Number(coefficient.replace(',', '.'))
-      if (!Number.isFinite(n) || n <= 0)  error = 'Coefficient invalide (nombre > 0).'
-      else if (n > 100)                   error = 'Coefficient trop élevé (100 max).'
+      if (!Number.isFinite(n) || n <= 0) error = 'Coefficient invalide (nombre > 0).'
+      else if (n > 100)                  error = 'Coefficient trop élevé (100 max).'
     }
 
     out.push({ line: r + 1, name, code, coefficient, error })
   }
-  return out
+  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, new Map()) }
 }
 
 // ─── Students (first_name, last_name, admission_number, gender, dob, status) ──
 
 export type ParsedStudentRow = {
-  line:             number
-  first_name:       string
-  last_name:        string
-  admission_number: string
-  gender:           string
-  date_of_birth:    string
-  status:           string
-  error:            string | null
+  line: number; first_name: string; last_name: string; admission_number: string
+  gender: string; date_of_birth: string; status: string; error: string | null
 }
 
-const STUDENT_HEADER_ALIASES: Record<string, 'first_name' | 'last_name' | 'admission_number' | 'gender' | 'date_of_birth' | 'status'> = {
-  first_name: 'first_name', firstname: 'first_name', prenom: 'first_name', 'prénom': 'first_name',
-  last_name: 'last_name', lastname: 'last_name', nom: 'last_name',
-  admission_number: 'admission_number', admission: 'admission_number', matricule: 'admission_number', numero: 'admission_number', 'numéro': 'admission_number',
-  gender: 'gender', sexe: 'gender',
-  date_of_birth: 'date_of_birth', dob: 'date_of_birth', naissance: 'date_of_birth', date_naissance: 'date_of_birth',
-  status: 'status', statut: 'status',
-}
+const STUDENT_SPECS: FieldSpec<'first_name' | 'last_name' | 'admission_number' | 'gender' | 'date_of_birth' | 'status'>[] = [
+  { key: 'first_name',       positional: 0, aliases: ['firstname', 'prenom'] },
+  { key: 'last_name',        positional: 1, aliases: ['lastname', 'nom'] },
+  { key: 'admission_number', positional: 2, aliases: ['admission', 'matricule', 'numero', "numero d'admission", "n° d'admission", 'no admission'] },
+  { key: 'gender',           positional: 3, aliases: ['sexe'] },
+  { key: 'date_of_birth',    positional: 4, aliases: ['dob', 'naissance', 'date naissance', 'date de naissance'] },
+  { key: 'status',           positional: 5, aliases: ['statut'] },
+]
 
-const GENDERS = new Set(['male', 'female', 'other'])
-const STUDENT_STATUSES = new Set(['active', 'inactive', 'graduated'])
-
-/**
- * Map raw CSV rows to student rows with per-row validation. The first row is
- * treated as a header when it contains a recognised column name; otherwise the
- * columns are assumed to be first_name, last_name, admission_number, gender,
- * date_of_birth, status in order. first_name/last_name/admission_number are
- * required; gender (male|female|other) and status (active|inactive|graduated)
- * are validated when present; date_of_birth must be AAAA-MM-JJ when present.
- */
-export function readStudentRows(grid: string[][]): ParsedStudentRow[] {
-  if (grid.length === 0) return []
-
-  const header = grid[0].map((h) => h.trim().toLowerCase())
-  const looksLikeHeader = header.some((h) => h in STUDENT_HEADER_ALIASES)
-
-  let firstIdx = 0, lastIdx = 1, admIdx = 2, genIdx = 3, dobIdx = 4, statusIdx = 5
-  let dataStart = 0
-  if (looksLikeHeader) {
-    firstIdx  = header.findIndex((h) => STUDENT_HEADER_ALIASES[h] === 'first_name')
-    lastIdx   = header.findIndex((h) => STUDENT_HEADER_ALIASES[h] === 'last_name')
-    admIdx    = header.findIndex((h) => STUDENT_HEADER_ALIASES[h] === 'admission_number')
-    genIdx    = header.findIndex((h) => STUDENT_HEADER_ALIASES[h] === 'gender')
-    dobIdx    = header.findIndex((h) => STUDENT_HEADER_ALIASES[h] === 'date_of_birth')
-    statusIdx = header.findIndex((h) => STUDENT_HEADER_ALIASES[h] === 'status')
-    dataStart = 1
-  }
-
-  const cell = (cells: string[], i: number) => (i >= 0 ? cells[i] : '')?.trim() ?? ''
-
+export function readStudentRows(grid: string[][]): ImportParseResult<ParsedStudentRow> {
+  const { loc, get, isRepeatedHeader } = prepare(grid, STUDENT_SPECS)
   const out: ParsedStudentRow[] = []
-  for (let r = dataStart; r < grid.length; r++) {
+  let skippedRepeated = 0
+  const norm = new Map<string, string>()
+
+  for (let r = loc.dataStart; r < grid.length; r++) {
     const cells = grid[r]
-    const first_name       = cell(cells, firstIdx)
-    const last_name        = cell(cells, lastIdx)
-    const admission_number = cell(cells, admIdx)
-    const gender           = cell(cells, genIdx).toLowerCase()
-    const date_of_birth    = cell(cells, dobIdx)
-    const status           = cell(cells, statusIdx).toLowerCase()
+    if (isRepeatedHeader(cells)) { skippedRepeated++; continue }
+
+    const first_name       = get(cells, 'first_name')
+    const last_name        = get(cells, 'last_name')
+    const admission_number = get(cells, 'admission_number')
+    const genderRaw        = get(cells, 'gender')
+    const date_of_birth    = get(cells, 'date_of_birth')
+    const statusRaw        = get(cells, 'status')
+
+    const gender = genderRaw ? normGender(genderRaw) : ''
+    const status = statusRaw ? normStatus(statusRaw) : ''
+    if (genderRaw && GENDERS.has(gender)) recordNorm(norm, 'Sexe', genderRaw, gender)
+    if (statusRaw && STUDENT_STATUSES.has(status)) recordNorm(norm, 'Statut', statusRaw, status)
 
     let error: string | null = null
-    if (!first_name)                       error = 'Le prénom est requis.'
-    else if (first_name.length > 100)       error = 'Prénom trop long (100 caractères max).'
-    else if (!last_name)                    error = 'Le nom est requis.'
-    else if (last_name.length > 100)        error = 'Nom trop long (100 caractères max).'
-    else if (!admission_number)             error = "Le numéro d'admission est requis."
-    else if (admission_number.length > 50)  error = "Numéro d'admission trop long (50 caractères max)."
-    else if (gender && !GENDERS.has(gender)) error = 'Sexe invalide (male, female ou other).'
+    if (!first_name)                          error = 'Le prénom est requis.'
+    else if (first_name.length > 100)          error = 'Prénom trop long (100 caractères max).'
+    else if (!last_name)                       error = 'Le nom est requis.'
+    else if (last_name.length > 100)           error = 'Nom trop long (100 caractères max).'
+    else if (!admission_number)                error = "Le numéro d'admission est requis."
+    else if (admission_number.length > 50)     error = "Numéro d'admission trop long (50 caractères max)."
+    else if (gender && !GENDERS.has(gender))   error = 'Sexe invalide (male, female ou other).'
     else if (date_of_birth && !/^\d{4}-\d{2}-\d{2}$/.test(date_of_birth)) error = 'Date de naissance invalide (AAAA-MM-JJ).'
     else if (status && !STUDENT_STATUSES.has(status)) error = 'Statut invalide (active, inactive ou graduated).'
 
     out.push({ line: r + 1, first_name, last_name, admission_number, gender, date_of_birth, status, error })
   }
-  return out
+  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, norm) }
 }
-
-// ─── Shared ────────────────────────────────────────────────────────────────────
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // ─── Teachers (first_name, last_name, email, phone, subject, status) ──────────
 
 export type ParsedTeacherRow = {
-  line:       number
-  first_name: string
-  last_name:  string
-  email:      string
-  phone:      string
-  subject:    string
-  status:     string
-  error:      string | null
+  line: number; first_name: string; last_name: string; email: string
+  phone: string; subject: string; status: string; error: string | null
 }
 
-const TEACHER_HEADER_ALIASES: Record<string, 'first_name' | 'last_name' | 'email' | 'phone' | 'subject' | 'status'> = {
-  first_name: 'first_name', firstname: 'first_name', prenom: 'first_name', 'prénom': 'first_name',
-  last_name: 'last_name', lastname: 'last_name', nom: 'last_name',
-  email: 'email', mail: 'email', courriel: 'email', 'e-mail': 'email',
-  phone: 'phone', telephone: 'phone', 'téléphone': 'phone', tel: 'phone',
-  subject: 'subject', subjects: 'subject', matiere: 'subject', 'matière': 'subject', matieres: 'subject', 'matières': 'subject',
-  status: 'status', statut: 'status',
-}
+const TEACHER_SPECS: FieldSpec<'first_name' | 'last_name' | 'email' | 'phone' | 'subject' | 'status'>[] = [
+  { key: 'first_name', positional: 0, aliases: ['firstname', 'prenom'] },
+  { key: 'last_name',  positional: 1, aliases: ['lastname', 'nom'] },
+  { key: 'email',      positional: 2, aliases: ['mail', 'courriel', 'e-mail', 'adresse email'] },
+  { key: 'phone',      positional: 3, aliases: ['telephone', 'tel', 'contact'] },
+  { key: 'subject',    positional: 4, aliases: ['subjects', 'matiere', 'matieres', 'discipline'] },
+  { key: 'status',     positional: 5, aliases: ['statut'] },
+]
 
-const SIMPLE_STATUSES = new Set(['active', 'inactive'])
-
-/**
- * Map raw CSV/XLSX rows to teacher rows with per-row validation. The first row
- * is treated as a header when it contains a recognised column name; otherwise
- * the columns are assumed to be first_name, last_name, email, phone, subject,
- * status in order. first_name/last_name are required; email must be valid when
- * present; status (active|inactive) is validated when present.
- */
-export function readTeacherRows(grid: string[][]): ParsedTeacherRow[] {
-  if (grid.length === 0) return []
-
-  const header = grid[0].map((h) => h.trim().toLowerCase())
-  const looksLikeHeader = header.some((h) => h in TEACHER_HEADER_ALIASES)
-
-  let firstIdx = 0, lastIdx = 1, emailIdx = 2, phoneIdx = 3, subjectIdx = 4, statusIdx = 5
-  let dataStart = 0
-  if (looksLikeHeader) {
-    firstIdx   = header.findIndex((h) => TEACHER_HEADER_ALIASES[h] === 'first_name')
-    lastIdx    = header.findIndex((h) => TEACHER_HEADER_ALIASES[h] === 'last_name')
-    emailIdx   = header.findIndex((h) => TEACHER_HEADER_ALIASES[h] === 'email')
-    phoneIdx   = header.findIndex((h) => TEACHER_HEADER_ALIASES[h] === 'phone')
-    subjectIdx = header.findIndex((h) => TEACHER_HEADER_ALIASES[h] === 'subject')
-    statusIdx  = header.findIndex((h) => TEACHER_HEADER_ALIASES[h] === 'status')
-    dataStart  = 1
-  }
-
-  const cell = (cells: string[], i: number) => (i >= 0 ? cells[i] : '')?.trim() ?? ''
-
+export function readTeacherRows(grid: string[][]): ImportParseResult<ParsedTeacherRow> {
+  const { loc, get, isRepeatedHeader } = prepare(grid, TEACHER_SPECS)
   const out: ParsedTeacherRow[] = []
-  for (let r = dataStart; r < grid.length; r++) {
+  let skippedRepeated = 0
+  const norm = new Map<string, string>()
+
+  for (let r = loc.dataStart; r < grid.length; r++) {
     const cells = grid[r]
-    const first_name = cell(cells, firstIdx)
-    const last_name  = cell(cells, lastIdx)
-    const email      = cell(cells, emailIdx)
-    const phone      = cell(cells, phoneIdx)
-    const subject    = cell(cells, subjectIdx)
-    const status     = cell(cells, statusIdx).toLowerCase()
+    if (isRepeatedHeader(cells)) { skippedRepeated++; continue }
+
+    const first_name = get(cells, 'first_name')
+    const last_name  = get(cells, 'last_name')
+    const email      = get(cells, 'email')
+    const phone      = get(cells, 'phone')
+    const subject    = get(cells, 'subject')
+    const statusRaw  = get(cells, 'status')
+
+    const status = statusRaw ? normStatus(statusRaw) : ''
+    if (statusRaw && SIMPLE_STATUSES.has(status)) recordNorm(norm, 'Statut', statusRaw, status)
 
     let error: string | null = null
-    if (!first_name)                         error = 'Le prénom est requis.'
-    else if (first_name.length > 100)         error = 'Prénom trop long (100 caractères max).'
-    else if (!last_name)                      error = 'Le nom est requis.'
-    else if (last_name.length > 100)          error = 'Nom trop long (100 caractères max).'
-    else if (email && !EMAIL_RE.test(email))  error = 'Adresse email invalide.'
-    else if (email.length > 200)              error = 'Email trop long (200 caractères max).'
-    else if (phone.length > 30)               error = 'Numéro trop long (30 caractères max).'
-    else if (subject.length > 100)            error = 'Matière trop longue (100 caractères max).'
+    if (!first_name)                          error = 'Le prénom est requis.'
+    else if (first_name.length > 100)          error = 'Prénom trop long (100 caractères max).'
+    else if (!last_name)                       error = 'Le nom est requis.'
+    else if (last_name.length > 100)           error = 'Nom trop long (100 caractères max).'
+    else if (email && !EMAIL_RE.test(email))   error = 'Adresse email invalide.'
+    else if (email.length > 200)               error = 'Email trop long (200 caractères max).'
+    else if (phone.length > 30)                error = 'Numéro trop long (30 caractères max).'
+    else if (subject.length > 100)             error = 'Matière trop longue (100 caractères max).'
     else if (status && !SIMPLE_STATUSES.has(status)) error = 'Statut invalide (active ou inactive).'
 
     out.push({ line: r + 1, first_name, last_name, email, phone, subject, status, error })
   }
-  return out
+  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, norm) }
 }
 
 // ─── Parents (first_name, last_name, email, phone, admission, relationship, status) ─
 
 export type ParsedParentRow = {
-  line:                     number
-  first_name:               string
-  last_name:                string
-  email:                    string
-  phone:                    string
-  student_admission_number: string
-  relationship:             string   // normalised: father | mother | guardian | other
-  status:                   string
-  error:                    string | null
+  line: number; first_name: string; last_name: string; email: string; phone: string
+  student_admission_number: string; relationship: string; status: string; error: string | null
 }
 
-const PARENT_HEADER_ALIASES: Record<string, 'first_name' | 'last_name' | 'email' | 'phone' | 'student_admission_number' | 'relationship' | 'status'> = {
-  first_name: 'first_name', firstname: 'first_name', prenom: 'first_name', 'prénom': 'first_name',
-  last_name: 'last_name', lastname: 'last_name', nom: 'last_name',
-  email: 'email', mail: 'email', courriel: 'email', 'e-mail': 'email',
-  phone: 'phone', telephone: 'phone', 'téléphone': 'phone', tel: 'phone',
-  student_admission_number: 'student_admission_number', admission_number: 'student_admission_number',
-  admission: 'student_admission_number', matricule: 'student_admission_number', eleve: 'student_admission_number', 'élève': 'student_admission_number',
-  relationship: 'relationship', relation: 'relationship', lien: 'relationship', parente: 'relationship', 'parenté': 'relationship',
-  status: 'status', statut: 'status',
-}
+const PARENT_SPECS: FieldSpec<'first_name' | 'last_name' | 'email' | 'phone' | 'student_admission_number' | 'relationship' | 'status'>[] = [
+  { key: 'first_name', positional: 0, aliases: ['firstname', 'prenom'] },
+  { key: 'last_name',  positional: 1, aliases: ['lastname', 'nom'] },
+  { key: 'email',      positional: 2, aliases: ['mail', 'courriel', 'e-mail'] },
+  { key: 'phone',      positional: 3, aliases: ['telephone', 'tel', 'contact'] },
+  { key: 'student_admission_number', positional: 4, aliases: ['admission_number', 'admission', 'matricule', 'eleve', 'matricule eleve', "numero d'admission", "numero d'admission eleve", "matricule de l'eleve"] },
+  { key: 'relationship', positional: 5, aliases: ['relation', 'lien', 'parente', 'lien de parente'] },
+  { key: 'status',     positional: 6, aliases: ['statut'] },
+]
 
-// 'parent' is intentionally mapped to 'guardian': the parent_student_links CHECK
-// constraint only allows father|mother|guardian|other (see migration 001), so
-// 'guardian' is the inclusive default — matching the existing link UI.
-const RELATIONSHIP_ALIASES: Record<string, 'father' | 'mother' | 'guardian' | 'other'> = {
-  father: 'father', pere: 'father', 'père': 'father', papa: 'father',
-  mother: 'mother', mere: 'mother', 'mère': 'mother', maman: 'mother',
-  guardian: 'guardian', tuteur: 'guardian', tutrice: 'guardian', parent: 'guardian',
-  other: 'other', autre: 'other',
-}
-
-export function normaliseRelationship(value: string): 'father' | 'mother' | 'guardian' | 'other' {
-  const k = value.trim().toLowerCase()
-  if (!k) return 'guardian'
-  return RELATIONSHIP_ALIASES[k] ?? 'guardian'
-}
-
-/**
- * Map raw CSV/XLSX rows to parent rows with per-row validation. The first row is
- * treated as a header when it contains a recognised column name; otherwise the
- * columns are assumed to be first_name, last_name, email, phone,
- * student_admission_number, relationship, status in order. first_name/last_name
- * are required and at least one of phone/email; email is validated when present;
- * relationship is normalised (default guardian); status (active|inactive) is
- * validated when present. The student_admission_number's EXISTENCE is verified
- * separately (it needs the school's data) — here only its length is checked.
- */
-export function readParentRows(grid: string[][]): ParsedParentRow[] {
-  if (grid.length === 0) return []
-
-  const header = grid[0].map((h) => h.trim().toLowerCase())
-  const looksLikeHeader = header.some((h) => h in PARENT_HEADER_ALIASES)
-
-  let firstIdx = 0, lastIdx = 1, emailIdx = 2, phoneIdx = 3, admIdx = 4, relIdx = 5, statusIdx = 6
-  let dataStart = 0
-  if (looksLikeHeader) {
-    firstIdx  = header.findIndex((h) => PARENT_HEADER_ALIASES[h] === 'first_name')
-    lastIdx   = header.findIndex((h) => PARENT_HEADER_ALIASES[h] === 'last_name')
-    emailIdx  = header.findIndex((h) => PARENT_HEADER_ALIASES[h] === 'email')
-    phoneIdx  = header.findIndex((h) => PARENT_HEADER_ALIASES[h] === 'phone')
-    admIdx    = header.findIndex((h) => PARENT_HEADER_ALIASES[h] === 'student_admission_number')
-    relIdx    = header.findIndex((h) => PARENT_HEADER_ALIASES[h] === 'relationship')
-    statusIdx = header.findIndex((h) => PARENT_HEADER_ALIASES[h] === 'status')
-    dataStart = 1
-  }
-
-  const cell = (cells: string[], i: number) => (i >= 0 ? cells[i] : '')?.trim() ?? ''
-
+export function readParentRows(grid: string[][]): ImportParseResult<ParsedParentRow> {
+  const { loc, get, isRepeatedHeader } = prepare(grid, PARENT_SPECS)
   const out: ParsedParentRow[] = []
-  for (let r = dataStart; r < grid.length; r++) {
+  let skippedRepeated = 0
+  const norm = new Map<string, string>()
+
+  for (let r = loc.dataStart; r < grid.length; r++) {
     const cells = grid[r]
-    const first_name = cell(cells, firstIdx)
-    const last_name  = cell(cells, lastIdx)
-    const email      = cell(cells, emailIdx)
-    const phone      = cell(cells, phoneIdx)
-    const student_admission_number = cell(cells, admIdx)
-    const relationship = normaliseRelationship(cell(cells, relIdx))
-    const status     = cell(cells, statusIdx).toLowerCase()
+    if (isRepeatedHeader(cells)) { skippedRepeated++; continue }
+
+    const first_name = get(cells, 'first_name')
+    const last_name  = get(cells, 'last_name')
+    const email      = get(cells, 'email')
+    const phone      = get(cells, 'phone')
+    const student_admission_number = get(cells, 'student_admission_number')
+    const relRaw     = get(cells, 'relationship')
+    const statusRaw  = get(cells, 'status')
+
+    const relationship = normaliseRelationship(relRaw)
+    const status = statusRaw ? normStatus(statusRaw) : ''
+    if (relRaw) recordNorm(norm, 'Lien', relRaw, relationship)
+    if (statusRaw && SIMPLE_STATUSES.has(status)) recordNorm(norm, 'Statut', statusRaw, status)
 
     let error: string | null = null
     if (!first_name)                          error = 'Le prénom est requis.'
@@ -411,5 +428,5 @@ export function readParentRows(grid: string[][]): ParsedParentRow[] {
 
     out.push({ line: r + 1, first_name, last_name, email, phone, student_admission_number, relationship, status, error })
   }
-  return out
+  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, norm) }
 }

@@ -58,12 +58,12 @@ export function ImportParentsClient({
   const phones = useMemo(() => new Set(existingPhones), [existingPhones])
   const admissions = useMemo(() => new Set(studentAdmissions), [studentAdmissions])
 
-  const rows: PreviewRow[] = useMemo(() => {
-    if (!csvText.trim()) return []
-    const parsed = readParentRows(parseCsv(csvText))
+  const preview = useMemo(() => {
+    if (!csvText.trim()) return { rows: [] as PreviewRow[], notes: [] as string[] }
+    const { rows: parsed, notes } = readParentRows(parseCsv(csvText))
     const seenEmail = new Set<string>()
     const seenPhone = new Set<string>()
-    return parsed.map((r) => {
+    const rows = parsed.map((r): PreviewRow => {
       const contact = r.email || r.phone
       const base = { line: r.line, first_name: r.first_name, last_name: r.last_name, contact, willLink: false }
       if (r.error) return { ...base, status: 'error' as const, message: r.error }
@@ -79,7 +79,10 @@ export function ImportParentsClient({
       if (ph) seenPhone.add(ph)
       return { ...base, willLink: !!adm, status: 'create' as const, message: null }
     })
+    return { rows, notes }
   }, [csvText, emails, phones, admissions])
+  const rows = preview.rows
+  const cleanupNotes = preview.notes
 
   const errorCount  = rows.filter((r) => r.status === 'error').length
   const createCount = rows.filter((r) => r.status === 'create').length
@@ -143,6 +146,15 @@ export function ImportParentsClient({
           Prénom, nom et (téléphone ou email) obligatoires. Le numéro d&apos;admission lie le parent à un élève existant.
         </p>
       </div>
+
+      {/* Cleanup transparency */}
+      {cleanupNotes.length > 0 && (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+          <ul className="space-y-0.5">
+            {cleanupNotes.map((n, i) => <li key={i}>✨ {n}</li>)}
+          </ul>
+        </div>
+      )}
 
       {/* Step 2: preview */}
       {rows.length > 0 && (

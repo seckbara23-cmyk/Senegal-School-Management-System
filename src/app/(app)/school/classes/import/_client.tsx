@@ -57,11 +57,11 @@ export function ImportClient({
 
   const existing = useMemo(() => new Set(existingByYear[yearId] ?? []), [existingByYear, yearId])
 
-  const rows: PreviewRow[] = useMemo(() => {
-    if (!csvText.trim()) return []
-    const parsed = readClassRows(parseCsv(csvText))
+  const preview = useMemo(() => {
+    if (!csvText.trim()) return { rows: [] as PreviewRow[], notes: [] as string[] }
+    const { rows: parsed, notes } = readClassRows(parseCsv(csvText))
     const seenInFile = new Set<string>()
-    return parsed.map((r) => {
+    const rows = parsed.map((r): PreviewRow => {
       if (r.error) return { ...r, status: 'error' as const, message: r.error }
       const key = r.name.toLowerCase()
       if (existing.has(key)) return { ...r, status: 'exists' as const, message: null }
@@ -69,7 +69,10 @@ export function ImportClient({
       seenInFile.add(key)
       return { ...r, status: 'create' as const, message: null }
     })
+    return { rows, notes }
   }, [csvText, existing])
+  const rows = preview.rows
+  const cleanupNotes = preview.notes
 
   const errorCount  = rows.filter((r) => r.status === 'error').length
   const createCount = rows.filter((r) => r.status === 'create').length
@@ -139,6 +142,15 @@ export function ImportClient({
         )}
         <p className="text-xs text-gray-400">Colonnes attendues : <span className="font-mono">name, level, section</span>. Le nom est obligatoire.</p>
       </div>
+
+      {/* Cleanup transparency */}
+      {cleanupNotes.length > 0 && (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+          <ul className="space-y-0.5">
+            {cleanupNotes.map((n, i) => <li key={i}>✨ {n}</li>)}
+          </ul>
+        </div>
+      )}
 
       {/* Step 2: preview */}
       {rows.length > 0 && (

@@ -53,11 +53,11 @@ export function ImportStudentsClient({ existing, classes }: { existing: string[]
 
   const have = useMemo(() => new Set(existing), [existing])
 
-  const rows: PreviewRow[] = useMemo(() => {
-    if (!csvText.trim()) return []
-    const parsed = readStudentRows(parseCsv(csvText))
+  const preview = useMemo(() => {
+    if (!csvText.trim()) return { rows: [] as PreviewRow[], notes: [] as string[] }
+    const { rows: parsed, notes } = readStudentRows(parseCsv(csvText))
     const seenInFile = new Set<string>()
-    return parsed.map((r) => {
+    const rows = parsed.map((r): PreviewRow => {
       const base = { line: r.line, first_name: r.first_name, last_name: r.last_name, admission_number: r.admission_number }
       if (r.error) return { ...base, status: 'error' as const, message: r.error }
       const key = r.admission_number.toLowerCase()
@@ -66,7 +66,10 @@ export function ImportStudentsClient({ existing, classes }: { existing: string[]
       seenInFile.add(key)
       return { ...base, status: 'create' as const, message: null }
     })
+    return { rows, notes }
   }, [csvText, have])
+  const rows = preview.rows
+  const cleanupNotes = preview.notes
 
   const errorCount  = rows.filter((r) => r.status === 'error').length
   const createCount = rows.filter((r) => r.status === 'create').length
@@ -139,6 +142,15 @@ export function ImportStudentsClient({ existing, classes }: { existing: string[]
           Prénom, nom et numéro d&apos;admission obligatoires.
         </p>
       </div>
+
+      {/* Cleanup transparency */}
+      {cleanupNotes.length > 0 && (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+          <ul className="space-y-0.5">
+            {cleanupNotes.map((n, i) => <li key={i}>✨ {n}</li>)}
+          </ul>
+        </div>
+      )}
 
       {/* Step 2: preview */}
       {rows.length > 0 && (

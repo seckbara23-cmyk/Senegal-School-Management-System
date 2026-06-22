@@ -413,7 +413,7 @@ export async function importParentsFromCsv(
   const csvText = String(formData.get('csv_text') ?? '')
   if (!csvText.trim()) return { errors: { _form: ['Aucune donnée à importer. Choisissez un fichier CSV ou Excel (.xlsx).'] } }
 
-  const rows = readParentRows(parseCsv(csvText))
+  const { rows } = readParentRows(parseCsv(csvText))
   if (rows.length === 0) return { errors: { _form: ['Le fichier ne contient aucun parent.'] } }
 
   const rowErrors = rows.filter((r) => r.error).map((r) => ({ line: r.line, message: `Ligne ${r.line} : ${r.error}` }))
