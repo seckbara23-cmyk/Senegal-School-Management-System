@@ -339,6 +339,67 @@ export async function notifyAssessmentCreated(
   }
 }
 
+// ── Homework assigned (Phase 3E) ─────────────────────────────────────────────
+//
+// Recipients: all actively enrolled students of the class + their linked parents
+// (de-duplicated). Emitted after a teacher/admin posts homework.
+
+export async function notifyHomeworkAssigned(
+  client: NotifyClient,
+  input: {
+    schoolId:       string
+    homeworkId:     string
+    classId:        string
+    classSubjectId: string
+    title:          string
+    dueDate:        string | null
+  },
+): Promise<void> {
+  try {
+    const subjectName = await timetableSubjectName(client, input.schoolId, input.classSubjectId)
+
+    const { data: enr } = await client
+      .from('student_class_enrollments')
+      .select('student_id')
+      .eq('school_id', input.schoolId)
+      .eq('class_id', input.classId)
+      .eq('status', 'active')
+
+    const studentIds = Array.from(new Set(((enr ?? []) as { student_id: string }[]).map((e) => e.student_id)))
+    if (studentIds.length === 0) return
+
+    const [students, parents] = await Promise.all([
+      resolveStudents(client, input.schoolId, studentIds),
+      resolveParentProfilesByStudent(client, input.schoolId, studentIds),
+    ])
+
+    const recipients = new Set<string>()
+    for (const sid of studentIds) {
+      for (const uid of recipientsForStudent(sid, students, parents)) recipients.add(uid)
+    }
+    if (recipients.size === 0) return
+
+    const dateLabel = fmtDate(input.dueDate)
+    const body = dateLabel
+      ? `${subjectName} : « ${input.title} » à rendre pour le ${dateLabel}.`
+      : `${subjectName} : « ${input.title} ».`
+
+    const metadata = {
+      homework_id:      input.homeworkId,
+      class_id:         input.classId,
+      class_subject_id: input.classSubjectId,
+      due_date:         input.dueDate,
+    }
+
+    await Promise.all(
+      Array.from(recipients).map((userId) =>
+        createNotification(client, { userId, type: 'homework_assigned', title: 'Nouveau devoir', body, schoolId: input.schoolId, metadata })),
+    )
+  } catch (err) {
+    console.error('[notify] notifyHomeworkAssigned failed', err)
+  }
+}
+
 // ── Bulletin published (foundation only) ─────────────────────────────────────
 //
 // There is no "publish bulletin" workflow yet — bulletins are computed and

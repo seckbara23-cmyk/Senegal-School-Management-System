@@ -15,6 +15,7 @@ const P = {
   bars:       'M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5',
   x:          'M6 18L18 6M6 6l12 12',
   exam:       'M4.26 10.147a60.438 60.438 0 00-.491 6.347A48.62 48.62 0 0112 20.904a48.62 48.62 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.636 50.636 0 00-2.658-.813A59.906 59.906 0 0112 3.493a59.903 59.903 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5',
+  homework:   'M11.25 4.533A9.707 9.707 0 006 3a9.735 9.735 0 00-3.25.555.75.75 0 00-.5.707v14.25a.75.75 0 001 .707A8.237 8.237 0 016 18.75c1.995 0 3.823.707 5.25 1.886V4.533zM12.75 20.636A8.214 8.214 0 0118 18.75c.966 0 1.89.166 2.75.47a.75.75 0 001-.708V4.262a.75.75 0 00-.5-.707A9.735 9.735 0 0018 3a9.707 9.707 0 00-5.25 1.533v16.103z',
   help:       'M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z',
   signout:    'M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75',
 }
@@ -24,6 +25,7 @@ const NAV = [
   { label: 'Bulletins',       href: '/student/bulletins',     icon: P.bulletin,   exact: false },
   { label: 'Examens',         href: '/student/exams',         icon: P.exam,       exact: false },
   { label: 'Présences',       href: '/student/attendance',    icon: P.attendance, exact: false },
+  { label: 'Devoirs',         href: '/student/homework',      icon: P.homework,   exact: false },
   { label: 'Emploi du temps', href: '/student/timetable',     icon: P.timetable,  exact: false },
   { label: 'Finance',         href: '/student/finance',       icon: P.finance,    exact: false },
   { label: 'Annonces',        href: '/student/announcements', icon: P.bell,       exact: false },

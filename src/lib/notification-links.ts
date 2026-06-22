@@ -122,6 +122,25 @@ export function getNotificationHref(n: NotificationLike, role: NotificationRole)
       }
     }
 
+    // ── Homework assigned (recipients: parent + student) ─────────────────────
+    case 'homework_assigned':
+      switch (role) {
+        case 'teacher': return '/teacher/homework'
+        case 'parent':  return '/parent/homework'
+        case 'student': return '/student/homework'
+        default:        return FALLBACK
+      }
+
+    // ── New message (parent ↔ teacher) ───────────────────────────────────────
+    case 'message_received': {
+      const threadId = meta(m, 'thread_id')
+      switch (role) {
+        case 'teacher': return threadId ? `/teacher/messages/${threadId}` : '/teacher/messages'
+        case 'parent':  return threadId ? `/parent/messages/${threadId}`  : '/parent/messages'
+        default:        return FALLBACK
+      }
+    }
+
     default:
       return FALLBACK
   }
