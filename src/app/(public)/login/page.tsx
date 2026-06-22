@@ -203,60 +203,59 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen w-full bg-sand-50 lg:grid lg:grid-cols-2">
 
-      {/* ── Brand panel (desktop only) ───────────────────────────────────────── */}
-      <aside className="relative hidden overflow-hidden bg-primary-700 lg:flex lg:flex-col lg:justify-between lg:px-12 lg:py-14">
-        {/* Decorative Senegalese-textile diamond pattern */}
-        <svg className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.07]" aria-hidden="true">
-          <defs>
-            <pattern id="diamonds" width="46" height="46" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-              <rect width="46" height="46" fill="none" />
-              <rect x="14" y="14" width="18" height="18" fill={GOLD} />
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#diamonds)" />
-        </svg>
-        {/* Soft glow */}
-        <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-primary-600/40 blur-3xl" aria-hidden="true" />
+      {/* ── Hero panel (desktop only) ────────────────────────────────────────── */}
+      {/* The classroom photo is the centerpiece. The source artwork bundles a
+          mock login form on its left half; we use a pre-cropped asset
+          (login-hero.png) that contains ONLY the photo, so no second/fake form
+          can ever appear. object-cover + center keeps the people framed. */}
+      <aside className="relative hidden overflow-hidden bg-primary-900 lg:block">
+        <Image
+          src="/Images/login-hero.png"
+          alt="Enseignants et élèves sénégalais utilisant ScolaTech en classe"
+          fill
+          priority
+          sizes="(min-width: 1024px) 50vw, 0px"
+          className="object-cover object-center"
+        />
 
-        {/* Logo */}
-        <div className="relative flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white ring-1 ring-white/20">
-            <BrandMark className="h-6 w-6" />
+        {/* Green gradient overlay for text legibility */}
+        <div
+          className="absolute inset-0 bg-gradient-to-t from-primary-950/92 via-primary-900/45 to-primary-900/55"
+          aria-hidden="true"
+        />
+        <div
+          className="absolute inset-0 bg-gradient-to-br from-primary-900/40 to-transparent"
+          aria-hidden="true"
+        />
+
+        {/* Foreground content */}
+        <div className="relative flex h-full flex-col justify-between px-12 py-14">
+          {/* Logo */}
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white ring-1 ring-white/20 backdrop-blur-sm">
+              <BrandMark className="h-6 w-6" />
+            </div>
+            <span className="text-2xl font-bold tracking-tight text-white drop-shadow">ScolaTech</span>
           </div>
-          <span className="text-2xl font-bold tracking-tight text-white">ScolaTech</span>
-        </div>
 
-        {/* Messaging + hero image */}
-        <div className="relative max-w-lg">
-          <span className="inline-block rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-primary-100 ring-1 ring-white/15">
-            Logiciel de gestion scolaire
-          </span>
-          <h1 className="mt-5 text-3xl font-bold leading-snug tracking-tight text-white xl:text-[2.05rem]">
-            Plateforme de gestion scolaire pour les établissements sénégalais
-          </h1>
-          <p className="mt-4 max-w-md text-base leading-relaxed text-primary-100">
-            Centralisez la gestion des élèves, enseignants, parents, notes, présences et paiements dans un espace sécurisé.
-          </p>
-
-          {/* Hero image — the visual centerpiece. Native ratio is 3:2, so
-              object-cover keeps it crisp without stretching, and the fixed
-              aspect-ratio box reserves space to prevent layout shift. */}
-          <div className="relative mt-9 aspect-[3/2] w-full overflow-hidden rounded-2xl shadow-2xl shadow-primary-950/40 ring-1 ring-white/15">
-            <Image
-              src="/Images/School.png"
-              alt="Établissement scolaire moderne au Sénégal"
-              fill
-              priority
-              sizes="(min-width: 1024px) 44vw, 100vw"
-              className="object-cover"
-            />
+          {/* Messaging */}
+          <div className="max-w-lg">
+            <span className="inline-block rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-primary-50 ring-1 ring-white/20 backdrop-blur-sm">
+              Logiciel de gestion scolaire
+            </span>
+            <h1 className="mt-5 text-3xl font-bold leading-snug tracking-tight text-white drop-shadow-md xl:text-[2.05rem]">
+              La gestion scolaire moderne pour les établissements sénégalais
+            </h1>
+            <p className="mt-4 max-w-md text-base leading-relaxed text-primary-50/90 drop-shadow">
+              Centralisez élèves, enseignants, parents, notes, présences, bulletins et paiements dans un espace sécurisé.
+            </p>
           </div>
-        </div>
 
-        {/* Footer accent */}
-        <div className="relative flex items-center gap-2 text-sm font-medium text-primary-200">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: GOLD }} aria-hidden="true" />
-          Conçu pour les écoles du Sénégal
+          {/* Footer accent */}
+          <div className="flex items-center gap-2 text-sm font-medium text-primary-100 drop-shadow">
+            <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: GOLD }} aria-hidden="true" />
+            Conçu pour les écoles du Sénégal
+          </div>
         </div>
       </aside>
 
@@ -264,7 +263,7 @@ export default function LoginPage() {
       <div className="flex min-h-screen flex-col items-center justify-center px-4 py-10 sm:px-6 lg:px-8">
         <div className="w-full max-w-md">
 
-          {/* Compact brand (mobile only) */}
+          {/* Compact brand (mobile only) — no image, just branding + form */}
           <div className="mb-8 flex flex-col items-center text-center lg:hidden">
             <div className="flex items-center gap-2.5">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-600 text-white shadow-sm">
@@ -273,7 +272,7 @@ export default function LoginPage() {
               <span className="text-xl font-bold tracking-tight text-gray-900">ScolaTech</span>
             </div>
             <p className="mt-3 text-sm leading-relaxed text-gray-500">
-              Plateforme de gestion scolaire pour les établissements sénégalais
+              La gestion scolaire moderne pour les établissements sénégalais
             </p>
           </div>
 
