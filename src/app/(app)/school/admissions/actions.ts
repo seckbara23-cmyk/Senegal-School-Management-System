@@ -7,6 +7,7 @@ import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE, canAddStudent, logLimitBlocked, STUDENT_LIMIT_REACHED_MESSAGE } from '@/lib/tenant'
 import { slugify } from '@/lib/admissions'
+import { notifyInvoiceCreated } from '@/lib/notification-events'
 
 // ─── Shared guard ───────────────────────────────────────────────────────────
 
@@ -304,6 +305,8 @@ const ConvertSchema = z.object({
   admission_id:     z.string().uuid('Candidature invalide.'),
   admission_number: z.string().min(1, "Le matricule est requis.").max(50, 'Matricule trop long.'),
   class_id:         z.preprocess(emptyToUndef, z.string().uuid('Classe invalide.').optional()),
+  create_parent:    z.preprocess((v) => v === 'on' || v === 'true', z.boolean()),
+  invoice_due_date: z.preprocess(emptyToUndef, z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date invalide.').optional()),
 })
 
 export type ConvertState = {
@@ -328,20 +331,23 @@ export async function convertAdmission(
     admission_id:     formData.get('admission_id'),
     admission_number: formData.get('admission_number'),
     class_id:         formData.get('class_id'),
+    create_parent:    formData.get('create_parent'),
+    invoice_due_date: formData.get('invoice_due_date'),
   })
   if (!parsed.success) {
     return { errors: parsed.error.flatten().fieldErrors as ConvertState['errors'] }
   }
-  const { admission_id, admission_number, class_id } = parsed.data
+  const { admission_id, admission_number, class_id, create_parent, invoice_due_date } = parsed.data
+  const feeItemIds = formData.getAll('fee_item_ids').map((v) => String(v)).filter(Boolean)
 
   const { data: appRaw } = await supabase
     .from('admission_applications')
-    .select('id, first_name, last_name, gender, date_of_birth, status, converted_student_id')
+    .select('id, first_name, last_name, gender, date_of_birth, status, converted_student_id, guardian_name, guardian_phone, guardian_email, guardian_relationship, guardian_address')
     .eq('id', admission_id)
     .eq('school_id', schoolId)
     .maybeSingle()
   if (!appRaw) return { errors: { _form: ['Candidature introuvable.'] } }
-  type AppRow = { id: string; first_name: string; last_name: string; gender: string | null; date_of_birth: string | null; status: string; converted_student_id: string | null }
+  type AppRow = { id: string; first_name: string; last_name: string; gender: string | null; date_of_birth: string | null; status: string; converted_student_id: string | null; guardian_name: string | null; guardian_phone: string | null; guardian_email: string | null; guardian_relationship: string | null; guardian_address: string | null }
   const app = appRaw as AppRow
 
   if (app.converted_student_id) return { errors: { _form: ['Cette candidature a déjà été convertie en élève.'] } }
@@ -413,17 +419,62 @@ export async function convertAdmission(
     }
   }
 
-  // Link the application to the new student (marks it converted).
+  // Optional: create a parent from the guardian fields + link to the student.
+  let parentId: string | null = null
+  if (create_parent && app.guardian_name && app.guardian_name.trim()) {
+    const parts = app.guardian_name.trim().split(/\s+/)
+    const first = parts[0]
+    const last = parts.length > 1 ? parts.slice(1).join(' ') : parts[0]
+    const { data: parentRow } = await supabase.from('parents').insert({
+      school_id: schoolId, first_name: first, last_name: last,
+      phone: app.guardian_phone, email: app.guardian_email, address: app.guardian_address, status: 'active',
+    }).select('id').single()
+    if (parentRow) {
+      parentId = (parentRow as { id: string }).id
+      await supabase.from('parent_student_links').upsert({
+        school_id: schoolId, parent_id: parentId, student_id: studentId,
+        relationship: app.guardian_relationship ?? 'guardian', is_primary_contact: true,
+      }, { onConflict: 'parent_id,student_id' })
+      await logAuditEvent(supabase, { actorId: actor.id, actorEmail: actor.email, schoolId, action: 'admission_parent_created', resourceType: 'parent', resourceId: parentId, metadata: { admission_id, student_id: studentId } })
+    }
+  }
+
+  // Optional: a registration / fee invoice from selected fee items.
+  let invoiceId: string | null = null
+  if (feeItemIds.length > 0) {
+    const { data: items } = await supabase.from('fee_items').select('id, name, amount').eq('school_id', schoolId).in('id', feeItemIds)
+    const details = (items ?? []) as { id: string; name: string; amount: number }[]
+    const total = details.reduce((s, i) => s + i.amount, 0)
+    if (details.length === feeItemIds.length && total > 0) {
+      const year = new Date().getFullYear()
+      const { count } = await supabase.from('student_invoices').select('id', { count: 'exact', head: true }).eq('school_id', schoolId)
+      const number = `${year}-${String((count ?? 0) + 1).padStart(4, '0')}`
+      const { data: inv } = await supabase.from('student_invoices').insert({
+        school_id: schoolId, student_id: studentId, academic_year_id: enrollClass?.academic_year_id ?? null,
+        invoice_number: number, title: 'Frais d’inscription', total_amount: total, amount_paid: 0, status: 'unpaid',
+        due_date: invoice_due_date ?? null, created_by: actor.id,
+      }).select('id').single()
+      if (inv) {
+        invoiceId = (inv as { id: string }).id
+        await supabase.from('invoice_lines').insert(details.map((it) => ({ school_id: schoolId, invoice_id: invoiceId, fee_item_id: it.id, description: it.name, amount: it.amount })))
+        await notifyInvoiceCreated(supabase, { schoolId, invoiceId, invoiceNumber: number, studentId, amount: total, dueDate: invoice_due_date ?? null })
+        await logAuditEvent(supabase, { actorId: actor.id, actorEmail: actor.email, schoolId, action: 'admission_invoice_generated', resourceType: 'invoice', resourceId: invoiceId, metadata: { admission_id, student_id: studentId, total } })
+      }
+    }
+  }
+
+  // Link the application to the new student/parent/invoice (marks it converted).
   await supabase
     .from('admission_applications')
-    .update({ converted_student_id: studentId })
+    .update({ converted_student_id: studentId, converted_parent_id: parentId, application_fee_invoice_id: invoiceId })
     .eq('id', admission_id)
     .eq('school_id', schoolId)
 
+  await recordEvent(supabase, schoolId, admission_id, { type: 'converted', status_to: app.status, message: 'Candidature convertie en élève', visibility: 'applicant', actorId: actor.id })
   await logAuditEvent(supabase, {
     actorId: actor.id, actorEmail: actor.email, schoolId,
     action: 'admission_converted', resourceType: 'admission', resourceId: admission_id,
-    metadata: { student_id: studentId, admission_number: admission_number.trim(), class_id: enrollClass?.id ?? null, enrolled },
+    metadata: { student_id: studentId, admission_number: admission_number.trim(), class_id: enrollClass?.id ?? null, enrolled, parent_id: parentId, invoice_id: invoiceId },
   })
 
   redirect(`/school/students/${studentId}`)

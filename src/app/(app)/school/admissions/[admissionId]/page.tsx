@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import { setAdmissionStatus, addAdmissionNote, requestDocuments, withdrawAdmission } from '../actions'
-import { ConvertForm, type ClassOpt } from './_convert_form'
+import { ConvertForm, type ClassOpt, type FeeOpt } from './_convert_form'
 import { DocumentsSection, type DocumentRow } from '@/components/DocumentsSection'
 import { ADMISSION_STATUS_LABEL, ADMISSION_STATUS_CLASS } from '@/lib/admissions'
 
@@ -75,10 +75,15 @@ export default async function AdmissionDetailPage({ params, searchParams }: Prop
   }
 
   let classes: ClassOpt[] = []
+  let feeItems: FeeOpt[] = []
   if (app.status === 'accepted' && !app.converted_student_id) {
-    const { data: cs } = await supabase.from('classes').select('id, name, section, academic_years!academic_year_id(name)').eq('school_id', schoolId).order('name')
+    const [{ data: cs }, { data: fees }] = await Promise.all([
+      supabase.from('classes').select('id, name, section, academic_years!academic_year_id(name)').eq('school_id', schoolId).order('name'),
+      supabase.from('fee_items').select('id, name, amount').eq('school_id', schoolId).eq('is_active', true).order('name'),
+    ])
     type CRow = { id: string; name: string; section: string | null; academic_years: { name: string } | null }
     classes = ((cs ?? []) as unknown as CRow[]).map((c) => ({ id: c.id, label: `${[c.name, c.section].filter(Boolean).join(' ')}${c.academic_years ? ` — ${c.academic_years.name}` : ''}` }))
+    feeItems = (fees ?? []) as FeeOpt[]
   }
 
   const [{ data: docsData }, { data: eventsData }] = await Promise.all([
@@ -181,7 +186,7 @@ export default async function AdmissionDetailPage({ params, searchParams }: Prop
       {app.status === 'accepted' && !isConverted && (
         <div className="overflow-hidden rounded-xl border-2 border-emerald-200 bg-white shadow-sm">
           <div className="border-b border-emerald-100 bg-emerald-50 px-5 py-3"><h2 className="text-xs font-bold uppercase tracking-widest text-emerald-700">Convertir en élève</h2></div>
-          <div className="px-5 py-4"><ConvertForm admissionId={app.id} defaultClassId={app.desired_class_id} classes={classes} /></div>
+          <div className="px-5 py-4"><ConvertForm admissionId={app.id} defaultClassId={app.desired_class_id} classes={classes} guardianName={app.guardian_name} feeItems={feeItems} /></div>
         </div>
       )}
 
