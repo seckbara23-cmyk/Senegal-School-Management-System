@@ -28,6 +28,7 @@ export const NOTIFICATION_TYPES = [
   'exam_results_published',
   'homework_assigned',
   'message_received',
+  'invoice_reminder',
 ] as const
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number]
@@ -57,6 +58,7 @@ export const NOTIFICATION_TYPE_LABEL: Record<string, string> = {
   exam_results_published: "Résultats d'examen",
   homework_assigned:      'Devoir',
   message_received:       'Message',
+  invoice_reminder:       'Rappel de paiement',
 }
 
 export const NOTIFICATION_TYPE_DOT: Record<string, string> = {
@@ -80,6 +82,7 @@ export const NOTIFICATION_TYPE_DOT: Record<string, string> = {
   exam_results_published: 'bg-indigo-500',
   homework_assigned:      'bg-amber-500',
   message_received:       'bg-primary-500',
+  invoice_reminder:       'bg-red-500',
 }
 
 export function notificationTypeLabel(type: string): string {

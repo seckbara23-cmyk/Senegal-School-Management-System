@@ -197,12 +197,14 @@ export default async function FinancePage() {
                 Solde impayé : {fmt(totalOverdueBalance)}
               </p>
             </div>
-            <a
-              href="/school/finance/invoices?status=overdue"
-              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
-            >
-              Voir →
-            </a>
+            <div className="flex gap-2">
+              <a href="/school/finance/reminders" className="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors">
+                Envoyer des rappels
+              </a>
+              <a href="/school/finance/invoices?status=overdue" className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 transition-colors">
+                Voir →
+              </a>
+            </div>
           </div>
         </div>
       )}

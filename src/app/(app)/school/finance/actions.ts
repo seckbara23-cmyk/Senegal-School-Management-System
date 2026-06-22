@@ -8,6 +8,7 @@ import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 import { notifyInvoiceCreated, notifyPaymentRecorded } from '@/lib/notification-events'
 import { splitInstallments } from '@/lib/finance/payment-plans'
+import { sendInvoiceReminder } from '@/lib/finance/reminders'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -611,6 +612,62 @@ export async function createBulkInvoices(
   if (result.skipped_count > 0) qs.set('skipped', String(result.skipped_count))
 
   redirect(`/school/finance/invoices?${qs.toString()}`)
+}
+
+// ─── Payment reminders (Phase 4.5) ────────────────────────────────────────────
+
+export async function sendPaymentReminder(formData: FormData): Promise<void> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+  const schoolId = await getSchoolId(supabase, user.id)
+  if (!schoolId) redirect('/school')
+  const invoiceId = z.string().uuid().safeParse(formData.get('invoice_id'))
+  if (!invoiceId.success) redirect('/school/finance/reminders')
+  if (!(await isSchoolWritable(supabase, schoolId))) redirect('/school/finance/reminders?error=locked')
+
+  const { data: raw } = await supabase
+    .from('student_invoices').select('id, student_id, total_amount, amount_paid, status, due_date')
+    .eq('id', invoiceId.data).eq('school_id', schoolId).maybeSingle()
+  const inv = raw as { id: string; student_id: string; total_amount: number; amount_paid: number; status: string; due_date: string | null } | null
+  if (!inv || (inv.status !== 'unpaid' && inv.status !== 'partial')) redirect('/school/finance/reminders')
+
+  const balance = inv.total_amount - inv.amount_paid
+  const delivered = await sendInvoiceReminder(supabase, { schoolId, invoiceId: inv.id, studentId: inv.student_id, balance, dueDate: inv.due_date, actorId: user.id })
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'payment_reminder_sent', resourceType: 'invoice', resourceId: inv.id,
+    metadata: { invoice_id: inv.id, student_id: inv.student_id, recipients: delivered, channel: 'in_app' },
+  })
+  redirect('/school/finance/reminders?sent=1')
+}
+
+export async function sendAllOverdueReminders(): Promise<void> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+  const schoolId = await getSchoolId(supabase, user.id)
+  if (!schoolId) redirect('/school')
+  if (!(await isSchoolWritable(supabase, schoolId))) redirect('/school/finance/reminders?error=locked')
+
+  const today = new Date().toISOString().split('T')[0]
+  const { data: overdue } = await supabase
+    .from('student_invoices').select('id, student_id, total_amount, amount_paid, due_date')
+    .eq('school_id', schoolId).in('status', ['unpaid', 'partial']).lt('due_date', today).not('due_date', 'is', null)
+
+  let sent = 0
+  for (const inv of (overdue ?? []) as { id: string; student_id: string; total_amount: number; amount_paid: number; due_date: string | null }[]) {
+    const delivered = await sendInvoiceReminder(supabase, { schoolId, invoiceId: inv.id, studentId: inv.student_id, balance: inv.total_amount - inv.amount_paid, dueDate: inv.due_date, actorId: user.id })
+    if (delivered > 0) sent++
+  }
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'payment_reminder_sent', resourceType: 'school', resourceId: schoolId,
+    metadata: { bulk: true, invoices_reminded: sent, channel: 'in_app' },
+  })
+  redirect(`/school/finance/reminders?sent=${sent}`)
 }
 
 // ─── invoiceFamily ────────────────────────────────────────────────────────────

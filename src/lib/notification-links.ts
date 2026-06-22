@@ -131,6 +131,16 @@ export function getNotificationHref(n: NotificationLike, role: NotificationRole)
         default:        return FALLBACK
       }
 
+    // ── Payment reminder (recipients: parent + student) ─────────────────────
+    case 'invoice_reminder': {
+      const invoiceId = meta(m, 'invoice_id')
+      switch (role) {
+        case 'parent':  return invoiceId ? `/parent/finance/invoices/${invoiceId}`  : '/parent/finance'
+        case 'student': return invoiceId ? `/student/finance/invoices/${invoiceId}` : '/student/finance'
+        default:        return FALLBACK
+      }
+    }
+
     // ── New message (parent ↔ teacher) ───────────────────────────────────────
     case 'message_received': {
       const threadId = meta(m, 'thread_id')
