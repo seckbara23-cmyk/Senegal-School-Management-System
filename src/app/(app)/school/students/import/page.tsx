@@ -43,7 +43,7 @@ export default async function ImportStudentsPage() {
           <a href="/school/students" className="text-primary-300 hover:text-white text-sm">← Élèves</a>
         </div>
         <h1 className="text-2xl font-bold text-white tracking-tight">Importer des élèves</h1>
-        <p className="text-primary-300 text-sm mt-0.5">Importez une liste d&apos;élèves depuis un fichier CSV (compatible Excel)</p>
+        <p className="text-primary-300 text-sm mt-0.5">Importez une liste d&apos;élèves depuis un fichier CSV ou Excel (.xlsx)</p>
       </div>
 
       <ImportStudentsClient existing={existing} classes={classes} />

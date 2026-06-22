@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useFormState, useFormStatus } from 'react-dom'
 import { parseCsv, readSubjectRows } from '@/lib/parse-csv'
+import { readImportFile } from '@/lib/import-file'
 import { importSubjectsFromCsv, type SubjectImportState } from '../../actions'
 
 const TEMPLATE_CSV = 'name,code,coefficient\nMathématiques,MATH,4\nFrançais,FRA,4\nAnglais,ANG,3\n'
@@ -42,6 +43,7 @@ export function ImportSubjectsClient({ existing }: { existing: string[] }) {
   const [state, formAction] = useFormState(importSubjectsFromCsv, initialState)
   const [csvText, setCsvText] = useState('')
   const [fileName, setFileName] = useState<string | null>(null)
+  const [fileError, setFileError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const have = useMemo(() => new Set(existing), [existing])
@@ -64,13 +66,14 @@ export function ImportSubjectsClient({ existing }: { existing: string[] }) {
   const createCount = rows.filter((r) => r.status === 'create').length
   const skipCount   = rows.filter((r) => r.status === 'exists' || r.status === 'duplicate_file').length
 
-  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) return
     setFileName(f.name)
-    const reader = new FileReader()
-    reader.onload = () => setCsvText(String(reader.result ?? ''))
-    reader.readAsText(f)
+    setFileError(null)
+    const result = await readImportFile(f)
+    if ('error' in result) { setCsvText(''); setFileError(result.error); return }
+    setCsvText(result.csvText)
   }
 
   function downloadTemplate() {
@@ -106,10 +109,13 @@ export function ImportSubjectsClient({ existing }: { existing: string[] }) {
           </button>
           <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-50 px-3 py-2 text-sm font-semibold text-primary-700 hover:bg-primary-100 transition-colors">
             Choisir un fichier
-            <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" onChange={onFile} className="sr-only" />
+            <input ref={fileRef} type="file" accept=".csv,.xlsx" onChange={onFile} className="sr-only" />
           </label>
           {fileName && <span className="text-sm text-gray-500">{fileName}</span>}
         </div>
+        {fileError && (
+          <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{fileError}</div>
+        )}
         <p className="text-xs text-gray-400">Colonnes attendues : <span className="font-mono">name, code, coefficient</span>. Seul le nom est obligatoire.</p>
       </div>
 

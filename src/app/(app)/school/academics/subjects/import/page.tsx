@@ -29,7 +29,7 @@ export default async function ImportSubjectsPage() {
           <a href="/school/academics/subjects" className="text-primary-300 hover:text-white text-sm">← Matières</a>
         </div>
         <h1 className="text-2xl font-bold text-white tracking-tight">Importer des matières</h1>
-        <p className="text-primary-300 text-sm mt-0.5">Importez une liste de matières depuis un fichier CSV (compatible Excel)</p>
+        <p className="text-primary-300 text-sm mt-0.5">Importez une liste de matières depuis un fichier CSV ou Excel (.xlsx)</p>
       </div>
 
       <ImportSubjectsClient existing={existing} />

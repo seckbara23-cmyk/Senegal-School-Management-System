@@ -38,7 +38,7 @@ export default async function ImportClassesPage() {
           <a href="/school/classes" className="text-primary-300 hover:text-white text-sm">← Classes</a>
         </div>
         <h1 className="text-2xl font-bold text-white tracking-tight">Importer des classes</h1>
-        <p className="text-primary-300 text-sm mt-0.5">Importez une liste de classes depuis un fichier CSV (compatible Excel)</p>
+        <p className="text-primary-300 text-sm mt-0.5">Importez une liste de classes depuis un fichier CSV ou Excel (.xlsx)</p>
       </div>
 
       {years.length === 0 ? (
