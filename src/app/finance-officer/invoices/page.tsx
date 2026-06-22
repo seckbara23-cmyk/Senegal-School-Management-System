@@ -26,8 +26,9 @@ const STATUS_TABS = [
   { value: 'overdue',  label: 'En retard' },
 ]
 const VALID_STATUS = ['unpaid', 'partial', 'paid', 'cancelled']
+const PAGE_SIZE = 25
 
-type Props = { searchParams: { status?: string; q?: string } }
+type Props = { searchParams: { status?: string; q?: string; page?: string } }
 
 export default async function FinanceOfficerInvoicesPage({ searchParams }: Props) {
   const { supabase, schoolId } = await requireFinanceOfficerCtx()
@@ -35,6 +36,8 @@ export default async function FinanceOfficerInvoicesPage({ searchParams }: Props
 
   const statusParam = searchParams.status ?? ''
   const q = searchParams.q?.trim() ?? ''
+  const page = Math.max(1, parseInt(searchParams.page ?? '1', 10))
+  const offset = (page - 1) * PAGE_SIZE
 
   // Name search → resolve student IDs first.
   let studentIds: string[] = []
@@ -47,33 +50,47 @@ export default async function FinanceOfficerInvoicesPage({ searchParams }: Props
     studentIds = ((matched ?? []) as { id: string }[]).map((s) => s.id)
   }
 
-  let query = supabase
+  const orParts = q ? [`invoice_number.ilike.%${q}%`, ...(studentIds.length > 0 ? [`student_id.in.(${studentIds.join(',')})`] : [])].join(',') : null
+
+  let countQuery = supabase.from('student_invoices').select('id', { count: 'exact', head: true }).eq('school_id', schoolId)
+  let dataQuery = supabase
     .from('student_invoices')
     .select('id, invoice_number, title, total_amount, amount_paid, status, due_date, students!student_id(first_name, last_name)')
     .eq('school_id', schoolId)
     .order('created_at', { ascending: false })
-    .limit(100)
+    .range(offset, offset + PAGE_SIZE - 1)
 
   if (statusParam === 'overdue') {
-    query = query.in('status', ['unpaid', 'partial']).lt('due_date', today).not('due_date', 'is', null)
+    countQuery = countQuery.in('status', ['unpaid', 'partial']).lt('due_date', today).not('due_date', 'is', null)
+    dataQuery = dataQuery.in('status', ['unpaid', 'partial']).lt('due_date', today).not('due_date', 'is', null)
   } else if (VALID_STATUS.includes(statusParam)) {
-    query = query.eq('status', statusParam)
+    countQuery = countQuery.eq('status', statusParam)
+    dataQuery = dataQuery.eq('status', statusParam)
+  }
+  if (orParts) {
+    countQuery = countQuery.or(orParts)
+    dataQuery = dataQuery.or(orParts)
   }
 
-  if (q) {
-    const orParts = [`invoice_number.ilike.%${q}%`]
-    if (studentIds.length > 0) orParts.push(`student_id.in.(${studentIds.join(',')})`)
-    query = query.or(orParts.join(','))
-  }
-
-  const { data: rawInvoices } = await query
+  const [{ count }, { data: rawInvoices }] = await Promise.all([countQuery, dataQuery])
 
   type Row = {
     id: string; invoice_number: string; title: string; total_amount: number; amount_paid: number
     status: string; due_date: string | null; students: { first_name: string; last_name: string }
   }
   const invoices = (rawInvoices ?? []) as unknown as Row[]
+  const totalCount = count ?? 0
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
   const hasFilter = !!(statusParam || q)
+
+  const pageUrl = (p: number) => {
+    const params = new URLSearchParams()
+    if (statusParam) params.set('status', statusParam)
+    if (q)           params.set('q', q)
+    if (p > 1)       params.set('page', String(p))
+    const qs = params.toString()
+    return `/finance-officer/invoices${qs ? `?${qs}` : ''}`
+  }
 
   function isOverdue(inv: Row): boolean {
     return inv.due_date !== null && inv.due_date < today && (inv.status === 'unpaid' || inv.status === 'partial')
@@ -95,7 +112,7 @@ export default async function FinanceOfficerInvoicesPage({ searchParams }: Props
           </a>
         </div>
         <h1 className="text-2xl font-bold text-white tracking-tight">Factures</h1>
-        <p className="text-primary-300 text-sm mt-0.5">{invoices.length} facture{invoices.length !== 1 ? 's' : ''}</p>
+        <p className="text-primary-300 text-sm mt-0.5">{totalCount} facture{totalCount !== 1 ? 's' : ''}</p>
       </div>
 
       {/* Status tabs */}
@@ -186,6 +203,22 @@ export default async function FinanceOfficerInvoicesPage({ searchParams }: Props
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-500">{offset + 1}–{Math.min(offset + PAGE_SIZE, totalCount)} sur {totalCount}</p>
+          <div className="flex items-center gap-2">
+            {page > 1
+              ? <a href={pageUrl(page - 1)} className="rounded-lg border border-sand-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-sand-50">← Précédent</a>
+              : <span className="rounded-lg border border-sand-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-300">← Précédent</span>}
+            <span className="px-2 text-sm text-gray-400">{page} / {totalPages}</span>
+            {page < totalPages
+              ? <a href={pageUrl(page + 1)} className="rounded-lg border border-sand-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-sand-50">Suivant →</a>
+              : <span className="rounded-lg border border-sand-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-300">Suivant →</span>}
+          </div>
         </div>
       )}
     </div>

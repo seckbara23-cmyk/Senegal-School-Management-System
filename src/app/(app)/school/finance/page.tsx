@@ -51,7 +51,7 @@ export default async function FinancePage() {
   const today = new Date().toISOString().split('T')[0]
 
   // Fetch all non-cancelled invoices for stats + overdue query in parallel
-  const [allInvoicesRes, overdueRes, recentRes] = await Promise.all([
+  const [allInvoicesRes, overdueRes, recentRes, paymentsRes, transportRes, plansRes] = await Promise.all([
     supabase
       .from('student_invoices')
       .select('total_amount, amount_paid, status')
@@ -60,7 +60,7 @@ export default async function FinancePage() {
 
     supabase
       .from('student_invoices')
-      .select('total_amount, amount_paid')
+      .select('total_amount, amount_paid, due_date')
       .eq('school_id', schoolId)
       .in('status', ['unpaid', 'partial'])
       .lt('due_date', today)
@@ -72,6 +72,10 @@ export default async function FinancePage() {
       .eq('school_id', schoolId)
       .order('created_at', { ascending: false })
       .limit(8),
+
+    supabase.from('student_payments').select('payment_method, amount').eq('school_id', schoolId),
+    supabase.from('invoice_lines').select('amount').eq('school_id', schoolId).eq('source', 'transport'),
+    supabase.from('payment_plans').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('status', 'active'),
   ])
 
   const invoices = (allInvoicesRes.data ?? []) as { total_amount: number; amount_paid: number; status: string }[]
@@ -82,10 +86,33 @@ export default async function FinancePage() {
   const countPartial     = invoices.filter((i) => i.status === 'partial').length
   const countPaid        = invoices.filter((i) => i.status === 'paid').length
 
-  type OverdueRow = { total_amount: number; amount_paid: number }
+  type OverdueRow = { total_amount: number; amount_paid: number; due_date: string | null }
   const overdueInvoices    = (overdueRes.data ?? []) as OverdueRow[]
   const countOverdue       = overdueInvoices.length
   const totalOverdueBalance = overdueInvoices.reduce((s, i) => s + (i.total_amount - i.amount_paid), 0)
+
+  // Phase 4.4 analytics
+  const collectionRate = totalInvoiced > 0 ? Math.round((totalCollected / totalInvoiced) * 100) : 0
+
+  // Overdue aging buckets (days past due → outstanding balance)
+  const todayMs = new Date(today).getTime()
+  const aging = { b1: 0, b2: 0, b3: 0 } // 0–30 / 31–60 / 61+
+  for (const inv of overdueInvoices) {
+    if (!inv.due_date) continue
+    const days = Math.floor((todayMs - new Date(inv.due_date).getTime()) / 86_400_000)
+    const bal = inv.total_amount - inv.amount_paid
+    if (days <= 30) aging.b1 += bal; else if (days <= 60) aging.b2 += bal; else aging.b3 += bal
+  }
+
+  // Payment-method breakdown
+  const methodLabels: Record<string, string> = { cash: 'Espèces', bank_transfer: 'Virement', cheque: 'Chèque', wave_manual: 'Wave', orange_money_manual: 'Orange Money', other: 'Autre' }
+  const byMethod = new Map<string, number>()
+  for (const p of (paymentsRes.data ?? []) as { payment_method: string; amount: number }[]) byMethod.set(p.payment_method, (byMethod.get(p.payment_method) ?? 0) + p.amount)
+  const methodRows = Array.from(byMethod.entries()).map(([m, amt]) => ({ label: methodLabels[m] ?? m, amount: amt })).sort((a, b) => b.amount - a.amount)
+  const methodTotal = methodRows.reduce((s, r) => s + r.amount, 0)
+
+  const transportRevenue = ((transportRes.data ?? []) as { amount: number }[]).reduce((s, l) => s + l.amount, 0)
+  const activePlans = plansRes.count ?? 0
 
   type RecentRow = {
     id: string
@@ -180,6 +207,67 @@ export default async function FinancePage() {
         </div>
       )}
 
+      {/* ── Analytics (Phase 4.4) ───────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {/* Collection rate + transport + plans */}
+        <div className="rounded-xl border border-sand-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Taux de recouvrement</p>
+          <p className="mt-1 text-3xl font-bold text-primary-700">{collectionRate}%</p>
+          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-sand-100">
+            <div className="h-full rounded-full bg-emerald-500" style={{ width: `${collectionRate}%` }} />
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-center">
+            <div className="rounded-lg bg-sand-50 px-3 py-2">
+              <p className="text-sm font-bold text-gray-900">{fmt(transportRevenue)}</p>
+              <p className="text-[11px] text-gray-400">Transport facturé</p>
+            </div>
+            <div className="rounded-lg bg-sand-50 px-3 py-2">
+              <p className="text-sm font-bold text-gray-900">{activePlans}</p>
+              <p className="text-[11px] text-gray-400">Échéanciers actifs</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Overdue aging */}
+        <div className="rounded-xl border border-sand-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Ancienneté des impayés</p>
+          <div className="mt-3 space-y-2">
+            {[
+              { label: '0–30 jours', val: aging.b1, cls: 'text-amber-600' },
+              { label: '31–60 jours', val: aging.b2, cls: 'text-orange-600' },
+              { label: '61 jours et +', val: aging.b3, cls: 'text-red-600' },
+            ].map((b) => (
+              <div key={b.label} className="flex items-center justify-between text-sm">
+                <span className="text-gray-600">{b.label}</span>
+                <span className={`font-semibold ${b.cls}`}>{fmt(b.val)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Payment-method breakdown */}
+        <div className="rounded-xl border border-sand-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Encaissements par mode</p>
+          {methodRows.length === 0 ? (
+            <p className="mt-3 text-sm text-gray-400">Aucun paiement enregistré.</p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {methodRows.map((r) => (
+                <div key={r.label}>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">{r.label}</span>
+                    <span className="font-semibold text-gray-900">{fmt(r.amount)}</span>
+                  </div>
+                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-sand-100">
+                    <div className="h-full rounded-full bg-primary-500" style={{ width: `${methodTotal > 0 ? Math.round((r.amount / methodTotal) * 100) : 0}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* ── Status breakdown ────────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-3">
         <a href="/school/finance/invoices?status=unpaid" className="group rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-center hover:border-red-400 hover:bg-red-100 transition-colors">
@@ -217,6 +305,14 @@ export default async function FinancePage() {
         <a href="/school/finance/reports" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
           <span className="text-lg">📊</span>
           Rapport financier
+        </a>
+        <a href="/school/finance/families" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
+          <span className="text-lg">👨‍👩‍👧</span>
+          Familles
+        </a>
+        <a href="/school/finance/transport" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
+          <span className="text-lg">🚌</span>
+          Facturation transport
         </a>
         <a href="/school/finance/fees/new" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
           <span className="text-lg">➕</span>
