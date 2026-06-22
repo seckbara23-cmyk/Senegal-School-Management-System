@@ -119,10 +119,14 @@ export default async function ClassDetailPage({ params, searchParams }: Props) {
     .eq('school_id', school.id)
     .order('subjects(name)', { ascending: true })
 
+  // teacher_subject_assignments has UNIQUE(class_subject_id), so PostgREST embeds
+  // it as a to-ONE relationship: an object or null (NOT an array). It is null
+  // when no teacher is assigned — so this must never be indexed with [0].
+  type TeacherEmbed = { teachers: { id: string; first_name: string; last_name: string } | null }
   type ClassSubjectRow = {
     id: string
     subjects: { name: string; code: string | null } | null
-    teacher_subject_assignments: { teachers: { id: string; first_name: string; last_name: string } | null }[]
+    teacher_subject_assignments: TeacherEmbed | TeacherEmbed[] | null
   }
   const classSubjects = (rawClassSubjects ?? []) as unknown as ClassSubjectRow[]
 
@@ -271,7 +275,8 @@ export default async function ClassDetailPage({ params, searchParams }: Props) {
         ) : (
           <ul className="divide-y divide-sand-100">
             {classSubjects.map((cs) => {
-              const teacher = cs.teacher_subject_assignments[0]?.teachers ?? null
+              const tsa = cs.teacher_subject_assignments
+              const teacher = (Array.isArray(tsa) ? tsa[0] : tsa)?.teachers ?? null
               return (
                 <li key={cs.id} className="flex items-center justify-between gap-3 px-5 py-3">
                   <div className="min-w-0">

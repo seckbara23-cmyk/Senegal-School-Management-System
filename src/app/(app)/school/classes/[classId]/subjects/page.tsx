@@ -64,20 +64,27 @@ export default async function ClassSubjectsPage({ params, searchParams }: Props)
     supabase.from('teachers').select('id, first_name, last_name').eq('school_id', schoolId).eq('status', 'active').order('last_name'),
   ])
 
+  // teacher_subject_assignments has UNIQUE(class_subject_id) → PostgREST embeds
+  // it as to-ONE (object | null), not an array. Normalise before reading.
+  type TeacherEmbed = { teacher_id: string }
   type CSRow = {
     id: string
     subject_id: string
     subjects: { name: string; code: string | null } | null
-    teacher_subject_assignments: { teacher_id: string }[]
+    teacher_subject_assignments: TeacherEmbed | TeacherEmbed[] | null
   }
   const classSubjects = ((csRes.data ?? []) as unknown as CSRow[])
-    .map((cs) => ({
-      id: cs.id,
-      subject_id: cs.subject_id,
-      name: cs.subjects?.name ?? 'Matière',
-      code: cs.subjects?.code ?? null,
-      teacher_id: cs.teacher_subject_assignments[0]?.teacher_id ?? null,
-    }))
+    .map((cs) => {
+      const tsa = cs.teacher_subject_assignments
+      const teacherRow = Array.isArray(tsa) ? tsa[0] : tsa
+      return {
+        id: cs.id,
+        subject_id: cs.subject_id,
+        name: cs.subjects?.name ?? 'Matière',
+        code: cs.subjects?.code ?? null,
+        teacher_id: teacherRow?.teacher_id ?? null,
+      }
+    })
     .sort((a, b) => a.name.localeCompare(b.name))
 
   const assignedIds = new Set(classSubjects.map((cs) => cs.subject_id))
