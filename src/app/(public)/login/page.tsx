@@ -90,7 +90,7 @@ function LoginForm() {
     'focus:ring-2 focus:ring-primary-600/30'
 
   return (
-    <form className="space-y-5" onSubmit={handleLogin} noValidate>
+    <form className="space-y-6" onSubmit={handleLogin} noValidate>
       {/* Email */}
       <div>
         <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -218,13 +218,14 @@ export default function LoginPage() {
           className="object-cover object-center"
         />
 
-        {/* Green gradient overlay for text legibility */}
+        {/* Green gradient overlay for text legibility — softened ~18% so the
+            classroom and faces stay clearly visible while keeping the green brand. */}
         <div
-          className="absolute inset-0 bg-gradient-to-t from-primary-950/92 via-primary-900/45 to-primary-900/55"
+          className="absolute inset-0 bg-gradient-to-t from-primary-950/75 via-primary-900/30 to-primary-900/40"
           aria-hidden="true"
         />
         <div
-          className="absolute inset-0 bg-gradient-to-br from-primary-900/40 to-transparent"
+          className="absolute inset-0 bg-gradient-to-br from-primary-900/25 to-transparent"
           aria-hidden="true"
         />
 
@@ -238,8 +239,9 @@ export default function LoginPage() {
             <span className="text-2xl font-bold tracking-tight text-white drop-shadow">ScolaTech</span>
           </div>
 
-          {/* Messaging */}
-          <div className="max-w-lg">
+          {/* Messaging — sits in a subtle premium glass container for separation
+              from the photo without reading as a hard card. */}
+          <div className="max-w-lg rounded-2xl bg-primary-950/25 p-6 ring-1 ring-white/10 backdrop-blur-md">
             <span className="inline-block rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-primary-50 ring-1 ring-white/20 backdrop-blur-sm">
               Logiciel de gestion scolaire
             </span>
@@ -261,7 +263,7 @@ export default function LoginPage() {
 
       {/* ── Authentication column ────────────────────────────────────────────── */}
       <div className="flex min-h-screen flex-col items-center justify-center px-4 py-10 sm:px-6 lg:px-8">
-        <div className="w-full max-w-md">
+        <div className="w-full max-w-lg">
 
           {/* Compact brand (mobile only) — no image, just branding + form */}
           <div className="mb-8 flex flex-col items-center text-center lg:hidden">
@@ -277,7 +279,7 @@ export default function LoginPage() {
           </div>
 
           {/* Login card */}
-          <div className="rounded-2xl border border-sand-200 bg-white p-6 shadow-xl shadow-primary-900/5 sm:p-8">
+          <div className="rounded-3xl border border-sand-200 bg-white p-7 shadow-2xl shadow-primary-950/10 sm:p-10">
             {/* Gold + green identity bar */}
             <div className="mb-6 flex items-center gap-1.5" aria-hidden="true">
               <span className="h-1.5 w-10 rounded-full bg-primary-600" />
@@ -289,17 +291,28 @@ export default function LoginPage() {
               Accédez à votre espace de gestion scolaire.
             </p>
 
-            <div className="mt-7">
+            <div className="mt-8">
               <Suspense>
                 <LoginForm />
               </Suspense>
             </div>
-          </div>
 
-          {/* Card footer */}
-          <p className="mt-6 text-center text-xs font-medium uppercase tracking-wider text-gray-400">
-            Administration • Enseignants • Parents
-          </p>
+            {/* Trust indicators — subtle, muted reassurance below the form */}
+            <ul className="mt-7 space-y-2 border-t border-sand-200 pt-6">
+              {[
+                'Hébergé de manière sécurisée',
+                'Conçu pour les écoles sénégalaises',
+                'Administration • Enseignants • Parents',
+              ].map((item) => (
+                <li key={item} className="flex items-center gap-2 text-xs text-gray-500">
+                  <svg className="h-3.5 w-3.5 flex-shrink-0 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2} aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </div>
     </main>
