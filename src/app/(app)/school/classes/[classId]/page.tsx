@@ -242,7 +242,7 @@ export default async function ClassDetailPage({ params, searchParams }: Props) {
         </div>
       </div>
 
-      {/* Subjects & teachers (read-only; managed under Académique → Attributions) */}
+      {/* Subjects & teachers — managed on the class-centric subjects page. */}
       <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
         <div className="border-b border-sand-100 bg-sand-50 px-5 py-3 flex items-center justify-between gap-3">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -251,16 +251,22 @@ export default async function ClassDetailPage({ params, searchParams }: Props) {
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-400">{classSubjects.length} matière{classSubjects.length !== 1 ? 's' : ''}</span>
             <a
-              href={`/school/academics/assignments?class_id=${cls.id}`}
+              href={`/school/classes/${cls.id}/subjects`}
               className="shrink-0 rounded-lg border border-primary-200 px-3 py-1.5 text-xs font-semibold text-primary-600 hover:bg-primary-50 transition-colors"
             >
-              Gérer →
+              Gérer les matières de la classe →
             </a>
           </div>
         </div>
         {classSubjects.length === 0 ? (
           <div className="px-5 py-8 text-center">
             <p className="text-sm text-gray-500">Aucune matière assignée à cette classe.</p>
+            <a
+              href={`/school/classes/${cls.id}/subjects`}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
+            >
+              Gérer les matières de la classe
+            </a>
           </div>
         ) : (
           <ul className="divide-y divide-sand-100">
