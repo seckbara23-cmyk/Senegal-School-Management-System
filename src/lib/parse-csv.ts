@@ -134,23 +134,19 @@ export type ImportParseResult<T> = {
   notes: string[]       // short French notes for the preview banner
 }
 
-function recordNorm(map: Map<string, string>, label: string, raw: string, canonical: string): void {
-  if (!raw.trim() || stripAccentsLower(raw) === canonical) return
-  const key = `${label}|${raw.trim().toLowerCase()}`
-  if (!map.has(key)) map.set(key, `${label} « ${raw.trim()} » → ${canonical}`)
+// A value counts as "normalised" when a non-empty input was rewritten to a
+// different canonical form (e.g. "F" → female, "actif" → active).
+function wasNormalised(raw: string, canonical: string): boolean {
+  return raw.trim() !== '' && stripAccentsLower(raw) !== canonical
 }
 
-function makeNotes(skippedBefore: number, skippedRepeated: number, norm: Map<string, string>): string[] {
+function plural(n: number): string { return n > 1 ? 's' : '' }
+
+function makeNotes(skippedBefore: number, skippedRepeated: number, normalized: number): string[] {
   const notes: string[] = []
-  if (skippedBefore > 0) {
-    notes.push(`${skippedBefore} ligne${skippedBefore > 1 ? 's' : ''} ignorée${skippedBefore > 1 ? 's' : ''} automatiquement avant l'en-tête`)
-  }
-  if (skippedRepeated > 0) {
-    notes.push(`${skippedRepeated} ligne${skippedRepeated > 1 ? 's' : ''} d'en-tête répétée${skippedRepeated > 1 ? 's' : ''} ignorée${skippedRepeated > 1 ? 's' : ''}`)
-  }
-  const examples = Array.from(norm.values())
-  for (const e of examples.slice(0, 3)) notes.push(e)
-  if (examples.length > 3) notes.push(`… et ${examples.length - 3} autre${examples.length - 3 > 1 ? 's' : ''} valeur${examples.length - 3 > 1 ? 's' : ''} normalisée${examples.length - 3 > 1 ? 's' : ''}`)
+  if (skippedBefore > 0)   notes.push(`${skippedBefore} ligne${plural(skippedBefore)} ignorée${plural(skippedBefore)} avant l'en-tête`)
+  if (skippedRepeated > 0) notes.push(`${skippedRepeated} ligne${plural(skippedRepeated)} d'en-tête répétée${plural(skippedRepeated)} ignorée${plural(skippedRepeated)}`)
+  if (normalized > 0)      notes.push(`${normalized} valeur${plural(normalized)} normalisée${plural(normalized)} automatiquement`)
   return notes
 }
 
@@ -230,7 +226,7 @@ export function readClassRows(grid: string[][]): ImportParseResult<ParsedClassRo
 
     out.push({ line: r + 1, name, level, section, error })
   }
-  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, new Map()) }
+  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, 0) }
 }
 
 // ─── Subjects (name, code, coefficient) ────────────────────────────────────────
@@ -265,7 +261,7 @@ export function readSubjectRows(grid: string[][]): ImportParseResult<ParsedSubje
 
     out.push({ line: r + 1, name, code, coefficient, error })
   }
-  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, new Map()) }
+  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, 0) }
 }
 
 // ─── Students (first_name, last_name, admission_number, gender, dob, status) ──
@@ -288,7 +284,7 @@ export function readStudentRows(grid: string[][]): ImportParseResult<ParsedStude
   const { loc, get, isRepeatedHeader } = prepare(grid, STUDENT_SPECS)
   const out: ParsedStudentRow[] = []
   let skippedRepeated = 0
-  const norm = new Map<string, string>()
+  let normalized = 0
 
   for (let r = loc.dataStart; r < grid.length; r++) {
     const cells = grid[r]
@@ -303,8 +299,8 @@ export function readStudentRows(grid: string[][]): ImportParseResult<ParsedStude
 
     const gender = genderRaw ? normGender(genderRaw) : ''
     const status = statusRaw ? normStatus(statusRaw) : ''
-    if (genderRaw && GENDERS.has(gender)) recordNorm(norm, 'Sexe', genderRaw, gender)
-    if (statusRaw && STUDENT_STATUSES.has(status)) recordNorm(norm, 'Statut', statusRaw, status)
+    if (genderRaw && GENDERS.has(gender) && wasNormalised(genderRaw, gender)) normalized++
+    if (statusRaw && STUDENT_STATUSES.has(status) && wasNormalised(statusRaw, status)) normalized++
 
     let error: string | null = null
     if (!first_name)                          error = 'Le prénom est requis.'
@@ -319,7 +315,7 @@ export function readStudentRows(grid: string[][]): ImportParseResult<ParsedStude
 
     out.push({ line: r + 1, first_name, last_name, admission_number, gender, date_of_birth, status, error })
   }
-  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, norm) }
+  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, normalized) }
 }
 
 // ─── Teachers (first_name, last_name, email, phone, subject, status) ──────────
@@ -342,7 +338,7 @@ export function readTeacherRows(grid: string[][]): ImportParseResult<ParsedTeach
   const { loc, get, isRepeatedHeader } = prepare(grid, TEACHER_SPECS)
   const out: ParsedTeacherRow[] = []
   let skippedRepeated = 0
-  const norm = new Map<string, string>()
+  let normalized = 0
 
   for (let r = loc.dataStart; r < grid.length; r++) {
     const cells = grid[r]
@@ -356,7 +352,7 @@ export function readTeacherRows(grid: string[][]): ImportParseResult<ParsedTeach
     const statusRaw  = get(cells, 'status')
 
     const status = statusRaw ? normStatus(statusRaw) : ''
-    if (statusRaw && SIMPLE_STATUSES.has(status)) recordNorm(norm, 'Statut', statusRaw, status)
+    if (statusRaw && SIMPLE_STATUSES.has(status) && wasNormalised(statusRaw, status)) normalized++
 
     let error: string | null = null
     if (!first_name)                          error = 'Le prénom est requis.'
@@ -371,7 +367,7 @@ export function readTeacherRows(grid: string[][]): ImportParseResult<ParsedTeach
 
     out.push({ line: r + 1, first_name, last_name, email, phone, subject, status, error })
   }
-  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, norm) }
+  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, normalized) }
 }
 
 // ─── Parents (first_name, last_name, email, phone, admission, relationship, status) ─
@@ -386,7 +382,7 @@ const PARENT_SPECS: FieldSpec<'first_name' | 'last_name' | 'email' | 'phone' | '
   { key: 'last_name',  positional: 1, aliases: ['lastname', 'nom'] },
   { key: 'email',      positional: 2, aliases: ['mail', 'courriel', 'e-mail'] },
   { key: 'phone',      positional: 3, aliases: ['telephone', 'tel', 'contact'] },
-  { key: 'student_admission_number', positional: 4, aliases: ['admission_number', 'admission', 'matricule', 'eleve', 'matricule eleve', "numero d'admission", "numero d'admission eleve", "matricule de l'eleve"] },
+  { key: 'student_admission_number', positional: 4, aliases: ['admission_number', 'admission', 'matricule', 'eleve', 'matricule eleve', 'numero eleve', "numero d'admission", "numero d'admission eleve", "matricule de l'eleve"] },
   { key: 'relationship', positional: 5, aliases: ['relation', 'lien', 'parente', 'lien de parente'] },
   { key: 'status',     positional: 6, aliases: ['statut'] },
 ]
@@ -395,7 +391,7 @@ export function readParentRows(grid: string[][]): ImportParseResult<ParsedParent
   const { loc, get, isRepeatedHeader } = prepare(grid, PARENT_SPECS)
   const out: ParsedParentRow[] = []
   let skippedRepeated = 0
-  const norm = new Map<string, string>()
+  let normalized = 0
 
   for (let r = loc.dataStart; r < grid.length; r++) {
     const cells = grid[r]
@@ -411,8 +407,8 @@ export function readParentRows(grid: string[][]): ImportParseResult<ParsedParent
 
     const relationship = normaliseRelationship(relRaw)
     const status = statusRaw ? normStatus(statusRaw) : ''
-    if (relRaw) recordNorm(norm, 'Lien', relRaw, relationship)
-    if (statusRaw && SIMPLE_STATUSES.has(status)) recordNorm(norm, 'Statut', statusRaw, status)
+    if (relRaw && wasNormalised(relRaw, relationship)) normalized++
+    if (statusRaw && SIMPLE_STATUSES.has(status) && wasNormalised(statusRaw, status)) normalized++
 
     let error: string | null = null
     if (!first_name)                          error = 'Le prénom est requis.'
@@ -428,5 +424,5 @@ export function readParentRows(grid: string[][]): ImportParseResult<ParsedParent
 
     out.push({ line: r + 1, first_name, last_name, email, phone, student_admission_number, relationship, status, error })
   }
-  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, norm) }
+  return { rows: out, skippedRows: loc.skippedBefore + skippedRepeated, notes: makeNotes(loc.skippedBefore, skippedRepeated, normalized) }
 }
