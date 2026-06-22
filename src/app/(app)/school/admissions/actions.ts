@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE, canAddStudent, logLimitBlocked, STUDENT_LIMIT_REACHED_MESSAGE } from '@/lib/tenant'
+import { slugify } from '@/lib/admissions'
 
 // ─── Shared guard ───────────────────────────────────────────────────────────
 
@@ -29,6 +30,47 @@ async function resolveSchoolAdmin() {
 }
 
 const emptyToUndef = (v: unknown) => (v === '' || v == null ? undefined : v)
+
+// ─── Public-intake settings (Phase 6.1) ──────────────────────────────────────
+
+export type AdmissionsSettingsState = { error?: string }
+
+const SettingsSchema = z.object({
+  enabled: z.preprocess((v) => v === 'on' || v === 'true', z.boolean()),
+  slug:    z.preprocess(emptyToUndef, z.string().max(60).optional()),
+  intro:   z.preprocess(emptyToUndef, z.string().max(2000).optional()),
+})
+
+export async function updateAdmissionsSettings(_prev: AdmissionsSettingsState, formData: FormData): Promise<AdmissionsSettingsState> {
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
+  if (!(await isSchoolWritable(supabase, schoolId))) return { error: TENANT_WRITE_BLOCKED_MESSAGE }
+
+  const parsed = SettingsSchema.safeParse({ enabled: formData.get('enabled'), slug: formData.get('slug'), intro: formData.get('intro') })
+  if (!parsed.success) return { error: 'Données invalides.' }
+  const slug = parsed.data.slug ? slugify(parsed.data.slug) : null
+
+  if (parsed.data.enabled && (!slug || slug.length < 3)) {
+    return { error: 'Un identifiant public d’au moins 3 caractères est requis pour activer les candidatures en ligne.' }
+  }
+
+  const { error } = await supabase
+    .from('schools')
+    .update({ admissions_enabled: parsed.data.enabled, admissions_slug: slug, admissions_intro: parsed.data.intro ?? null })
+    .eq('id', schoolId)
+
+  if (error) {
+    if (error.code === '23505') return { error: 'Cet identifiant public est déjà utilisé par une autre école. Choisissez-en un autre.' }
+    logSupabaseError(error, { action: 'updateAdmissionsSettings', schoolId, userId: actor.id })
+    return { error: 'Erreur lors de l’enregistrement. Veuillez réessayer.' }
+  }
+
+  await logAuditEvent(supabase, {
+    actorId: actor.id, actorEmail: actor.email, schoolId,
+    action: 'admissions_settings_updated', resourceType: 'school', resourceId: schoolId,
+    metadata: { enabled: parsed.data.enabled, slug },
+  })
+  redirect('/school/admissions/settings?saved=1')
+}
 
 // ─── Create applicant ───────────────────────────────────────────────────────
 

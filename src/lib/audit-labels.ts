@@ -28,8 +28,15 @@ export const ACTION_LABELS: Record<string, string> = {
   enrollment_withdrawn:          'Inscription retirée',
   // Admissions
   admission_created:             'Candidature créée',
+  admission_submitted:           'Candidature soumise (en ligne)',
   admission_status_changed:      'Statut candidature modifié',
+  admission_documents_requested: 'Pièces justificatives demandées',
+  admission_note_added:          'Note ajoutée à la candidature',
+  admission_withdrawn:           'Candidature retirée',
   admission_converted:           'Candidature convertie en élève',
+  admission_parent_created:      'Parent créé (admission)',
+  admission_invoice_generated:   'Facture d’inscription générée',
+  admissions_settings_updated:   'Paramètres des admissions modifiés',
   // Documents
   document_uploaded:             'Document téléversé',
   document_deleted:              'Document supprimé',
@@ -146,7 +153,7 @@ export const ACTION_LABELS: Record<string, string> = {
 export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Finance',              actions: ['fee_item_created', 'invoice_created', 'payment_recorded', 'bulk_invoices_created', 'invoice_cancelled', 'payment_plan_created', 'payment_plan_cancelled', 'transport_invoices_generated', 'family_invoiced', 'payment_reminder_sent'] },
   { label: 'Classes & inscriptions', actions: ['class_created', 'class_updated', 'class_deleted', 'classes_bulk_created', 'students_enrolled', 'enrollment_withdrawn', 'student_transferred', 'class_promoted'] },
-  { label: 'Admissions',           actions: ['admission_created', 'admission_status_changed', 'admission_converted'] },
+  { label: 'Admissions',           actions: ['admission_created', 'admission_submitted', 'admission_status_changed', 'admission_documents_requested', 'admission_note_added', 'admission_withdrawn', 'admission_converted', 'admission_parent_created', 'admission_invoice_generated', 'admissions_settings_updated'] },
   { label: 'Documents',            actions: ['document_uploaded', 'document_deleted'] },
   { label: 'Années scolaires',     actions: ['academic_year_created', 'academic_year_updated', 'academic_year_status_changed'] },
   { label: 'Structure académique', actions: ['subject_created', 'subject_updated', 'subject_deleted', 'subjects_bulk_created', 'subject_assigned_to_class', 'subject_removed_from_class', 'teacher_assigned_to_subject', 'teacher_assignment_created', 'teacher_assignment_removed', 'academic_period_created', 'assessment_created', 'grades_saved', 'comment_generated', 'comment_approved'] },

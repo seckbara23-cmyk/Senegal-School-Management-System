@@ -131,6 +131,12 @@ export function getNotificationHref(n: NotificationLike, role: NotificationRole)
         default:        return FALLBACK
       }
 
+    // ── New online admission (recipient: school_admin) ──────────────────────
+    case 'admission_received': {
+      const appId = meta(m, 'application_id')
+      return appId ? `/school/admissions/${appId}` : '/school/admissions'
+    }
+
     // ── Payment reminder (recipients: parent + student) ─────────────────────
     case 'invoice_reminder': {
       const invoiceId = meta(m, 'invoice_id')
