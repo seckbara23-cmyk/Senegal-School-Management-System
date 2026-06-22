@@ -65,6 +65,7 @@ DECLARE
   v_admno text;
 
   v_session_id uuid; v_made int; v_d int; v_date date; v_dow int;
+  v_day int; v_slot int; v_assigned boolean; v_start time;
 
   rec record;
   v_a1 uuid; v_a2 uuid;
@@ -176,18 +177,48 @@ BEGIN
     END LOOP;
   END LOOP;
 
-  -- ── Timetable: each class_subject scheduled once, Mon/Tue 08:00–12:00 ──────
-  INSERT INTO public.timetable_slots (school_id, academic_year_id, class_id, class_subject_id, teacher_id, day_of_week, start_time, end_time, room)
-  SELECT v_school_id, v_year_id, x.class_id, x.id, tsa.teacher_id,
-         (((x.rn - 1) / 4) + 1)::int,
-         (TIME '08:00' + (((x.rn - 1) % 4) * INTERVAL '1 hour')),
-         (TIME '09:00' + (((x.rn - 1) % 4) * INTERVAL '1 hour')),
-         'Salle ' || (((x.rn - 1) % 4) + 1)
-  FROM (
-    SELECT cs.id, cs.class_id, row_number() OVER (PARTITION BY cs.class_id ORDER BY cs.subject_id) AS rn
-    FROM public.class_subjects cs WHERE cs.school_id = v_school_id
-  ) x
-  LEFT JOIN public.teacher_subject_assignments tsa ON tsa.class_subject_id = x.id;
+  -- ── Timetable: schedule each class_subject once, Mon–Fri 08:00–12:00. ──────
+  -- Greedy first-fit placement that GUARANTEES no class and no teacher is ever
+  -- booked twice in the same (day, hour): each class_subject takes the earliest
+  -- slot where both its class AND its teacher are still free. With 20 slots
+  -- (5 days × 4 hours), 8 lessons/class and ~3 lessons/teacher, a free slot
+  -- always exists. Deterministic (ordered, no randomness) so it is reproducible.
+  FOR rec IN
+    SELECT cs.id AS cs_id, cs.class_id, tsa.teacher_id
+    FROM public.class_subjects cs
+    LEFT JOIN public.teacher_subject_assignments tsa ON tsa.class_subject_id = cs.id
+    WHERE cs.school_id = v_school_id
+    ORDER BY cs.class_id, cs.subject_id
+  LOOP
+    v_assigned := false;
+    <<place>>
+    FOR v_day IN 1 .. 5 LOOP            -- Monday .. Friday
+      FOR v_slot IN 0 .. 3 LOOP         -- 08:00, 09:00, 10:00, 11:00
+        v_start := TIME '08:00' + (v_slot * INTERVAL '1 hour');
+        -- class already has a lesson at this day + hour?
+        CONTINUE WHEN EXISTS (
+          SELECT 1 FROM public.timetable_slots
+          WHERE school_id = v_school_id AND class_id = rec.class_id
+            AND day_of_week = v_day AND start_time = v_start
+        );
+        -- teacher already teaching at this day + hour (in any class)?
+        CONTINUE WHEN rec.teacher_id IS NOT NULL AND EXISTS (
+          SELECT 1 FROM public.timetable_slots
+          WHERE school_id = v_school_id AND teacher_id = rec.teacher_id
+            AND day_of_week = v_day AND start_time = v_start
+        );
+        INSERT INTO public.timetable_slots
+          (school_id, academic_year_id, class_id, class_subject_id, teacher_id, day_of_week, start_time, end_time, room)
+        VALUES
+          (v_school_id, v_year_id, rec.class_id, rec.cs_id, rec.teacher_id, v_day, v_start, v_start + INTERVAL '1 hour', 'Salle ' || (v_slot + 1));
+        v_assigned := true;
+        EXIT place;
+      END LOOP;
+    END LOOP;
+    IF NOT v_assigned THEN
+      RAISE EXCEPTION 'Timetable: no conflict-free slot for class_subject %', rec.cs_id;
+    END IF;
+  END LOOP;
 
   -- ── Attendance: up to 8 recent weekdays per class ─────────────────────────
   FOR v_i IN 1 .. v_n_classes LOOP
