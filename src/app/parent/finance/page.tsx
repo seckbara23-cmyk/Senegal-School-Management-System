@@ -1,4 +1,5 @@
 import { requireParentCtx } from '../_auth'
+import { loadFamily } from '@/lib/finance/family'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,9 @@ export default async function ParentFinancePage({ searchParams }: { searchParams
   const selectedLink = links.find((l) => l.student_id === selectedId)!
   const selectedStudent = selectedLink.students
 
+  // Combined family view across all linked children (shown when > 1 child).
+  const family = links.length > 1 ? await loadFamily(supabase, schoolId, parent.id) : null
+
   // Fetch invoices + payments in parallel
   const [invRes, payRes] = await Promise.all([
     supabase
@@ -138,6 +142,24 @@ export default async function ParentFinancePage({ searchParams }: { searchParams
           {selectedStudent.first_name} {selectedStudent.last_name}
         </p>
       </div>
+
+      {/* ── Family combined summary ──────────────────────────────────────────── */}
+      {family && family.children.length > 1 && (
+        <div className="rounded-xl border border-sand-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold uppercase tracking-wider text-gray-500">Solde de la famille</p>
+            <p className={`text-lg font-bold ${family.totalOutstanding > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmtCurrency(family.totalOutstanding)}</p>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {family.children.map((c) => (
+              <span key={c.studentId} className="inline-flex items-center gap-1.5 rounded-full border border-sand-200 bg-sand-50 px-3 py-1 text-xs text-gray-600">
+                {c.name.split(' ').slice(1).join(' ') || c.name}
+                <span className={`font-semibold ${c.outstanding > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmtCurrency(c.outstanding)}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Child tabs ───────────────────────────────────────────────────────── */}
       {links.length > 1 && (

@@ -613,6 +613,86 @@ export async function createBulkInvoices(
   redirect(`/school/finance/invoices?${qs.toString()}`)
 }
 
+// ─── invoiceFamily ────────────────────────────────────────────────────────────
+// Bills every linked child of a parent with the same fee items, in one action.
+// One invoice per child (per-student billing preserved). Phase 4.3.
+
+export type FamilyInvoiceState = { error?: string }
+
+const FamilyInvoiceSchema = z.object({
+  parent_id: z.string().uuid('Parent invalide.'),
+  title:     z.string().trim().min(1, 'Titre requis.').max(200, 'Titre trop long.'),
+  due_date:  z.preprocess((v) => (v === '' ? null : v), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date invalide.').nullable()),
+})
+
+export async function invoiceFamily(_prev: FamilyInvoiceState, formData: FormData): Promise<FamilyInvoiceState> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Non autorisé.' }
+  const schoolId = await getSchoolId(supabase, user.id)
+  if (!schoolId) return { error: 'Non autorisé.' }
+  if (!(await isSchoolWritable(supabase, schoolId))) return { error: TENANT_WRITE_BLOCKED_MESSAGE }
+
+  const parsed = FamilyInvoiceSchema.safeParse({ parent_id: formData.get('parent_id'), title: formData.get('title'), due_date: formData.get('due_date') })
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Données invalides.' }
+  const { parent_id, title, due_date } = parsed.data
+
+  const feeItemIds = formData.getAll('fee_item_ids').map((v) => String(v)).filter(Boolean)
+  if (feeItemIds.length === 0) return { error: 'Sélectionnez au moins un frais.' }
+
+  const { data: parent } = await supabase.from('parents').select('id').eq('id', parent_id).eq('school_id', schoolId).maybeSingle()
+  if (!parent) return { error: 'Parent introuvable.' }
+
+  const { data: items } = await supabase.from('fee_items').select('id, name, amount').eq('school_id', schoolId).in('id', feeItemIds)
+  const feeDetails = (items ?? []) as { id: string; name: string; amount: number }[]
+  if (feeDetails.length !== feeItemIds.length) return { error: 'Un ou plusieurs frais sont invalides.' }
+  const total = feeDetails.reduce((s, i) => s + i.amount, 0)
+  if (total <= 0) return { error: 'Le montant total doit être supérieur à 0.' }
+
+  const { data: links } = await supabase.from('parent_student_links').select('student_id').eq('school_id', schoolId).eq('parent_id', parent_id)
+  const studentIds = Array.from(new Set(((links ?? []) as { student_id: string }[]).map((l) => l.student_id)))
+  if (studentIds.length === 0) return { error: 'Ce parent n’a aucun enfant rattaché.' }
+
+  const { data: existing } = await supabase
+    .from('student_invoices').select('student_id').eq('school_id', schoolId).eq('title', title).neq('status', 'cancelled').in('student_id', studentIds)
+  const already = new Set(((existing ?? []) as { student_id: string }[]).map((e) => e.student_id))
+
+  const year = new Date().getFullYear()
+  const { count } = await supabase.from('student_invoices').select('id', { count: 'exact', head: true }).eq('school_id', schoolId)
+  let seq = count ?? 0
+  let created = 0, skipped = 0
+  const createdInvoices: { invoiceId: string; studentId: string; number: string }[] = []
+
+  for (const studentId of studentIds) {
+    if (already.has(studentId)) { skipped++; continue }
+    seq++
+    const number = `${year}-${String(seq).padStart(4, '0')}`
+    const { data: inv, error } = await supabase.from('student_invoices').insert({
+      school_id: schoolId, student_id: studentId, academic_year_id: null, invoice_number: number,
+      title, total_amount: total, amount_paid: 0, status: 'unpaid', due_date, created_by: user.id,
+    }).select('id').single()
+    if (error || !inv) { skipped++; continue }
+    const invoiceId = (inv as { id: string }).id
+    const lines = feeDetails.map((it) => ({ school_id: schoolId, invoice_id: invoiceId, fee_item_id: it.id, description: it.name, amount: it.amount }))
+    const { error: lineErr } = await supabase.from('invoice_lines').insert(lines)
+    if (lineErr) { await supabase.from('student_invoices').delete().eq('id', invoiceId).eq('school_id', schoolId); skipped++; continue }
+    created++
+    createdInvoices.push({ invoiceId, studentId, number })
+  }
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'family_invoiced', resourceType: 'parent', resourceId: parent_id,
+    metadata: { parent_id, title, created_count: created, skipped_count: skipped, total_amount: total },
+  })
+
+  for (const ci of createdInvoices) {
+    await notifyInvoiceCreated(supabase, { schoolId, invoiceId: ci.invoiceId, invoiceNumber: ci.number, studentId: ci.studentId, amount: total, dueDate: due_date })
+  }
+
+  redirect(`/school/finance/families/${parent_id}?created=${created}${skipped > 0 ? `&skipped=${skipped}` : ''}`)
+}
+
 // ─── createPaymentPlan ────────────────────────────────────────────────────────
 // Splits ONE invoice into a due-dated installment schedule. The invoice is NOT
 // modified — installments are a schedule overlay (see lib/finance/payment-plans).
