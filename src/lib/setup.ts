@@ -12,7 +12,7 @@ type SchoolClient = ReturnType<typeof createClient>
 
 export type SetupStepKey =
   | 'profile' | 'academic_year' | 'classes' | 'subjects' | 'teachers'
-  | 'students' | 'parents' | 'assignments' | 'transport' | 'review'
+  | 'students' | 'parents' | 'assignments' | 'transport' | 'admissions' | 'review'
 
 export type SetupStep = {
   key:      SetupStepKey
@@ -60,10 +60,15 @@ export async function getSetupState(supabase: SchoolClient, schoolId: string): P
     .eq('school_id', schoolId).eq('is_active', true)
     .then(({ count, error }) => (error ? 0 : (count ?? 0)), () => 0)
 
+  // Public admissions enabled flag (null-safe: 055 may be absent).
+  const admissionsEnabledP = supabase
+    .from('schools').select('admissions_enabled').eq('id', schoolId).maybeSingle()
+    .then(({ data }) => !!(data as { admissions_enabled?: boolean } | null)?.admissions_enabled, () => false)
+
   const [
     profileDone,
     activeYear, classes, subjects, teachers, students, parents, assignments,
-    vehicles, routes,
+    vehicles, routes, admissions, admissionsEnabled,
   ] = await Promise.all([
     profileP,
     activeYearP,
@@ -75,6 +80,8 @@ export async function getSetupState(supabase: SchoolClient, schoolId: string): P
     countRows(supabase, 'class_subjects', schoolId),
     countRows(supabase, 'transport_vehicles', schoolId),     // null-safe (043 may be absent)
     countRows(supabase, 'transport_routes', schoolId),       // null-safe
+    countRows(supabase, 'admission_applications', schoolId), // null-safe
+    admissionsEnabledP,
   ])
 
   const baseSteps: Omit<SetupStep, 'number' | 'done'>[] = [
@@ -87,6 +94,7 @@ export async function getSetupState(supabase: SchoolClient, schoolId: string): P
     { key: 'parents',       title: 'Parents',                 desc: 'Ajoutez les parents et tuteurs.',            href: '/school/parents',             optional: true  },
     { key: 'assignments',   title: 'Matières par classe',     desc: 'Associez matières et enseignants aux classes.', href: '/school/classes',          optional: false },
     { key: 'transport',     title: 'Transport',               desc: 'Véhicules, chauffeurs et itinéraires.',      href: '/school/transport',           optional: true  },
+    { key: 'admissions',    title: 'Candidatures en ligne',   desc: 'Ouvrez une page publique de candidature.',   href: '/school/admissions/settings', optional: true  },
     { key: 'review',        title: 'Vérification & lancement', desc: 'Vérifiez et lancez votre espace.',          href: '/school/setup',               optional: false },
   ]
 
@@ -100,6 +108,7 @@ export async function getSetupState(supabase: SchoolClient, schoolId: string): P
     parents:       parents > 0,
     assignments:   assignments > 0,
     transport:     vehicles > 0 || routes > 0,
+    admissions:    admissionsEnabled || admissions > 0,
     review:        false, // resolved below once required steps are known
   }
 
