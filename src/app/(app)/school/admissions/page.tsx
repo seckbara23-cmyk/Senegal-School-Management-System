@@ -1,23 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { ADMISSION_STATUS_LABEL as STATUS_LABEL, ADMISSION_STATUS_CLASS as STATUS_CLASS } from '@/lib/admissions'
 
-const STATUS_LABEL: Record<string, string> = {
-  draft:      'Brouillon',
-  submitted:  'Soumise',
-  accepted:   'Acceptée',
-  rejected:   'Refusée',
-  waitlisted: "Liste d'attente",
-}
-
-const STATUS_CLASS: Record<string, string> = {
-  draft:      'border-gray-200 bg-gray-100 text-gray-600',
-  submitted:  'border-sky-200 bg-sky-50 text-sky-700',
-  accepted:   'border-emerald-200 bg-emerald-50 text-emerald-700',
-  rejected:   'border-red-200 bg-red-50 text-red-700',
-  waitlisted: 'border-amber-200 bg-amber-50 text-amber-700',
-}
-
-const FILTERS = ['draft', 'submitted', 'accepted', 'rejected', 'waitlisted'] as const
+const FILTERS = ['submitted', 'under_review', 'documents_requested', 'accepted', 'waitlisted', 'rejected', 'withdrawn', 'draft'] as const
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '—'
@@ -29,6 +14,8 @@ type Row = {
   first_name: string
   last_name: string
   status: string
+  source: string
+  reference_code: string | null
   guardian_name: string | null
   created_at: string
   converted_student_id: string | null
@@ -57,14 +44,14 @@ export default async function AdmissionsPage({ searchParams }: Props) {
 
   const { data } = await supabase
     .from('admission_applications')
-    .select('id, first_name, last_name, status, guardian_name, created_at, converted_student_id, classes!desired_class_id(name, section)')
+    .select('id, first_name, last_name, status, source, reference_code, guardian_name, created_at, converted_student_id, classes!desired_class_id(name, section)')
     .eq('school_id', schoolId)
     .order('created_at', { ascending: false })
     .limit(300)
 
   const all = (data ?? []) as unknown as Row[]
 
-  const counts: Record<string, number> = { draft: 0, submitted: 0, accepted: 0, rejected: 0, waitlisted: 0 }
+  const counts: Record<string, number> = {}
   for (const a of all) counts[a.status] = (counts[a.status] ?? 0) + 1
 
   const activeFilter = (FILTERS as readonly string[]).includes(searchParams.status ?? '') ? searchParams.status! : null
@@ -80,12 +67,10 @@ export default async function AdmissionsPage({ searchParams }: Props) {
             <h1 className="text-2xl font-bold text-white tracking-tight">Admissions</h1>
             <p className="text-primary-300 text-sm mt-0.5">{schoolName} · {all.length} candidature{all.length !== 1 ? 's' : ''}</p>
           </div>
-          <a
-            href="/school/admissions/new"
-            className="shrink-0 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
-          >
-            + Nouvelle candidature
-          </a>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <a href="/school/admissions/settings" className="rounded-lg border border-primary-600 bg-primary-700 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-600 transition-colors">Candidatures en ligne</a>
+            <a href="/school/admissions/new" className="rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm">+ Nouvelle candidature</a>
+          </div>
         </div>
       </div>
 
@@ -144,9 +129,13 @@ export default async function AdmissionsPage({ searchParams }: Props) {
                     <a href={`/school/admissions/${a.id}`} className="text-sm font-semibold text-gray-900 hover:text-primary-600 hover:underline">
                       {a.last_name} {a.first_name}
                     </a>
+                    {a.source === 'public' && (
+                      <span className="ml-2 inline-block rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">En ligne</span>
+                    )}
                     {a.converted_student_id && (
                       <span className="ml-2 inline-block rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Élève</span>
                     )}
+                    {a.reference_code && <p className="mt-0.5 font-mono text-[11px] text-gray-400">{a.reference_code}</p>}
                   </td>
                   <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-600">
                     {a.classes ? [a.classes.name, a.classes.section].filter(Boolean).join(' ') : '—'}

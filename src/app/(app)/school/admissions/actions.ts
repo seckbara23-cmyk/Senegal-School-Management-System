@@ -188,11 +188,19 @@ export async function createAdmission(
 
 // ─── Status transitions ─────────────────────────────────────────────────────
 
+async function recordEvent(supabase: ReturnType<typeof createClient>, schoolId: string, applicationId: string, e: { type: string; status_from?: string | null; status_to?: string | null; message?: string | null; visibility?: 'internal' | 'applicant'; actorId: string | null }) {
+  await supabase.from('admission_events').insert({
+    school_id: schoolId, application_id: applicationId, type: e.type,
+    status_from: e.status_from ?? null, status_to: e.status_to ?? null, message: e.message ?? null,
+    visibility: e.visibility ?? 'internal', actor_id: e.actorId,
+  })
+}
+
 export async function setAdmissionStatus(formData: FormData): Promise<void> {
   const { supabase, schoolId, actor } = await resolveSchoolAdmin()
 
   const admissionId = z.string().uuid().safeParse(formData.get('admission_id'))
-  const newStatus   = z.enum(['submitted', 'accepted', 'rejected', 'waitlisted']).safeParse(formData.get('new_status'))
+  const newStatus   = z.enum(['submitted', 'under_review', 'accepted', 'rejected', 'waitlisted']).safeParse(formData.get('new_status'))
   if (!admissionId.success || !newStatus.success) redirect('/school/admissions')
 
   if (!(await isSchoolWritable(supabase, schoolId))) {
@@ -213,18 +221,21 @@ export async function setAdmissionStatus(formData: FormData): Promise<void> {
 
   const reasonRaw = (formData.get('decision_reason') as string | null)?.trim() ?? ''
   const reason = reasonRaw === '' ? null : reasonRaw.slice(0, 500)
+  const isDecision = newStatus.data === 'accepted' || newStatus.data === 'rejected' || newStatus.data === 'waitlisted'
 
-  const { error } = await supabase
-    .from('admission_applications')
-    .update({ status: newStatus.data, decision_reason: reason })
-    .eq('id', ex.id)
-    .eq('school_id', schoolId)
+  const update: Record<string, unknown> = { status: newStatus.data, decision_reason: reason }
+  if (isDecision) { update.decision_at = new Date().toISOString(); update.decision_by = actor.id }
 
+  const { error } = await supabase.from('admission_applications').update(update).eq('id', ex.id).eq('school_id', schoolId)
   if (error) {
     logSupabaseError(error, { action: 'setAdmissionStatus', schoolId, userId: actor.id, entityIds: { admissionId: ex.id, newStatus: newStatus.data } })
     redirect(`/school/admissions/${ex.id}?error=server`)
   }
 
+  await recordEvent(supabase, schoolId, ex.id, {
+    type: isDecision ? 'decision' : 'status_change', status_from: ex.status, status_to: newStatus.data,
+    message: reason, visibility: isDecision ? 'applicant' : 'internal', actorId: actor.id,
+  })
   await logAuditEvent(supabase, {
     actorId: actor.id, actorEmail: actor.email, schoolId,
     action: 'admission_status_changed', resourceType: 'admission', resourceId: ex.id,
@@ -232,6 +243,59 @@ export async function setAdmissionStatus(formData: FormData): Promise<void> {
   })
 
   redirect(`/school/admissions/${ex.id}`)
+}
+
+// ─── Notes, document requests, withdrawal (Phase 6.3) ─────────────────────────
+
+export async function addAdmissionNote(formData: FormData): Promise<void> {
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
+  const id = z.string().uuid().safeParse(formData.get('admission_id'))
+  const message = z.string().trim().min(1).max(1000).safeParse(formData.get('message'))
+  const visibility = (formData.get('visibility') === 'applicant' ? 'applicant' : 'internal') as 'internal' | 'applicant'
+  if (!id.success || !message.success) redirect('/school/admissions')
+  if (!(await isSchoolWritable(supabase, schoolId))) redirect(`/school/admissions/${id.data}?error=readonly`)
+
+  const { data: app } = await supabase.from('admission_applications').select('id').eq('id', id.data).eq('school_id', schoolId).maybeSingle()
+  if (!app) redirect('/school/admissions')
+
+  await recordEvent(supabase, schoolId, id.data, { type: 'note', message: message.data, visibility, actorId: actor.id })
+  await logAuditEvent(supabase, { actorId: actor.id, actorEmail: actor.email, schoolId, action: 'admission_note_added', resourceType: 'admission', resourceId: id.data, metadata: { visibility } })
+  redirect(`/school/admissions/${id.data}`)
+}
+
+export async function requestDocuments(formData: FormData): Promise<void> {
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
+  const id = z.string().uuid().safeParse(formData.get('admission_id'))
+  const message = z.string().trim().min(1).max(1000).safeParse(formData.get('message'))
+  if (!id.success || !message.success) redirect('/school/admissions')
+  if (!(await isSchoolWritable(supabase, schoolId))) redirect(`/school/admissions/${id.data}?error=readonly`)
+
+  const { data: app } = await supabase.from('admission_applications').select('id, status, converted_student_id').eq('id', id.data).eq('school_id', schoolId).maybeSingle()
+  const ex = app as { id: string; status: string; converted_student_id: string | null } | null
+  if (!ex) redirect('/school/admissions')
+  if (ex.converted_student_id) redirect(`/school/admissions/${id.data}?error=converted`)
+
+  await supabase.from('admission_applications').update({ status: 'documents_requested' }).eq('id', id.data).eq('school_id', schoolId)
+  await recordEvent(supabase, schoolId, id.data, { type: 'documents_requested', status_from: ex.status, status_to: 'documents_requested', message: message.data, visibility: 'applicant', actorId: actor.id })
+  await logAuditEvent(supabase, { actorId: actor.id, actorEmail: actor.email, schoolId, action: 'admission_documents_requested', resourceType: 'admission', resourceId: id.data, metadata: {} })
+  redirect(`/school/admissions/${id.data}`)
+}
+
+export async function withdrawAdmission(formData: FormData): Promise<void> {
+  const { supabase, schoolId, actor } = await resolveSchoolAdmin()
+  const id = z.string().uuid().safeParse(formData.get('admission_id'))
+  if (!id.success) redirect('/school/admissions')
+  if (!(await isSchoolWritable(supabase, schoolId))) redirect(`/school/admissions/${id.data}?error=readonly`)
+
+  const { data: app } = await supabase.from('admission_applications').select('id, status, converted_student_id').eq('id', id.data).eq('school_id', schoolId).maybeSingle()
+  const ex = app as { id: string; status: string; converted_student_id: string | null } | null
+  if (!ex) redirect('/school/admissions')
+  if (ex.converted_student_id) redirect(`/school/admissions/${id.data}?error=converted`)
+
+  await supabase.from('admission_applications').update({ status: 'withdrawn' }).eq('id', id.data).eq('school_id', schoolId)
+  await recordEvent(supabase, schoolId, id.data, { type: 'status_change', status_from: ex.status, status_to: 'withdrawn', visibility: 'internal', actorId: actor.id })
+  await logAuditEvent(supabase, { actorId: actor.id, actorEmail: actor.email, schoolId, action: 'admission_withdrawn', resourceType: 'admission', resourceId: id.data, metadata: { previous_status: ex.status } })
+  redirect(`/school/admissions/${id.data}`)
 }
 
 // ─── Convert accepted applicant → student ───────────────────────────────────
