@@ -2,6 +2,9 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import { PaymentForm } from './_payment_form'
 import { CancelInvoiceForm } from './_cancel_form'
+import { PlanForm } from './_plan_form'
+import { cancelPaymentPlan } from '../../actions'
+import { deriveInstallments, INSTALLMENT_STATUS_LABEL } from '@/lib/finance/payment-plans'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -100,7 +103,7 @@ export default async function InvoiceDetailPage({ params }: Props) {
   }
   const invoice = rawInvoice as unknown as InvoiceDetail
 
-  const [linesRes, paymentsRes] = await Promise.all([
+  const [linesRes, paymentsRes, planRes] = await Promise.all([
     supabase
       .from('invoice_lines')
       .select('id, description, amount, fee_item_id')
@@ -112,6 +115,13 @@ export default async function InvoiceDetailPage({ params }: Props) {
       .select('id, amount, payment_method, reference, notes, paid_at, receipt_number')
       .eq('invoice_id', invoice.id)
       .order('paid_at', { ascending: false }),
+
+    supabase
+      .from('payment_plans')
+      .select('id, name, status, total_amount, payment_plan_installments(sequence, amount, due_date)')
+      .eq('invoice_id', invoice.id)
+      .eq('school_id', schoolId)
+      .maybeSingle(),
   ])
 
   type LineRow    = { id: string; description: string; amount: number; fee_item_id: string | null }
@@ -119,6 +129,17 @@ export default async function InvoiceDetailPage({ params }: Props) {
 
   const lines    = (linesRes.data    ?? []) as LineRow[]
   const payments = (paymentsRes.data ?? []) as PaymentRow[]
+
+  // Payment plan (schedule overlay; per-installment paid is derived).
+  type PlanRow = { id: string; name: string; status: string; total_amount: number; payment_plan_installments: { sequence: number; amount: number; due_date: string | null }[] }
+  const plan = planRes.data as unknown as PlanRow | null
+  const planInstallments = plan
+    ? deriveInstallments(
+        [...(plan.payment_plan_installments ?? [])].sort((a, b) => a.sequence - b.sequence),
+        invoice.amount_paid,
+        new Date().toISOString().split('T')[0],
+      )
+    : []
 
   const balance       = invoice.total_amount - invoice.amount_paid
   const canAddPayment = invoice.status !== 'paid' && invoice.status !== 'cancelled'
@@ -232,6 +253,60 @@ export default async function InvoiceDetailPage({ params }: Props) {
           </table>
         </div>
       </div>
+
+      {/* ── Payment plan (échéancier) ───────────────────────────────────────── */}
+      {plan ? (
+        <div>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-gray-800">Échéancier · {plan.name}</h2>
+            {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+              <form action={cancelPaymentPlan}>
+                <input type="hidden" name="plan_id" value={plan.id} />
+                <input type="hidden" name="invoice_id" value={invoice.id} />
+                <button type="submit" className="text-xs font-medium text-red-600 hover:underline">Supprimer l’échéancier</button>
+              </form>
+            )}
+          </div>
+          <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-sand-200 bg-sand-100 text-left">
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">#</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Échéance</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 text-right">Montant</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 text-right">État</th>
+                </tr>
+              </thead>
+              <tbody>
+                {planInstallments.map((inst, idx) => (
+                  <tr key={inst.sequence} className={`border-b border-sand-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-sand-50'}`}>
+                    <td className="px-4 py-3 text-gray-500">{inst.sequence}</td>
+                    <td className="px-4 py-3 text-gray-800 whitespace-nowrap">{fmtDate(inst.due_date)}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">{fmt(inst.amount)}</td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                        inst.status === 'paid' ? 'border-emerald-300 bg-emerald-100 text-emerald-700'
+                        : inst.overdue ? 'border-red-300 bg-red-100 text-red-700'
+                        : inst.status === 'partial' ? 'border-amber-300 bg-amber-100 text-amber-700'
+                        : 'border-sand-300 bg-sand-50 text-gray-500'}`}>
+                        {inst.overdue && inst.status !== 'paid' ? 'En retard' : INSTALLMENT_STATUS_LABEL[inst.status]}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-xs text-gray-400">Les échéances sont réglées automatiquement dans l’ordre à mesure que des paiements sont enregistrés sur la facture.</p>
+        </div>
+      ) : canAddPayment && (
+        <div>
+          <h2 className="text-base font-semibold text-gray-800 mb-3">Échelonner le paiement</h2>
+          <div className="rounded-xl border border-sand-200 bg-white px-6 py-5 shadow-sm">
+            <PlanForm invoiceId={invoice.id} today={today} />
+          </div>
+        </div>
+      )}
 
       {/* ── Payments history ────────────────────────────────────────────────── */}
       {payments.length > 0 && (

@@ -7,6 +7,7 @@ import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
 import { notifyInvoiceCreated, notifyPaymentRecorded } from '@/lib/notification-events'
+import { splitInstallments } from '@/lib/finance/payment-plans'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -584,6 +585,99 @@ export async function createBulkInvoices(
   if (result.skipped_count > 0) qs.set('skipped', String(result.skipped_count))
 
   redirect(`/school/finance/invoices?${qs.toString()}`)
+}
+
+// ─── createPaymentPlan ────────────────────────────────────────────────────────
+// Splits ONE invoice into a due-dated installment schedule. The invoice is NOT
+// modified — installments are a schedule overlay (see lib/finance/payment-plans).
+
+export type PaymentPlanState = { error?: string }
+
+const PlanSchema = z.object({
+  invoice_id:      z.string().uuid('Facture invalide.'),
+  installments:    z.preprocess((v) => parseInt(String(v), 10), z.number().int().min(2, 'Au moins 2 échéances.').max(24, 'Maximum 24 échéances.')),
+  start_date:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date de début invalide.'),
+  interval_months: z.preprocess((v) => parseInt(String(v), 10), z.number().int().min(1).max(6)),
+})
+
+export async function createPaymentPlan(_prev: PaymentPlanState, formData: FormData): Promise<PaymentPlanState> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Non autorisé.' }
+  const schoolId = await getSchoolId(supabase, user.id)
+  if (!schoolId) return { error: 'Non autorisé.' }
+  if (!(await isSchoolWritable(supabase, schoolId))) return { error: TENANT_WRITE_BLOCKED_MESSAGE }
+
+  const parsed = PlanSchema.safeParse({
+    invoice_id:      formData.get('invoice_id'),
+    installments:    formData.get('installments'),
+    start_date:      formData.get('start_date'),
+    interval_months: formData.get('interval_months'),
+  })
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Données invalides.' }
+  const d = parsed.data
+
+  const { data: raw } = await supabase
+    .from('student_invoices').select('id, student_id, total_amount, status')
+    .eq('id', d.invoice_id).eq('school_id', schoolId).maybeSingle()
+  if (!raw) return { error: 'Facture introuvable.' }
+  const inv = raw as { id: string; student_id: string; total_amount: number; status: string }
+  if (inv.status === 'cancelled') return { error: 'Cette facture est annulée.' }
+  if (inv.status === 'paid')      return { error: 'Cette facture est déjà réglée.' }
+  if (inv.total_amount < d.installments) return { error: 'Le montant est trop faible pour ce nombre d’échéances.' }
+
+  const { data: existing } = await supabase.from('payment_plans').select('id').eq('school_id', schoolId).eq('invoice_id', d.invoice_id).maybeSingle()
+  if (existing) return { error: 'Un échéancier existe déjà pour cette facture.' }
+
+  const { data: plan, error: planError } = await supabase.from('payment_plans').insert({
+    school_id: schoolId, student_id: inv.student_id, invoice_id: d.invoice_id,
+    name: `Échéancier en ${d.installments} fois`, total_amount: inv.total_amount, status: 'active', created_by: user.id,
+  }).select('id').single()
+  if (planError || !plan) {
+    logSupabaseError(planError, { action: 'createPaymentPlan', schoolId, userId: user.id, entityIds: { invoice_id: d.invoice_id } })
+    return { error: "Erreur lors de la création de l'échéancier." }
+  }
+  const planId = (plan as { id: string }).id
+
+  const rows = splitInstallments(inv.total_amount, d.installments, d.start_date, d.interval_months)
+    .map((r) => ({ school_id: schoolId, plan_id: planId, sequence: r.sequence, amount: r.amount, due_date: r.due_date }))
+  const { error: instError } = await supabase.from('payment_plan_installments').insert(rows)
+  if (instError) {
+    await supabase.from('payment_plans').delete().eq('id', planId).eq('school_id', schoolId)
+    logSupabaseError(instError, { action: 'createPaymentPlan:installments', schoolId, userId: user.id, entityIds: { planId } })
+    return { error: "Erreur lors de la création des échéances." }
+  }
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'payment_plan_created', resourceType: 'payment_plan', resourceId: planId,
+    metadata: { invoice_id: d.invoice_id, student_id: inv.student_id, installments: d.installments, total_amount: inv.total_amount },
+  })
+
+  redirect(`/school/finance/invoices/${d.invoice_id}`)
+}
+
+export async function cancelPaymentPlan(formData: FormData): Promise<void> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/school/finance')
+  const schoolId = await getSchoolId(supabase, user.id)
+  if (!schoolId) redirect('/school/finance')
+
+  const planId = z.string().uuid().safeParse(formData.get('plan_id'))
+  const invoiceId = z.string().uuid().safeParse(formData.get('invoice_id'))
+  if (!planId.success || !invoiceId.success) redirect('/school/finance')
+  if (!(await isSchoolWritable(supabase, schoolId))) redirect(`/school/finance/invoices/${invoiceId.data}`)
+
+  const { error } = await supabase.from('payment_plans').delete().eq('id', planId.data).eq('school_id', schoolId)
+  if (!error) {
+    await logAuditEvent(supabase, {
+      actorId: user.id, actorEmail: user.email, schoolId,
+      action: 'payment_plan_cancelled', resourceType: 'payment_plan', resourceId: planId.data,
+      metadata: { invoice_id: invoiceId.data },
+    })
+  }
+  redirect(`/school/finance/invoices/${invoiceId.data}`)
 }
 
 // ─── cancelInvoice ────────────────────────────────────────────────────────────

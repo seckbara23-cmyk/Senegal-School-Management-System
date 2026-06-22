@@ -1,5 +1,6 @@
 import { requireParentCtx } from '../../../_auth'
 import { notFound } from 'next/navigation'
+import { deriveInstallments, INSTALLMENT_STATUS_LABEL } from '@/lib/finance/payment-plans'
 
 function fmt(n: number) {
   return new Intl.NumberFormat('fr-FR').format(n) + ' FCFA'
@@ -51,9 +52,10 @@ export default async function ParentInvoiceDetailPage({ params }: Props) {
   // Ownership: the invoice's student must be a linked child.
   if (!childIds.has(inv.student_id)) notFound()
 
-  const [linesRes, paymentsRes] = await Promise.all([
+  const [linesRes, paymentsRes, planRes] = await Promise.all([
     supabase.from('invoice_lines').select('id, description, amount, fee_item_id').eq('invoice_id', inv.id).order('created_at'),
     supabase.from('student_payments').select('id, amount, payment_method, paid_at, receipt_number').eq('invoice_id', inv.id).order('paid_at', { ascending: false }),
+    supabase.from('payment_plans').select('name, payment_plan_installments(sequence, amount, due_date)').eq('invoice_id', inv.id).eq('school_id', schoolId).maybeSingle(),
   ])
   type LineRow = { id: string; description: string; amount: number; fee_item_id: string | null }
   type PayRow  = { id: string; amount: number; payment_method: string; paid_at: string; receipt_number: string | null }
@@ -62,6 +64,12 @@ export default async function ParentInvoiceDetailPage({ params }: Props) {
 
   const balance = inv.total_amount - inv.amount_paid
   const today = new Date().toISOString().split('T')[0]
+
+  type PlanRow = { name: string; payment_plan_installments: { sequence: number; amount: number; due_date: string | null }[] }
+  const plan = planRes.data as unknown as PlanRow | null
+  const planInstallments = plan
+    ? deriveInstallments([...(plan.payment_plan_installments ?? [])].sort((a, b) => a.sequence - b.sequence), inv.amount_paid, today)
+    : []
   const isOverdue = inv.due_date !== null && inv.due_date < today && (inv.status === 'unpaid' || inv.status === 'partial')
   const childName = inv.students ? `${inv.students.first_name} ${inv.students.last_name}` : ''
 
@@ -122,6 +130,35 @@ export default async function ParentInvoiceDetailPage({ params }: Props) {
           </table>
         </div>
       </section>
+
+      {/* Échéancier */}
+      {plan && planInstallments.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">Échéancier · {plan.name}</h2>
+          <div className="overflow-hidden rounded-xl border border-sand-200 shadow-sm">
+            <table className="w-full text-sm">
+              <tbody>
+                {planInstallments.map((inst, idx) => (
+                  <tr key={inst.sequence} className={`border-b border-sand-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-sand-50'}`}>
+                    <td className="px-4 py-3 text-gray-500">{inst.sequence}</td>
+                    <td className="px-4 py-3 text-gray-800 whitespace-nowrap">{fmtDate(inst.due_date)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-gray-900 whitespace-nowrap">{fmt(inst.amount)}</td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        inst.status === 'paid' ? 'bg-emerald-100 text-emerald-700'
+                        : inst.overdue ? 'bg-red-100 text-red-700'
+                        : inst.status === 'partial' ? 'bg-amber-100 text-amber-700'
+                        : 'bg-sand-100 text-gray-500'}`}>
+                        {inst.overdue && inst.status !== 'paid' ? 'En retard' : INSTALLMENT_STATUS_LABEL[inst.status]}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* Payments */}
       {payments.length > 0 && (
