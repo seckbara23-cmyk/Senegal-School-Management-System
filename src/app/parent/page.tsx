@@ -107,6 +107,22 @@ export default async function ParentDashboard() {
         </p>
       </div>
 
+      {/* ── Quick access ─────────────────────────────────────────────────────── */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <a href="/parent/homework" className="flex items-center gap-3 rounded-xl border border-sand-200 bg-white p-4 shadow-sm hover:bg-sand-50 transition-colors">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}><path strokeLinecap="round" strokeLinejoin="round" d="M11.25 4.533A9.707 9.707 0 006 3a9.735 9.735 0 00-3.25.555.75.75 0 00-.5.707v14.25a.75.75 0 001 .707A8.237 8.237 0 016 18.75c1.995 0 3.823.707 5.25 1.886V4.533zM12.75 20.636A8.214 8.214 0 0118 18.75c.966 0 1.89.166 2.75.47a.75.75 0 001-.708V4.262a.75.75 0 00-.5-.707A9.735 9.735 0 0018 3a9.707 9.707 0 00-5.25 1.533v16.103z" /></svg>
+          </span>
+          <div><p className="text-sm font-semibold text-gray-900">Devoirs</p><p className="text-xs text-gray-500">Les devoirs de vos enfants</p></div>
+        </a>
+        <a href="/parent/messages" className="flex items-center gap-3 rounded-xl border border-sand-200 bg-white p-4 shadow-sm hover:bg-sand-50 transition-colors">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.76c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>
+          </span>
+          <div><p className="text-sm font-semibold text-gray-900">Messages</p><p className="text-xs text-gray-500">Échanger avec les enseignants</p></div>
+        </a>
+      </div>
+
       {/* ── Children cards ───────────────────────────────────────────────────── */}
       {links.length === 0 ? (
         <div className="rounded-xl border-2 border-dashed border-sand-300 bg-sand-50 py-12 px-6 text-center">
@@ -179,6 +195,10 @@ export default async function ParentDashboard() {
                     <a href={`/parent/attendance?child=${s.id}`}
                       className="rounded-md bg-sand-100 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-sand-200 transition-colors">
                       Présences
+                    </a>
+                    <a href={`/parent/homework?child=${s.id}`}
+                      className="rounded-md bg-sand-100 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-sand-200 transition-colors">
+                      Devoirs
                     </a>
                     <a href={`/parent/finance?child=${s.id}`}
                       className="rounded-md bg-sand-100 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-sand-200 transition-colors">
