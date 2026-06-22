@@ -16,12 +16,18 @@ export async function requireTransportAdmin(): Promise<TransportAdminCtx> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  // NOTE: a user may hold MORE THAN ONE active school_admin membership (see
+  // (app)/layout.tsx). .maybeSingle() ERRORS on multiple rows → membership=null
+  // → a wrong redirect to /school. .order(...).limit(1) makes it safe, matching
+  // requireParentCtx / requireTeacherCtx / requireFinanceOfficerCtx.
   const { data: membership } = await supabase
     .from('school_memberships')
     .select('school_id, schools(name)')
     .eq('user_id', user.id)
     .eq('role', 'school_admin')
     .eq('status', 'active')
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle()
 
   if (!membership) redirect('/school')
