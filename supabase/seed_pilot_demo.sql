@@ -379,6 +379,36 @@ UNION ALL SELECT 'transport_assign',count(*) FROM public.student_transport_assig
 ORDER BY entity;
 
 -- ============================================================================
+-- Timetable conflict verification (read-only) — both counts must be 0.
+-- A conflict = two slots that share the same teacher (resp. class) on the same
+-- day with OVERLAPPING time windows (a.start < b.end AND b.start < a.end).
+-- a.id < b.id counts each clashing pair once.
+-- ============================================================================
+WITH s AS (SELECT id FROM public.schools WHERE slug = 'scolatech-pilot-demo')
+SELECT 'teacher_timetable_conflicts' AS metric, count(*) AS conflicts
+FROM public.timetable_slots a
+JOIN public.timetable_slots b
+  ON a.school_id   = b.school_id
+ AND a.teacher_id  = b.teacher_id
+ AND a.day_of_week = b.day_of_week
+ AND a.id < b.id
+ AND a.start_time < b.end_time
+ AND b.start_time < a.end_time
+WHERE a.school_id = (SELECT id FROM s) AND a.teacher_id IS NOT NULL
+UNION ALL
+SELECT 'class_timetable_conflicts', count(*)
+FROM public.timetable_slots a
+JOIN public.timetable_slots b
+  ON a.school_id   = b.school_id
+ AND a.class_id    = b.class_id
+ AND a.day_of_week = b.day_of_week
+ AND a.id < b.id
+ AND a.start_time < b.end_time
+ AND b.start_time < a.end_time
+WHERE a.school_id = (SELECT id FROM s)
+ORDER BY metric;
+
+-- ============================================================================
 -- PART 2 (OPTIONAL) — let a real login explore the demo school.
 -- Grants an ACTIVE school_admin membership on the demo school to the account
 -- below WITHOUT changing its global_role. Skips silently if the user hasn't
