@@ -265,9 +265,18 @@ export function InvoiceForm({
         </div>
       </div>
 
+      {/* Transport fee opt-in */}
+      <label className="flex items-start gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 cursor-pointer hover:bg-sand-50">
+        <input type="checkbox" name="include_transport" className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-600" />
+        <span>
+          <span className="block text-sm font-medium text-gray-800">Inclure les frais de transport</span>
+          <span className="block text-xs text-gray-400">Ajoute l’abonnement transport mensuel de l’élève (si un abonnement actif existe).</span>
+        </span>
+      </label>
+
       {/* Grand total */}
       <div className="rounded-lg border border-primary-200 bg-primary-50 px-4 py-3 flex items-center justify-between">
-        <span className="text-sm font-semibold text-primary-800">Total de la facture</span>
+        <span className="text-sm font-semibold text-primary-800">Total de la facture <span className="font-normal text-primary-500">(hors transport)</span></span>
         <span className="text-lg font-bold text-primary-700">{fmt(grandTotal)}</span>
       </div>
 

@@ -249,14 +249,31 @@ export async function createInvoice(
     return { errors: { custom_amount: ['Montant invalide pour la ligne personnalisée.'] } }
   }
 
+  // Optional transport fee line — pulls the student's active assignment fee
+  // and bills it as a normal invoice line (source='transport'). Phase 4.2.
+  let transportLine: { description: string; amount: number } | null = null
+  if (formData.get('include_transport') === 'on') {
+    const { data: ta } = await supabase
+      .from('student_transport_assignments')
+      .select('monthly_fee, transport_routes!route_id(name)')
+      .eq('school_id', schoolId).eq('student_id', String(studentId)).eq('status', 'active')
+      .maybeSingle()
+    const taRow = ta as unknown as { monthly_fee: number; transport_routes: { name: string } | { name: string }[] | null } | null
+    if (taRow && taRow.monthly_fee > 0) {
+      const r = taRow.transport_routes
+      const routeName = (Array.isArray(r) ? r[0]?.name : r?.name) ?? 'Transport'
+      transportLine = { description: `Transport — ${routeName}`, amount: taRow.monthly_fee }
+    }
+  }
+
   // Must have at least one line
-  if (feeItemIds.length === 0 && !hasCustomDesc) {
+  if (feeItemIds.length === 0 && !hasCustomDesc && !transportLine) {
     return { errors: { fee_items: ["Ajoutez au moins un frais ou une ligne personnalisée."] } }
   }
 
   // Compute total
   const feeTotal    = feeItemDetails.reduce((sum, i) => sum + i.amount, 0)
-  const totalAmount = feeTotal + (hasCustomDesc ? customAmount : 0)
+  const totalAmount = feeTotal + (hasCustomDesc ? customAmount : 0) + (transportLine ? transportLine.amount : 0)
   if (totalAmount <= 0) {
     return { errors: { _form: ['Le montant total doit être supérieur à 0.'] } }
   }
@@ -322,9 +339,18 @@ export async function createInvoice(
       description: String(customDesc).trim(),
       amount:      customAmount,
     }] : []),
+    ...(transportLine ? [{
+      school_id:   schoolId,
+      invoice_id:  invoiceId,
+      fee_item_id: null,
+      description: transportLine.description,
+      amount:      transportLine.amount,
+      source:      'transport',
+    }] : []),
   ]
 
-  const { error: linesError } = await supabase.from('invoice_lines').insert(lines)
+  // `source` (migration 050) may not yet be in generated types → cast.
+  const { error: linesError } = await supabase.from('invoice_lines').insert(lines as never)
   if (linesError) {
     // Roll back the header so we never leave an invoice with a total but no
     // line items. Both id and school_id are matched to stay within the tenant.
@@ -678,6 +704,83 @@ export async function cancelPaymentPlan(formData: FormData): Promise<void> {
     })
   }
   redirect(`/school/finance/invoices/${invoiceId.data}`)
+}
+
+// ─── generateTransportInvoices ────────────────────────────────────────────────
+// Bills the active transport assignment fee for every subscribed student as a
+// normal invoice (one transport line, source='transport'). Reuses the existing
+// invoice model — no special-case billing path. Phase 4.2.
+
+export type TransportBillingState = { error?: string }
+
+const TransportBillingSchema = z.object({
+  title:    z.string().trim().min(1, 'Titre requis.').max(200, 'Titre trop long.'),
+  due_date: z.preprocess((v) => (v === '' ? null : v), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date invalide.').nullable()),
+})
+
+export async function generateTransportInvoices(_prev: TransportBillingState, formData: FormData): Promise<TransportBillingState> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Non autorisé.' }
+  const schoolId = await getSchoolId(supabase, user.id)
+  if (!schoolId) return { error: 'Non autorisé.' }
+  if (!(await isSchoolWritable(supabase, schoolId))) return { error: TENANT_WRITE_BLOCKED_MESSAGE }
+
+  const parsed = TransportBillingSchema.safeParse({ title: formData.get('title'), due_date: formData.get('due_date') })
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Données invalides.' }
+  const { title, due_date } = parsed.data
+
+  const { data: assignsRaw } = await supabase
+    .from('student_transport_assignments')
+    .select('student_id, monthly_fee, transport_routes!route_id(name)')
+    .eq('school_id', schoolId).eq('status', 'active')
+  type Assign = { student_id: string; monthly_fee: number; transport_routes: { name: string } | { name: string }[] | null }
+  const list = ((assignsRaw ?? []) as unknown as Assign[])
+    .map((a) => ({ student_id: a.student_id, fee: a.monthly_fee, route: (Array.isArray(a.transport_routes) ? a.transport_routes[0]?.name : a.transport_routes?.name) ?? 'Transport' }))
+    .filter((a) => a.fee > 0)
+  if (list.length === 0) return { error: 'Aucun élève avec un abonnement transport actif.' }
+
+  const studentIds = list.map((a) => a.student_id)
+  const { data: existing } = await supabase
+    .from('student_invoices').select('student_id').eq('school_id', schoolId).eq('title', title).neq('status', 'cancelled').in('student_id', studentIds)
+  const already = new Set(((existing ?? []) as { student_id: string }[]).map((e) => e.student_id))
+
+  const year = new Date().getFullYear()
+  const { count } = await supabase.from('student_invoices').select('id', { count: 'exact', head: true }).eq('school_id', schoolId)
+  let seq = count ?? 0
+  let created = 0, skipped = 0
+  const createdInvoices: { invoiceId: string; studentId: string; number: string; amount: number }[] = []
+
+  for (const a of list) {
+    if (already.has(a.student_id)) { skipped++; continue }
+    seq++
+    const number = `${year}-${String(seq).padStart(4, '0')}`
+    const { data: inv, error } = await supabase.from('student_invoices').insert({
+      school_id: schoolId, student_id: a.student_id, academic_year_id: null, invoice_number: number,
+      title, total_amount: a.fee, amount_paid: 0, status: 'unpaid', due_date, created_by: user.id,
+    }).select('id').single()
+    if (error || !inv) { skipped++; continue }
+    const invoiceId = (inv as { id: string }).id
+    const { error: lineErr } = await supabase.from('invoice_lines')
+      .insert({ school_id: schoolId, invoice_id: invoiceId, fee_item_id: null, description: `Transport — ${a.route}`, amount: a.fee, source: 'transport' } as never)
+    if (lineErr) { await supabase.from('student_invoices').delete().eq('id', invoiceId).eq('school_id', schoolId); skipped++; continue }
+    created++
+    createdInvoices.push({ invoiceId, studentId: a.student_id, number, amount: a.fee })
+  }
+
+  await logAuditEvent(supabase, {
+    actorId: user.id, actorEmail: user.email, schoolId,
+    action: 'transport_invoices_generated', resourceType: 'school', resourceId: schoolId,
+    metadata: { title, created_count: created, skipped_count: skipped },
+  })
+
+  for (const ci of createdInvoices) {
+    await notifyInvoiceCreated(supabase, { schoolId, invoiceId: ci.invoiceId, invoiceNumber: ci.number, studentId: ci.studentId, amount: ci.amount, dueDate: due_date })
+  }
+
+  const qs = new URLSearchParams({ created: String(created) })
+  if (skipped > 0) qs.set('skipped', String(skipped))
+  redirect(`/school/finance/transport?${qs.toString()}`)
 }
 
 // ─── cancelInvoice ────────────────────────────────────────────────────────────

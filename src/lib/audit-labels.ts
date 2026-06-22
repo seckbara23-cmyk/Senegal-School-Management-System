@@ -16,6 +16,7 @@ export const ACTION_LABELS: Record<string, string> = {
   invoice_cancelled:             'Facture annulée',
   payment_plan_created:          'Échéancier créé',
   payment_plan_cancelled:        'Échéancier supprimé',
+  transport_invoices_generated:  'Factures transport générées',
   // Classes / inscriptions
   class_created:                 'Classe créée',
   class_updated:                 'Classe modifiée',
@@ -141,7 +142,7 @@ export const ACTION_LABELS: Record<string, string> = {
 // ── Grouped action options for the filter <select> ───────────────────────────
 
 export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
-  { label: 'Finance',              actions: ['fee_item_created', 'invoice_created', 'payment_recorded', 'bulk_invoices_created', 'invoice_cancelled', 'payment_plan_created', 'payment_plan_cancelled'] },
+  { label: 'Finance',              actions: ['fee_item_created', 'invoice_created', 'payment_recorded', 'bulk_invoices_created', 'invoice_cancelled', 'payment_plan_created', 'payment_plan_cancelled', 'transport_invoices_generated'] },
   { label: 'Classes & inscriptions', actions: ['class_created', 'class_updated', 'class_deleted', 'classes_bulk_created', 'students_enrolled', 'enrollment_withdrawn', 'student_transferred', 'class_promoted'] },
   { label: 'Admissions',           actions: ['admission_created', 'admission_status_changed', 'admission_converted'] },
   { label: 'Documents',            actions: ['document_uploaded', 'document_deleted'] },
