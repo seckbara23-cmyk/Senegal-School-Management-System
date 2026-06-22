@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import { DocumentsSection, type DocumentRow } from '@/components/DocumentsSection'
+import { isSchoolWritable } from '@/lib/tenant'
+import { StudentTransportPanel, type CurrentAssignment, type RouteOption } from '../../transport/_StudentTransportPanel'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,7 +102,16 @@ function DetailRow({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type Props = { params: { studentId: string }; searchParams: { doc_ok?: string; doc_error?: string } }
+type Props = { params: { studentId: string }; searchParams: { doc_ok?: string; doc_error?: string; transport_ok?: string; transport_error?: string } }
+
+const TRANSPORT_FEEDBACK: Record<string, { ok: boolean; msg: string }> = {
+  assigned:  { ok: true,  msg: 'Élève affecté au transport.' },
+  ended:     { ok: true,  msg: 'Affectation de transport terminée.' },
+  duplicate: { ok: false, msg: 'Cet élève a déjà une affectation de transport active.' },
+  invalid:   { ok: false, msg: 'Itinéraire invalide.' },
+  readonly:  { ok: false, msg: 'Cet établissement est en lecture seule.' },
+  server:    { ok: false, msg: 'L’opération a échoué. Veuillez réessayer.' },
+}
 
 export default async function StudentDetailPage({ params, searchParams }: Props) {
   const supabase = createClient()
@@ -170,6 +181,31 @@ export default async function StudentDetailPage({ params, searchParams }: Props)
     .eq('school_id', school.id).eq('owner_type', 'student').eq('owner_id', s.id)
     .order('created_at', { ascending: false })
   const documents = (docsData ?? []) as DocumentRow[]
+
+  // ── Transport (current assignment + active routes for the assign panel) ──────
+  const [staRes, routesRes, writable] = await Promise.all([
+    supabase
+      .from('student_transport_assignments')
+      .select('id, route_id, monthly_fee, start_date, transport_routes(name), transport_stops(name)')
+      .eq('school_id', school.id).eq('student_id', s.id).eq('status', 'active').maybeSingle(),
+    supabase
+      .from('transport_routes')
+      .select('id, name, monthly_fee, transport_stops(id, name)')
+      .eq('school_id', school.id).eq('status', 'active').order('name'),
+    isSchoolWritable(supabase, school.id),
+  ])
+
+  const staRow = staRes.data as unknown as
+    { id: string; route_id: string; monthly_fee: number; start_date: string | null; transport_routes: { name: string } | null; transport_stops: { name: string } | null } | null
+  const currentAssignment: CurrentAssignment = staRow
+    ? { id: staRow.id, route_id: staRow.route_id, route_name: staRow.transport_routes?.name ?? '—', stop_name: staRow.transport_stops?.name ?? null, monthly_fee: staRow.monthly_fee, start_date: staRow.start_date }
+    : null
+  const transportRoutes: RouteOption[] = ((routesRes.data ?? []) as unknown as { id: string; name: string; monthly_fee: number; transport_stops: { id: string; name: string }[] }[])
+    .map((r) => ({ id: r.id, name: r.name, monthly_fee: r.monthly_fee, stops: (r.transport_stops ?? []).slice().sort((a, b) => a.name.localeCompare(b.name)) }))
+
+  const transportFb = searchParams.transport_ok ? TRANSPORT_FEEDBACK[searchParams.transport_ok]
+    : searchParams.transport_error ? TRANSPORT_FEEDBACK[searchParams.transport_error]
+    : null
 
   const fullName = `${s.last_name} ${s.first_name}`
 
@@ -378,6 +414,19 @@ export default async function StudentDetailPage({ params, searchParams }: Props)
           </div>
         )}
       </div>
+
+      {/* ── Transport ───────────────────────────────────────────────────────── */}
+      {transportFb && (
+        <div role="alert" className={`rounded-lg border p-4 ${transportFb.ok ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+          <p className={`text-sm ${transportFb.ok ? 'text-emerald-700' : 'text-red-700'}`}>{transportFb.msg}</p>
+        </div>
+      )}
+      <StudentTransportPanel
+        studentId={s.id}
+        assignment={currentAssignment}
+        routes={transportRoutes}
+        writable={writable}
+      />
 
       {/* ── Documents ───────────────────────────────────────────────────────── */}
       <DocumentsSection
