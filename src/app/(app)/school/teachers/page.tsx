@@ -40,7 +40,7 @@ type Teacher = {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 type Props = {
-  searchParams: { q?: string | string[]; page?: string | string[] }
+  searchParams: { q?: string | string[]; page?: string | string[]; created?: string; skipped?: string }
 }
 
 export default async function TeachersPage({ searchParams }: Props) {
@@ -94,6 +94,14 @@ export default async function TeachersPage({ searchParams }: Props) {
   const rangeStart = total === 0 ? 0 : from + 1
   const rangeEnd   = Math.min(to + 1, total)
 
+  // Import success banner.
+  const created = searchParams.created !== undefined ? Number(searchParams.created) : null
+  const skipped = searchParams.skipped !== undefined ? Number(searchParams.skipped) : 0
+  const importMessage = created !== null && Number.isFinite(created)
+    ? `${created} enseignant${created !== 1 ? 's' : ''} créé${created !== 1 ? 's' : ''}` +
+      (skipped > 0 ? `, ${skipped} ignoré${skipped !== 1 ? 's' : ''}` : '') + '.'
+    : ''
+
   return (
     <div className="space-y-5 pb-8">
 
@@ -107,14 +115,27 @@ export default async function TeachersPage({ searchParams }: Props) {
             <h1 className="text-2xl font-bold text-white">Enseignants</h1>
             <p className="mt-0.5 text-sm text-primary-300">{schoolName}</p>
           </div>
+          <div className="flex shrink-0 items-center gap-2">
+          <a
+            href="/school/teachers/import"
+            className="shrink-0 rounded-lg border border-white/30 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
+          >
+            Importer
+          </a>
           <a
             href="/school/teachers/new"
             className="shrink-0 rounded-lg bg-white/15 px-4 py-2 text-sm font-semibold text-white hover:bg-white/25 transition-colors"
           >
             + Nouvel enseignant
           </a>
+          </div>
         </div>
       </div>
+
+      {/* ── Import success banner ───────────────────────────────────────────── */}
+      {importMessage && (
+        <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{importMessage}</div>
+      )}
 
       {/* ── Search ──────────────────────────────────────────────────────────── */}
       <form method="GET" action="/school/teachers" role="search" className="flex flex-wrap items-center gap-2">

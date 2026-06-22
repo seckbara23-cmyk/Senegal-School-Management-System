@@ -6,6 +6,7 @@ import { z }            from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE, canAddTeacher, logLimitBlocked, TEACHER_LIMIT_REACHED_MESSAGE } from '@/lib/tenant'
+import { parseCsv, readTeacherRows } from '@/lib/parse-csv'
 
 // Unique-constraint name → friendly field message (see migration 002).
 const TEACHER_CONSTRAINTS = {
@@ -344,4 +345,117 @@ export async function removeTeacherAssignment(formData: FormData): Promise<void>
   })
 
   redirect(assignmentsPath(teacher_id, 'removed=1'))
+}
+
+// ─── Bulk import (CSV / XLSX) ──────────────────────────────────────────────────
+//
+// Duplicate detection: by email when present, otherwise by first_name+last_name
+// within the school. Duplicates are SKIPPED (not errors). Any structural row
+// error blocks the WHOLE import. Teachers need a unique employee_number (not in
+// the template), so one is generated per imported row. The server re-parses and
+// re-validates the file authoritatively; school_id is resolved server-side.
+
+export type ImportTeachersState = {
+  errors?: { _form?: string[] }
+  rowErrors?: { line: number; message: string }[]
+}
+
+export async function importTeachersFromCsv(
+  _prevState: ImportTeachersState,
+  formData: FormData,
+): Promise<ImportTeachersState> {
+  const supabase = createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { errors: { _form: ['Non autorisé.'] } }
+
+  const { data: memberships } = await supabase
+    .from('school_memberships')
+    .select('school_id')
+    .eq('user_id', user.id)
+    .eq('role', 'school_admin')
+    .eq('status', 'active')
+    .order('created_at', { ascending: true })
+    .limit(1)
+  if (!memberships || memberships.length === 0) return { errors: { _form: ['Non autorisé.'] } }
+  const schoolId = memberships[0].school_id as string
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
+  const csvText = String(formData.get('csv_text') ?? '')
+  if (!csvText.trim()) return { errors: { _form: ['Aucune donnée à importer. Choisissez un fichier CSV ou Excel (.xlsx).'] } }
+
+  const rows = readTeacherRows(parseCsv(csvText))
+  if (rows.length === 0) return { errors: { _form: ['Le fichier ne contient aucun enseignant.'] } }
+
+  const rowErrors = rows.filter((r) => r.error).map((r) => ({ line: r.line, message: `Ligne ${r.line} : ${r.error}` }))
+  if (rowErrors.length > 0) {
+    return { errors: { _form: ["Le fichier contient des erreurs. Corrigez-les puis réessayez (aucun enseignant n'a été importé)."] }, rowErrors }
+  }
+
+  // Existing-teacher dedup keys: email (if any) and first|last name.
+  const { data: existing } = await supabase
+    .from('teachers').select('email, first_name, last_name').eq('school_id', schoolId)
+  const emailSet = new Set<string>()
+  const nameSet  = new Set<string>()
+  for (const t of (existing ?? []) as { email: string | null; first_name: string; last_name: string }[]) {
+    if (t.email) emailSet.add(t.email.trim().toLowerCase())
+    nameSet.add(`${t.first_name}|${t.last_name}`.trim().toLowerCase())
+  }
+
+  const seenEmail = new Set<string>()
+  const seenName  = new Set<string>()
+  const toCreate: { first_name: string; last_name: string; email: string | null; phone: string | null; status: string }[] = []
+  let skipped = 0
+  for (const r of rows) {
+    const em = r.email.toLowerCase()
+    const nm = `${r.first_name}|${r.last_name}`.toLowerCase()
+    const dupExisting = em ? emailSet.has(em) : nameSet.has(nm)
+    const dupInFile   = em ? seenEmail.has(em) : seenName.has(nm)
+    if (dupExisting || dupInFile) { skipped++; continue }
+    if (em) seenEmail.add(em); else seenName.add(nm)
+    toCreate.push({
+      first_name: r.first_name, last_name: r.last_name,
+      email: r.email || null, phone: r.phone || null, status: r.status || 'active',
+    })
+  }
+
+  let created = 0
+  if (toCreate.length > 0) {
+    // employee_number is NOT NULL + unique per school and absent from the
+    // template, so generate a collision-safe value per imported row.
+    const base = Date.now().toString(36).toUpperCase()
+    const insertRows = toCreate.map((t, i) => ({
+      school_id:       schoolId,
+      employee_number: `IMP-${base}-${i + 1}`,
+      first_name:      t.first_name,
+      last_name:       t.last_name,
+      email:           t.email,
+      phone:           t.phone,
+      status:          t.status,
+    }))
+    const { data: inserted, error } = await supabase.from('teachers').insert(insertRows).select('id')
+    if (error) {
+      return {
+        errors: {
+          _form: [formatServerActionError(error, {
+            action: 'importTeachersFromCsv', schoolId, userId: user.id,
+            entityIds: { count: toCreate.length }, constraints: TEACHER_CONSTRAINTS,
+            fallback: "Erreur lors de l'import des enseignants. Veuillez réessayer.",
+          })._form?.[0] ?? "Erreur lors de l'import des enseignants. Veuillez réessayer."],
+        },
+      }
+    }
+    created = ((inserted ?? []) as { id: string }[]).length
+
+    await logAuditEvent(supabase, {
+      actorId: user.id, actorEmail: user.email, schoolId,
+      action: 'teachers_bulk_created', resourceType: 'teacher', resourceId: schoolId,
+      metadata: { source: 'import', created, skipped },
+    })
+  }
+
+  redirect(`/school/teachers?created=${created}&skipped=${skipped}`)
 }

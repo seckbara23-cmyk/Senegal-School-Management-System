@@ -232,3 +232,184 @@ export function readStudentRows(grid: string[][]): ParsedStudentRow[] {
   }
   return out
 }
+
+// ─── Shared ────────────────────────────────────────────────────────────────────
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// ─── Teachers (first_name, last_name, email, phone, subject, status) ──────────
+
+export type ParsedTeacherRow = {
+  line:       number
+  first_name: string
+  last_name:  string
+  email:      string
+  phone:      string
+  subject:    string
+  status:     string
+  error:      string | null
+}
+
+const TEACHER_HEADER_ALIASES: Record<string, 'first_name' | 'last_name' | 'email' | 'phone' | 'subject' | 'status'> = {
+  first_name: 'first_name', firstname: 'first_name', prenom: 'first_name', 'prénom': 'first_name',
+  last_name: 'last_name', lastname: 'last_name', nom: 'last_name',
+  email: 'email', mail: 'email', courriel: 'email', 'e-mail': 'email',
+  phone: 'phone', telephone: 'phone', 'téléphone': 'phone', tel: 'phone',
+  subject: 'subject', subjects: 'subject', matiere: 'subject', 'matière': 'subject', matieres: 'subject', 'matières': 'subject',
+  status: 'status', statut: 'status',
+}
+
+const SIMPLE_STATUSES = new Set(['active', 'inactive'])
+
+/**
+ * Map raw CSV/XLSX rows to teacher rows with per-row validation. The first row
+ * is treated as a header when it contains a recognised column name; otherwise
+ * the columns are assumed to be first_name, last_name, email, phone, subject,
+ * status in order. first_name/last_name are required; email must be valid when
+ * present; status (active|inactive) is validated when present.
+ */
+export function readTeacherRows(grid: string[][]): ParsedTeacherRow[] {
+  if (grid.length === 0) return []
+
+  const header = grid[0].map((h) => h.trim().toLowerCase())
+  const looksLikeHeader = header.some((h) => h in TEACHER_HEADER_ALIASES)
+
+  let firstIdx = 0, lastIdx = 1, emailIdx = 2, phoneIdx = 3, subjectIdx = 4, statusIdx = 5
+  let dataStart = 0
+  if (looksLikeHeader) {
+    firstIdx   = header.findIndex((h) => TEACHER_HEADER_ALIASES[h] === 'first_name')
+    lastIdx    = header.findIndex((h) => TEACHER_HEADER_ALIASES[h] === 'last_name')
+    emailIdx   = header.findIndex((h) => TEACHER_HEADER_ALIASES[h] === 'email')
+    phoneIdx   = header.findIndex((h) => TEACHER_HEADER_ALIASES[h] === 'phone')
+    subjectIdx = header.findIndex((h) => TEACHER_HEADER_ALIASES[h] === 'subject')
+    statusIdx  = header.findIndex((h) => TEACHER_HEADER_ALIASES[h] === 'status')
+    dataStart  = 1
+  }
+
+  const cell = (cells: string[], i: number) => (i >= 0 ? cells[i] : '')?.trim() ?? ''
+
+  const out: ParsedTeacherRow[] = []
+  for (let r = dataStart; r < grid.length; r++) {
+    const cells = grid[r]
+    const first_name = cell(cells, firstIdx)
+    const last_name  = cell(cells, lastIdx)
+    const email      = cell(cells, emailIdx)
+    const phone      = cell(cells, phoneIdx)
+    const subject    = cell(cells, subjectIdx)
+    const status     = cell(cells, statusIdx).toLowerCase()
+
+    let error: string | null = null
+    if (!first_name)                         error = 'Le prénom est requis.'
+    else if (first_name.length > 100)         error = 'Prénom trop long (100 caractères max).'
+    else if (!last_name)                      error = 'Le nom est requis.'
+    else if (last_name.length > 100)          error = 'Nom trop long (100 caractères max).'
+    else if (email && !EMAIL_RE.test(email))  error = 'Adresse email invalide.'
+    else if (email.length > 200)              error = 'Email trop long (200 caractères max).'
+    else if (phone.length > 30)               error = 'Numéro trop long (30 caractères max).'
+    else if (subject.length > 100)            error = 'Matière trop longue (100 caractères max).'
+    else if (status && !SIMPLE_STATUSES.has(status)) error = 'Statut invalide (active ou inactive).'
+
+    out.push({ line: r + 1, first_name, last_name, email, phone, subject, status, error })
+  }
+  return out
+}
+
+// ─── Parents (first_name, last_name, email, phone, admission, relationship, status) ─
+
+export type ParsedParentRow = {
+  line:                     number
+  first_name:               string
+  last_name:                string
+  email:                    string
+  phone:                    string
+  student_admission_number: string
+  relationship:             string   // normalised: father | mother | guardian | other
+  status:                   string
+  error:                    string | null
+}
+
+const PARENT_HEADER_ALIASES: Record<string, 'first_name' | 'last_name' | 'email' | 'phone' | 'student_admission_number' | 'relationship' | 'status'> = {
+  first_name: 'first_name', firstname: 'first_name', prenom: 'first_name', 'prénom': 'first_name',
+  last_name: 'last_name', lastname: 'last_name', nom: 'last_name',
+  email: 'email', mail: 'email', courriel: 'email', 'e-mail': 'email',
+  phone: 'phone', telephone: 'phone', 'téléphone': 'phone', tel: 'phone',
+  student_admission_number: 'student_admission_number', admission_number: 'student_admission_number',
+  admission: 'student_admission_number', matricule: 'student_admission_number', eleve: 'student_admission_number', 'élève': 'student_admission_number',
+  relationship: 'relationship', relation: 'relationship', lien: 'relationship', parente: 'relationship', 'parenté': 'relationship',
+  status: 'status', statut: 'status',
+}
+
+// 'parent' is intentionally mapped to 'guardian': the parent_student_links CHECK
+// constraint only allows father|mother|guardian|other (see migration 001), so
+// 'guardian' is the inclusive default — matching the existing link UI.
+const RELATIONSHIP_ALIASES: Record<string, 'father' | 'mother' | 'guardian' | 'other'> = {
+  father: 'father', pere: 'father', 'père': 'father', papa: 'father',
+  mother: 'mother', mere: 'mother', 'mère': 'mother', maman: 'mother',
+  guardian: 'guardian', tuteur: 'guardian', tutrice: 'guardian', parent: 'guardian',
+  other: 'other', autre: 'other',
+}
+
+export function normaliseRelationship(value: string): 'father' | 'mother' | 'guardian' | 'other' {
+  const k = value.trim().toLowerCase()
+  if (!k) return 'guardian'
+  return RELATIONSHIP_ALIASES[k] ?? 'guardian'
+}
+
+/**
+ * Map raw CSV/XLSX rows to parent rows with per-row validation. The first row is
+ * treated as a header when it contains a recognised column name; otherwise the
+ * columns are assumed to be first_name, last_name, email, phone,
+ * student_admission_number, relationship, status in order. first_name/last_name
+ * are required and at least one of phone/email; email is validated when present;
+ * relationship is normalised (default guardian); status (active|inactive) is
+ * validated when present. The student_admission_number's EXISTENCE is verified
+ * separately (it needs the school's data) — here only its length is checked.
+ */
+export function readParentRows(grid: string[][]): ParsedParentRow[] {
+  if (grid.length === 0) return []
+
+  const header = grid[0].map((h) => h.trim().toLowerCase())
+  const looksLikeHeader = header.some((h) => h in PARENT_HEADER_ALIASES)
+
+  let firstIdx = 0, lastIdx = 1, emailIdx = 2, phoneIdx = 3, admIdx = 4, relIdx = 5, statusIdx = 6
+  let dataStart = 0
+  if (looksLikeHeader) {
+    firstIdx  = header.findIndex((h) => PARENT_HEADER_ALIASES[h] === 'first_name')
+    lastIdx   = header.findIndex((h) => PARENT_HEADER_ALIASES[h] === 'last_name')
+    emailIdx  = header.findIndex((h) => PARENT_HEADER_ALIASES[h] === 'email')
+    phoneIdx  = header.findIndex((h) => PARENT_HEADER_ALIASES[h] === 'phone')
+    admIdx    = header.findIndex((h) => PARENT_HEADER_ALIASES[h] === 'student_admission_number')
+    relIdx    = header.findIndex((h) => PARENT_HEADER_ALIASES[h] === 'relationship')
+    statusIdx = header.findIndex((h) => PARENT_HEADER_ALIASES[h] === 'status')
+    dataStart = 1
+  }
+
+  const cell = (cells: string[], i: number) => (i >= 0 ? cells[i] : '')?.trim() ?? ''
+
+  const out: ParsedParentRow[] = []
+  for (let r = dataStart; r < grid.length; r++) {
+    const cells = grid[r]
+    const first_name = cell(cells, firstIdx)
+    const last_name  = cell(cells, lastIdx)
+    const email      = cell(cells, emailIdx)
+    const phone      = cell(cells, phoneIdx)
+    const student_admission_number = cell(cells, admIdx)
+    const relationship = normaliseRelationship(cell(cells, relIdx))
+    const status     = cell(cells, statusIdx).toLowerCase()
+
+    let error: string | null = null
+    if (!first_name)                          error = 'Le prénom est requis.'
+    else if (first_name.length > 100)          error = 'Prénom trop long (100 caractères max).'
+    else if (!last_name)                       error = 'Le nom est requis.'
+    else if (last_name.length > 100)           error = 'Nom trop long (100 caractères max).'
+    else if (!email && !phone)                 error = 'Téléphone ou email requis.'
+    else if (email && !EMAIL_RE.test(email))   error = 'Adresse email invalide.'
+    else if (email.length > 200)               error = 'Email trop long (200 caractères max).'
+    else if (phone.length > 30)                error = 'Numéro trop long (30 caractères max).'
+    else if (student_admission_number.length > 50) error = "Numéro d'admission trop long (50 caractères max)."
+    else if (status && !SIMPLE_STATUSES.has(status)) error = 'Statut invalide (active ou inactive).'
+
+    out.push({ line: r + 1, first_name, last_name, email, phone, student_admission_number, relationship, status, error })
+  }
+  return out
+}

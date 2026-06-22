@@ -32,7 +32,7 @@ function buildUrl(q: string, page: number): string {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 type Props = {
-  searchParams: { q?: string | string[]; page?: string | string[] }
+  searchParams: { q?: string | string[]; page?: string | string[]; created?: string; skipped?: string; linked?: string }
 }
 
 export default async function ParentsPage({ searchParams }: Props) {
@@ -90,6 +90,16 @@ export default async function ParentsPage({ searchParams }: Props) {
   const total      = totalCount ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
+  // Import success banner.
+  const created = searchParams.created !== undefined ? Number(searchParams.created) : null
+  const skipped = searchParams.skipped !== undefined ? Number(searchParams.skipped) : 0
+  const linked  = searchParams.linked  !== undefined ? Number(searchParams.linked)  : 0
+  const importMessage = created !== null && Number.isFinite(created)
+    ? `${created} parent${created !== 1 ? 's' : ''} créé${created !== 1 ? 's' : ''}` +
+      (skipped > 0 ? `, ${skipped} ignoré${skipped !== 1 ? 's' : ''}` : '') + '.' +
+      (linked > 0 ? ` ${linked} lien${linked !== 1 ? 's' : ''} parent-élève créé${linked !== 1 ? 's' : ''}.` : '')
+    : ''
+
   return (
     <div className="space-y-5">
 
@@ -107,15 +117,23 @@ export default async function ParentsPage({ searchParams }: Props) {
             </h1>
             <p className="text-primary-300 text-sm mt-0.5">{school.name}</p>
           </div>
-          <a
-            href="/school/parents/new"
-            className="inline-flex items-center gap-2 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            Nouveau dossier
-          </a>
+          <div className="flex items-center gap-2">
+            <a
+              href="/school/parents/import"
+              className="inline-flex items-center gap-2 rounded-lg border border-white/30 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
+            >
+              Importer
+            </a>
+            <a
+              href="/school/parents/new"
+              className="inline-flex items-center gap-2 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Nouveau dossier
+            </a>
+          </div>
         </div>
         {total > 0 && !q && (
           <div className="mt-4 pt-4 border-t border-primary-700">
@@ -126,6 +144,11 @@ export default async function ParentsPage({ searchParams }: Props) {
           </div>
         )}
       </div>
+
+      {/* ── Import success banner ───────────────────────────────────────────── */}
+      {importMessage && (
+        <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{importMessage}</div>
+      )}
 
       {/* ── Search ──────────────────────────────────────────────────────────── */}
       <form method="GET" action="/school/parents" className="flex gap-2">

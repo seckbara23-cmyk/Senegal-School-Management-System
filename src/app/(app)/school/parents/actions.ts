@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { formatServerActionError, logSupabaseError } from '@/lib/errors'
 import { logAuditEvent } from '@/lib/audit'
 import { isSchoolWritable, TENANT_WRITE_BLOCKED_MESSAGE } from '@/lib/tenant'
+import { parseCsv, readParentRows } from '@/lib/parse-csv'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -377,4 +378,142 @@ export async function unlinkStudent(formData: FormData): Promise<void> {
   })
 
   redirect(parentId ? `/school/parents/${parentId}` : '/school/parents')
+}
+
+// ─── Bulk import (CSV / XLSX) ──────────────────────────────────────────────────
+//
+// Duplicate detection: by email OR phone within the school. Duplicates are
+// SKIPPED (not errors). Any structural row error — OR an unknown
+// student_admission_number — blocks the WHOLE import. When an admission number
+// matches a student, a parent_student_link is created (relationship from the
+// row, default guardian). The server re-parses/re-validates authoritatively and
+// resolves school_id server-side.
+
+export type ImportParentsState = {
+  errors?: { _form?: string[] }
+  rowErrors?: { line: number; message: string }[]
+}
+
+export async function importParentsFromCsv(
+  _prevState: ImportParentsState,
+  formData: FormData,
+): Promise<ImportParentsState> {
+  const supabase = createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { errors: { _form: ['Non autorisé.'] } }
+
+  const schoolId = await getSchoolId(supabase, user.id)
+  if (!schoolId) return { errors: { _form: ['Non autorisé.'] } }
+
+  if (!(await isSchoolWritable(supabase, schoolId))) {
+    return { errors: { _form: [TENANT_WRITE_BLOCKED_MESSAGE] } }
+  }
+
+  const csvText = String(formData.get('csv_text') ?? '')
+  if (!csvText.trim()) return { errors: { _form: ['Aucune donnée à importer. Choisissez un fichier CSV ou Excel (.xlsx).'] } }
+
+  const rows = readParentRows(parseCsv(csvText))
+  if (rows.length === 0) return { errors: { _form: ['Le fichier ne contient aucun parent.'] } }
+
+  const rowErrors = rows.filter((r) => r.error).map((r) => ({ line: r.line, message: `Ligne ${r.line} : ${r.error}` }))
+
+  // Resolve admission numbers → student ids (scoped to this school). An unknown
+  // admission number is a blocking row error.
+  const { data: students } = await supabase
+    .from('students').select('id, admission_number').eq('school_id', schoolId)
+  const admMap = new Map<string, string>()
+  for (const s of (students ?? []) as { id: string; admission_number: string }[]) {
+    admMap.set(s.admission_number.trim().toLowerCase(), s.id)
+  }
+  for (const r of rows) {
+    if (r.error) continue
+    if (r.student_admission_number && !admMap.has(r.student_admission_number.trim().toLowerCase())) {
+      rowErrors.push({ line: r.line, message: `Ligne ${r.line} : élève introuvable (${r.student_admission_number}).` })
+    }
+  }
+  if (rowErrors.length > 0) {
+    rowErrors.sort((a, b) => a.line - b.line)
+    return { errors: { _form: ["Le fichier contient des erreurs. Corrigez-les puis réessayez (aucun parent n'a été importé)."] }, rowErrors }
+  }
+
+  // Existing-parent dedup keys: email and phone.
+  const { data: existing } = await supabase
+    .from('parents').select('email, phone').eq('school_id', schoolId)
+  const emailSet = new Set<string>()
+  const phoneSet = new Set<string>()
+  for (const p of (existing ?? []) as { email: string | null; phone: string | null }[]) {
+    if (p.email) emailSet.add(p.email.trim().toLowerCase())
+    if (p.phone) phoneSet.add(p.phone.trim().toLowerCase())
+  }
+
+  const seenEmail = new Set<string>()
+  const seenPhone = new Set<string>()
+  type Pending = { first_name: string; last_name: string; email: string | null; phone: string | null; status: string; relationship: string; student_id: string | null }
+  const toCreate: Pending[] = []
+  let skipped = 0
+  for (const r of rows) {
+    const em = r.email.toLowerCase()
+    const ph = r.phone.toLowerCase()
+    const dupExisting = (em && emailSet.has(em)) || (ph && phoneSet.has(ph))
+    const dupInFile   = (em && seenEmail.has(em)) || (ph && seenPhone.has(ph))
+    if (dupExisting || dupInFile) { skipped++; continue }
+    if (em) seenEmail.add(em)
+    if (ph) seenPhone.add(ph)
+    toCreate.push({
+      first_name: r.first_name, last_name: r.last_name,
+      email: r.email || null, phone: r.phone || null, status: r.status || 'active',
+      relationship: r.relationship,
+      student_id: r.student_admission_number ? (admMap.get(r.student_admission_number.trim().toLowerCase()) ?? null) : null,
+    })
+  }
+
+  let created = 0
+  let linked  = 0
+  if (toCreate.length > 0) {
+    const insertRows = toCreate.map((p) => ({
+      school_id: schoolId, first_name: p.first_name, last_name: p.last_name,
+      email: p.email, phone: p.phone, status: p.status,
+    }))
+    const { data: inserted, error } = await supabase.from('parents').insert(insertRows).select('id')
+    if (error) {
+      return {
+        errors: {
+          _form: [formatServerActionError(error, {
+            action: 'importParentsFromCsv', schoolId, userId: user.id,
+            entityIds: { count: toCreate.length },
+            fallback: "Erreur lors de l'import des parents. Veuillez réessayer.",
+          })._form?.[0] ?? "Erreur lors de l'import des parents. Veuillez réessayer."],
+        },
+      }
+    }
+    const ids = ((inserted ?? []) as { id: string }[]).map((x) => x.id)
+    created = ids.length
+
+    // Postgres RETURNING preserves the VALUES order, so inserted[i] ↔ toCreate[i].
+    const linkRows = []
+    for (let i = 0; i < ids.length; i++) {
+      const p = toCreate[i]
+      if (p.student_id) {
+        linkRows.push({
+          school_id: schoolId, parent_id: ids[i], student_id: p.student_id,
+          relationship: p.relationship, is_primary_contact: false,
+        })
+      }
+    }
+    if (linkRows.length > 0) {
+      const { error: linkErr } = await supabase
+        .from('parent_student_links').upsert(linkRows, { onConflict: 'parent_id,student_id' })
+      if (!linkErr) linked = linkRows.length
+      else logSupabaseError(linkErr, { action: 'importParentsFromCsv:link', schoolId, userId: user.id, entityIds: { count: linkRows.length } })
+    }
+
+    await logAuditEvent(supabase, {
+      actorId: user.id, actorEmail: user.email, schoolId,
+      action: 'parents_bulk_created', resourceType: 'parent', resourceId: schoolId,
+      metadata: { source: 'import', created, skipped, linked },
+    })
+  }
+
+  redirect(`/school/parents?created=${created}&skipped=${skipped}&linked=${linked}`)
 }
