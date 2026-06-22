@@ -36,7 +36,7 @@ const SLOT_SELECT =
   'classes!class_id(name, section), ' +
   'teachers!teacher_id(first_name, last_name)'
 
-type Props = { searchParams: { year?: string; class?: string; teacher?: string; view?: string; error?: string } }
+type Props = { searchParams: { year?: string; class?: string; teacher?: string; view?: string; error?: string; generated?: string } }
 
 export default async function TimetablePage({ searchParams }: Props) {
   const supabase = createClient()
@@ -85,6 +85,12 @@ export default async function TimetablePage({ searchParams }: Props) {
   const selectedTeacherRow = teachers.find((t) => t.id === selectedTeacher) ?? null
 
   const errorMessage = searchParams.error ? (ERROR_MESSAGES[searchParams.error] ?? '') : ''
+  const genCount = searchParams.generated !== undefined ? Number(searchParams.generated) : null
+  const generatedMsg = genCount !== null && Number.isFinite(genCount)
+    ? (genCount > 0
+        ? `${genCount} créneau${genCount > 1 ? 'x' : ''} généré${genCount > 1 ? 's' : ''} et enregistré${genCount > 1 ? 's' : ''}.`
+        : 'Aucun créneau à générer (volumes horaires déjà couverts ou non définis).')
+    : ''
 
   // Fetch slots for the current selection.
   let slots: SlotRow[] = []
@@ -148,14 +154,28 @@ export default async function TimetablePage({ searchParams }: Props) {
             <h1 className="text-2xl font-bold text-white tracking-tight">Emploi du temps</h1>
             <p className="text-primary-300 text-sm mt-0.5">{subtitle}</p>
           </div>
-          <a
-            href="/school/timetable/new"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
-          >
-            + Nouveau créneau
-          </a>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={`/school/timetable/generate${searchParams.year ? `?year=${searchParams.year}` : ''}`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/30 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
+            >
+              Générer
+            </a>
+            <a
+              href="/school/timetable/new"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-accent-400 transition-colors shadow-sm"
+            >
+              + Nouveau créneau
+            </a>
+          </div>
         </div>
       </div>
+
+      {generatedMsg && (
+        <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm text-emerald-800">{generatedMsg}</p>
+        </div>
+      )}
 
       {errorMessage && (
         <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4">

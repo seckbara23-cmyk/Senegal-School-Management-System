@@ -193,3 +193,39 @@ export async function removeClassSubject(formData: FormData): Promise<void> {
 
   redirect(subjectsPath(class_id, 'ok=removed'))
 }
+
+// ── Set weekly hours for a class-subject (used by the timetable generator) ─────
+
+const HoursSchema = z.object({
+  class_id:         z.string().uuid(),
+  class_subject_id: z.string().uuid(),
+  hours_per_week:   z.preprocess((v) => parseInt(String(v), 10), z.number().int().min(0).max(40)),
+})
+
+export async function setClassSubjectHours(formData: FormData): Promise<void> {
+  const { supabase, schoolId } = await resolveAdmin()
+
+  const parsed = HoursSchema.safeParse({
+    class_id:         formData.get('class_id'),
+    class_subject_id: formData.get('class_subject_id'),
+    hours_per_week:   formData.get('hours_per_week'),
+  })
+  if (!parsed.success) {
+    const cid = z.string().uuid().safeParse(formData.get('class_id'))
+    redirect(cid.success ? subjectsPath(cid.data, 'error=invalid') : '/school/classes')
+  }
+  const { class_id, class_subject_id, hours_per_week } = parsed.data
+
+  if (!(await isSchoolWritable(supabase, schoolId))) redirect(subjectsPath(class_id, 'error=readonly'))
+
+  const { error } = await supabase
+    .from('class_subjects').update({ hours_per_week })
+    .eq('id', class_subject_id).eq('school_id', schoolId).eq('class_id', class_id)
+
+  if (error) {
+    logSupabaseError(error, { action: 'setClassSubjectHours', schoolId, entityIds: { class_subject_id } })
+    redirect(subjectsPath(class_id, 'error=server'))
+  }
+
+  redirect(subjectsPath(class_id, 'ok=hours'))
+}

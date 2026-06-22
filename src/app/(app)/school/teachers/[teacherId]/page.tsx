@@ -165,12 +165,20 @@ export default async function TeacherDetailPage({ params, searchParams }: Props)
               )}
             </div>
           </div>
-          <a
-            href={`/school/teachers/${teacher.id}/edit`}
-            className="shrink-0 rounded-lg bg-white/15 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/25 transition-colors"
-          >
-            Modifier
-          </a>
+          <div className="flex shrink-0 items-center gap-2">
+            <a
+              href={`/school/teachers/${teacher.id}/availability`}
+              className="rounded-lg border border-white/30 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
+            >
+              Disponibilités
+            </a>
+            <a
+              href={`/school/teachers/${teacher.id}/edit`}
+              className="rounded-lg bg-white/15 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/25 transition-colors"
+            >
+              Modifier
+            </a>
+          </div>
         </div>
       </div>
 

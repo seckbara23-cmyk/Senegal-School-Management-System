@@ -2,10 +2,12 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import { addClassSubject, removeClassSubject } from './actions'
 import { TeacherSelect } from './_TeacherSelect'
+import { HoursInput } from './_HoursInput'
 
 const OK_MESSAGES: Record<string, string> = {
   added:   'Matière ajoutée à la classe.',
   teacher: 'Enseignant mis à jour.',
+  hours:   'Heures par semaine mises à jour.',
   removed: 'Matière retirée de la classe.',
 }
 
@@ -59,7 +61,7 @@ export default async function ClassSubjectsPage({ params, searchParams }: Props)
     supabase.from('subjects').select('id, name, code').eq('school_id', schoolId).order('name'),
     supabase
       .from('class_subjects')
-      .select('id, subject_id, subjects!subject_id(name, code), teacher_subject_assignments!class_subject_id(teacher_id)')
+      .select('id, subject_id, hours_per_week, subjects!subject_id(name, code), teacher_subject_assignments!class_subject_id(teacher_id)')
       .eq('class_id', cls.id).eq('school_id', schoolId),
     supabase.from('teachers').select('id, first_name, last_name').eq('school_id', schoolId).eq('status', 'active').order('last_name'),
   ])
@@ -70,6 +72,7 @@ export default async function ClassSubjectsPage({ params, searchParams }: Props)
   type CSRow = {
     id: string
     subject_id: string
+    hours_per_week: number | null
     subjects: { name: string; code: string | null } | null
     teacher_subject_assignments: TeacherEmbed | TeacherEmbed[] | null
   }
@@ -83,6 +86,7 @@ export default async function ClassSubjectsPage({ params, searchParams }: Props)
         name: cs.subjects?.name ?? 'Matière',
         code: cs.subjects?.code ?? null,
         teacher_id: teacherRow?.teacher_id ?? null,
+        hours_per_week: cs.hours_per_week ?? 1,
       }
     })
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -164,7 +168,8 @@ export default async function ClassSubjectsPage({ params, searchParams }: Props)
                   <p className="text-sm font-semibold text-gray-900 truncate">{cs.name}</p>
                   {cs.code && <p className="text-xs font-mono text-gray-400">{cs.code}</p>}
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <HoursInput classId={cls.id} classSubjectId={cs.id} hours={cs.hours_per_week} disabled={false} />
                   <TeacherSelect
                     classId={cls.id}
                     classSubjectId={cs.id}
