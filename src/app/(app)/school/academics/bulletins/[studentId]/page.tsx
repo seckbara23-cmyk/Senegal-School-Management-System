@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import { PrintButton } from './_print_button'
+import { BulletinCommentEditor } from './_comment_editor'
+import { loadPreviousAverage, loadAttendance } from './_comment_data'
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100
@@ -67,7 +69,7 @@ export default async function BulletinPage({ params, searchParams }: Props) {
 
     supabase
       .from('academic_periods')
-      .select('id, name, academic_year_id, academic_years!academic_year_id(name)')
+      .select('id, name, academic_year_id, starts_on, ends_on, academic_years!academic_year_id(name)')
       .eq('id', searchParams.period_id)
       .eq('school_id', schoolId)
       .maybeSingle(),
@@ -77,7 +79,7 @@ export default async function BulletinPage({ params, searchParams }: Props) {
   if (!periodRes.data)  notFound()
 
   type StudentRow = { id: string; first_name: string; last_name: string }
-  type PeriodRow  = { id: string; name: string; academic_year_id: string; academic_years: { name: string } }
+  type PeriodRow  = { id: string; name: string; academic_year_id: string; starts_on: string | null; ends_on: string | null; academic_years: { name: string } }
 
   const student = studentRes.data as StudentRow
   const period  = periodRes.data as unknown as PeriodRow
@@ -263,6 +265,30 @@ export default async function BulletinPage({ params, searchParams }: Props) {
     })
     return { id: cs.id, name: cs.subjects.name, code: cs.subjects.code, coefficient: cs.subjects.coefficient ?? 1, avg, classAvg, gradedCount, totalCount, teacher, gradeEntries }
   })
+
+  // ── AI-assisted comment context (grounded only on real metrics) ─────────────
+  const csCoef = classSubjects.map((cs) => ({ id: cs.id, coefficient: cs.subjects.coefficient ?? 1 }))
+  const [previousAverage, attendance, commentRow] = await Promise.all([
+    loadPreviousAverage(supabase, schoolId, student.id, period.academic_year_id, period.starts_on, csCoef),
+    loadAttendance(supabase, schoolId, student.id, classId, period.starts_on, period.ends_on),
+    supabase.from('bulletin_comments').select('approved_text')
+      .eq('school_id', schoolId).eq('student_id', student.id).eq('academic_period_id', period.id).eq('locale', 'fr').maybeSingle(),
+  ])
+  const approvedComment = ((commentRow.data as { approved_text: string | null } | null)?.approved_text) ?? null
+  const commentMetrics = {
+    firstName:       student.first_name,
+    average:         overallAvg,
+    previousAverage,
+    rank,
+    classSize:       allStudentIds.length,
+    mention:         mentionData?.label ?? null,
+    attendanceRate:  attendance.rate,
+    absences:        attendance.absences,
+    lates:           attendance.lates,
+    strongSubjects:  subjectRows.filter((r) => r.avg !== null && r.avg >= 14).map((r) => r.name),
+    weakSubjects:    subjectRows.filter((r) => r.avg !== null && r.avg < 10).map((r) => r.name),
+    observations:    '',
+  }
 
   const printDate = fmtPrintDate()
 
@@ -535,13 +561,20 @@ export default async function BulletinPage({ params, searchParams }: Props) {
           print:border-t print:border-gray-300 print:py-4
         ">
           <p className="text-[10px] font-bold uppercase tracking-wider text-primary-400 mb-2 print:text-gray-600">
-            Observations du conseil de classe
+            Appréciation générale
           </p>
-          <div className="
-            min-h-[4rem] rounded border border-dashed border-primary-200 bg-primary-50/30 px-3 py-2
-            print:rounded-none print:border print:border-gray-300 print:bg-white print:min-h-[5rem]
-          ">
-            <p className="text-xs text-gray-300 italic print:hidden">—</p>
+          {/* Print: the approved appreciation only */}
+          <div className="hidden print:block min-h-[3rem]">
+            {approvedComment && <p className="text-sm text-gray-900 whitespace-pre-wrap">{approvedComment}</p>}
+          </div>
+          {/* Screen: AI-assisted editor (review → edit → accept; nothing auto-published) */}
+          <div className="print:hidden rounded border border-primary-100 bg-primary-50/30 px-3 py-3">
+            <BulletinCommentEditor
+              studentId={student.id}
+              periodId={period.id}
+              metrics={commentMetrics}
+              existingApproved={approvedComment}
+            />
           </div>
         </div>
 

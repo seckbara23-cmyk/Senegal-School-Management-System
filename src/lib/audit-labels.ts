@@ -45,6 +45,8 @@ export const ACTION_LABELS: Record<string, string> = {
   academic_period_created:       'Période créée',
   assessment_created:            'Évaluation créée',
   grades_saved:                  'Notes enregistrées',
+  comment_generated:             'Appréciation générée',
+  comment_approved:              'Appréciation validée',
   // Emploi du temps
   timetable_slot_created:        'Créneau ajouté',
   timetable_slot_updated:        'Créneau modifié',
@@ -137,7 +139,7 @@ export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Admissions',           actions: ['admission_created', 'admission_status_changed', 'admission_converted'] },
   { label: 'Documents',            actions: ['document_uploaded', 'document_deleted'] },
   { label: 'Années scolaires',     actions: ['academic_year_created', 'academic_year_updated', 'academic_year_status_changed'] },
-  { label: 'Structure académique', actions: ['subject_created', 'subject_updated', 'subject_deleted', 'subjects_bulk_created', 'subject_assigned_to_class', 'subject_removed_from_class', 'teacher_assigned_to_subject', 'teacher_assignment_created', 'teacher_assignment_removed', 'academic_period_created', 'assessment_created', 'grades_saved'] },
+  { label: 'Structure académique', actions: ['subject_created', 'subject_updated', 'subject_deleted', 'subjects_bulk_created', 'subject_assigned_to_class', 'subject_removed_from_class', 'teacher_assigned_to_subject', 'teacher_assignment_created', 'teacher_assignment_removed', 'academic_period_created', 'assessment_created', 'grades_saved', 'comment_generated', 'comment_approved'] },
   { label: 'Emploi du temps',      actions: ['timetable_slot_created', 'timetable_slot_updated', 'timetable_slot_deleted', 'timetable_generated', 'timetable_status_changed', 'teacher_availability_updated'] },
   { label: 'Sessions d’examen',    actions: ['exam_session_created', 'exam_session_updated', 'exam_session_activated', 'exam_session_completed', 'exam_session_archived', 'exam_results_published', 'exam_results_unpublished'] },
   { label: 'Annonces',             actions: ['announcement_published'] },

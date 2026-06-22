@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { tallyStatuses, attendanceRate as computeAttendanceRate, rateTone, RATE_TEXT_CLASS } from '@/lib/attendance'
 import { getSetupState } from '@/lib/setup'
+import { loadSchoolRisk } from '@/lib/academic/risk-data'
 
 // ─── Icon helper ──────────────────────────────────────────────────────────────
 
@@ -569,6 +570,9 @@ export default async function SchoolAdminPage() {
   const onboardingDone     = setup.requiredDone
   const onboardingComplete = setup.ready
 
+  // Students at risk — derived (never stored); see lib/academic/risk-data.
+  const risk = await loadSchoolRisk(supabase, schoolId)
+
   // ── Today's attendance widgets ──────────────────────────────────────────────
   // Present/absent/late counts, classes still pending, and who's absent today.
   const { data: todaySessData } = await supabase
@@ -662,6 +666,13 @@ export default async function SchoolAdminPage() {
           href="/school/finance/invoices" iconPath={P.money}
           tone={outstanding.length > 0 ? 'amber' : 'emerald'}
           danger={outstanding.length > 0}
+        />
+        <KpiCard
+          label="⚠ Élèves à risque" value={risk.summary.total}
+          sub={risk.summary.total > 0 ? `${risk.summary.high} élevé · ${risk.summary.medium} moyen` : 'aucun'}
+          href="/school/academic-support" iconPath={P.alert}
+          tone={risk.summary.high > 0 ? 'amber' : 'emerald'}
+          danger={risk.summary.high > 0}
         />
         <KpiCard
           label="En retard" value={overdue.length}

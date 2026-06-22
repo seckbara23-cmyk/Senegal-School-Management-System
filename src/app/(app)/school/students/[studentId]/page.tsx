@@ -3,6 +3,13 @@ import { notFound, redirect } from 'next/navigation'
 import { DocumentsSection, type DocumentRow } from '@/components/DocumentsSection'
 import { isSchoolWritable } from '@/lib/tenant'
 import { StudentTransportPanel, type CurrentAssignment, type RouteOption } from '../../transport/_StudentTransportPanel'
+import { loadSchoolRisk } from '@/lib/academic/risk-data'
+
+const RISK_META: Record<string, { label: string; badge: string }> = {
+  high:   { label: 'Risque élevé', badge: 'border-red-200 bg-red-50 text-red-700' },
+  medium: { label: 'Risque moyen', badge: 'border-amber-200 bg-amber-50 text-amber-700' },
+  low:    { label: 'Risque faible', badge: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -206,6 +213,9 @@ export default async function StudentDetailPage({ params, searchParams }: Props)
   const transportFb = searchParams.transport_ok ? TRANSPORT_FEEDBACK[searchParams.transport_ok]
     : searchParams.transport_error ? TRANSPORT_FEEDBACK[searchParams.transport_error]
     : null
+
+  // Risk assessment — derived, never stored.
+  const studentRisk = (await loadSchoolRisk(supabase, school.id, { studentId: s.id })).results[0] ?? null
 
   const fullName = `${s.last_name} ${s.first_name}`
 
@@ -414,6 +424,30 @@ export default async function StudentDetailPage({ params, searchParams }: Props)
           </div>
         )}
       </div>
+
+      {/* ── Risque scolaire (dérivé) ────────────────────────────────────────── */}
+      {studentRisk && (studentRisk.level !== 'low' || studentRisk.reasons.length > 0) && (
+        <div className="overflow-hidden rounded-xl border border-sand-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-sand-100 bg-sand-50 px-5 py-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Suivi & risque</h2>
+            <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${RISK_META[studentRisk.level].badge}`}>{RISK_META[studentRisk.level].label}</span>
+          </div>
+          <div className="grid grid-cols-1 gap-4 px-5 py-4 sm:grid-cols-2">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Motifs</p>
+              {studentRisk.reasons.length > 0
+                ? <ul className="mt-1 list-disc space-y-0.5 pl-5">{studentRisk.reasons.map((x, i) => <li key={i} className="text-xs text-gray-700">{x}</li>)}</ul>
+                : <p className="mt-1 text-xs text-gray-400">Aucun signal d&apos;alerte.</p>}
+            </div>
+            {studentRisk.actions.length > 0 && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Actions recommandées</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5">{studentRisk.actions.map((x, i) => <li key={i} className="text-xs text-primary-700">{x}</li>)}</ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Transport ───────────────────────────────────────────────────────── */}
       {transportFb && (
