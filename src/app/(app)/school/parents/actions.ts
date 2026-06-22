@@ -54,6 +54,8 @@ async function getSchoolId(
     .eq('user_id', userId)
     .eq('role', 'school_admin')
     .eq('status', 'active')
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle()
   return (data as { school_id: string } | null)?.school_id ?? null
 }

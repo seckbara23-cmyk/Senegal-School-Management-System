@@ -13,6 +13,8 @@ export default async function AcademicsPage() {
     .eq('user_id', user.id)
     .eq('role', 'school_admin')
     .eq('status', 'active')
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle()
 
   if (!membership) redirect('/school')

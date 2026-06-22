@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
     .eq('user_id', user.id)
     .eq('role', 'school_admin')
     .eq('status', 'active')
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle()
 
   if (!membership) return new NextResponse('Forbidden', { status: 403 })

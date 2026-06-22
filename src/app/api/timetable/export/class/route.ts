@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
 
   const { data: m } = await supabase
     .from('school_memberships').select('school_id')
-    .eq('user_id', user.id).eq('role', 'school_admin').eq('status', 'active').maybeSingle()
+    .eq('user_id', user.id).eq('role', 'school_admin').eq('status', 'active').order('created_at', { ascending: true }).limit(1).maybeSingle()
   if (!m) return new NextResponse('Forbidden', { status: 403 })
   const schoolId = (m as { school_id: string }).school_id
 

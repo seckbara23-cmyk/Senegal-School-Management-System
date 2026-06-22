@@ -17,6 +17,8 @@ export default async function EditTeacherPage({ params }: Props) {
     .eq('user_id', user.id)
     .eq('role', 'school_admin')
     .eq('status', 'active')
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle()
 
   if (!adminMembership) redirect('/school')

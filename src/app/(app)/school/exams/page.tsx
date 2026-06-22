@@ -22,7 +22,7 @@ export default async function ExamSessionsPage() {
 
   const { data: membership } = await supabase
     .from('school_memberships').select('school_id')
-    .eq('user_id', user.id).eq('role', 'school_admin').eq('status', 'active').maybeSingle()
+    .eq('user_id', user.id).eq('role', 'school_admin').eq('status', 'active').order('created_at', { ascending: true }).limit(1).maybeSingle()
   if (!membership) redirect('/school')
   const schoolId = (membership as { school_id: string }).school_id
 
