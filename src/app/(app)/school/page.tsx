@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { tallyStatuses, attendanceRate as computeAttendanceRate, rateTone, RATE_TEXT_CLASS } from '@/lib/attendance'
+import { getSetupState } from '@/lib/setup'
 
 // ─── Icon helper ──────────────────────────────────────────────────────────────
 
@@ -279,8 +280,8 @@ const ONBOARDING_CTA = { done: 'Gérer', current: 'Continuer', todo: 'Commencer'
 const CHECK_ICON = 'M4.5 12.75l6 6 9-13.5'
 
 function OnboardingChecklist({
-  steps, doneCount, complete,
-}: { steps: OnboardingStep[]; doneCount: number; complete: boolean }) {
+  steps, doneCount, complete, setupHref,
+}: { steps: OnboardingStep[]; doneCount: number; complete: boolean; setupHref: string }) {
   // Compact, celebratory state once everything is configured.
   if (complete) {
     return (
@@ -295,6 +296,9 @@ function OnboardingChecklist({
           <p className="text-sm font-semibold text-primary-800">Configuration de l&apos;école terminée</p>
           <p className="text-xs text-primary-700/70">Toutes les étapes de mise en route sont complétées. 🎉</p>
         </div>
+        <Link href={setupHref} className="ml-auto shrink-0 text-xs font-semibold text-primary-700 hover:underline">
+          Revoir →
+        </Link>
       </section>
     )
   }
@@ -314,9 +318,14 @@ function OnboardingChecklist({
             <h2 className="text-sm font-bold uppercase tracking-wider text-primary-700">Mise en route</h2>
             <p className="mt-0.5 text-xs text-gray-500">Suivez ces étapes pour configurer votre école.</p>
           </div>
-          <span className="shrink-0 text-xs font-semibold text-gray-500">
-            {doneCount}/{steps.length} terminé{doneCount > 1 ? 's' : ''}
-          </span>
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="text-xs font-semibold text-gray-500">
+              {doneCount}/{steps.length} terminé{doneCount > 1 ? 's' : ''}
+            </span>
+            <Link href={setupHref} className="rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700 transition-colors">
+              Configurer mon école
+            </Link>
+          </div>
         </div>
         <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-sand-200" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Progression de la configuration">
           <div className="h-full rounded-full bg-primary-600 transition-all" style={{ width: `${pct}%` }} />
@@ -426,7 +435,6 @@ export default async function SchoolAdminPage() {
     studentsRes, teachersRes, parentsRes, activeYearRes, classesRes,
     attendanceTodayRes, outstandingRes, announcementsRes, assessmentsRes,
     sessions30Res, paymentsRes, absencesRes, examSessionRes,
-    timetableCountRes, attendanceAnyRes, gradesCountRes, subjectsCountRes,
   ] = await Promise.all([
     supabase.from('students').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
     supabase.from('teachers').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('status', 'active'),
@@ -477,11 +485,6 @@ export default async function SchoolAdminPage() {
       .order('starts_on', { ascending: false })
       .limit(1)
       .maybeSingle(),
-    // Onboarding checklist: has any timetable slot / attendance session / grade?
-    supabase.from('timetable_slots').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
-    supabase.from('attendance_sessions').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
-    supabase.from('grades').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
-    supabase.from('subjects').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
   ])
 
   const studentCount = studentsRes.count ?? 0
@@ -552,22 +555,19 @@ export default async function SchoolAdminPage() {
   // ── Onboarding checklist ────────────────────────────────────────────────────
   // Completion is derived from real data. The first not-yet-done step is shown
   // as "En cours" (the next action); later undone steps are "À faire".
-  const timetableCount  = timetableCountRes.count  ?? 0
-  const attendanceTotal = attendanceAnyRes.count   ?? 0
-  const gradesCount     = gradesCountRes.count      ?? 0
-  const subjectCount    = subjectsCountRes.count    ?? 0
-
-  const onboardingSteps: OnboardingStep[] = [
-    { iconPath: P.calendar,  title: 'Année scolaire',      desc: "Créez et activez l'année scolaire en cours.",        href: '/school/academic-years',     done: activeYear !== null },
-    { iconPath: P.classes,   title: 'Classes',             desc: 'Créez les classes et leurs niveaux.',                href: '/school/classes',            done: classes.length > 0 },
-    { iconPath: P.academic,  title: 'Matières',            desc: 'Définissez les matières enseignées.',                href: '/school/academics/subjects', done: subjectCount > 0 },
-    { iconPath: P.teachers,  title: 'Enseignants',         desc: 'Ajoutez le corps enseignant de votre école.',        href: '/school/teachers',       done: teacherCount > 0 },
-    { iconPath: P.students,  title: 'Élèves',              desc: 'Inscrivez les élèves et leurs dossiers.',            href: '/school/students',       done: studentCount > 0 },
-    { iconPath: P.timetable, title: 'Emploi du temps',     desc: 'Configurez les horaires des classes.',               href: '/school/timetable',      done: timetableCount > 0 },
-    { iconPath: P.academic,  title: 'Présences & notes',   desc: 'Démarrez le suivi des présences et des notes.',      href: '/school/attendance',     done: attendanceTotal > 0 || gradesCount > 0 },
-  ]
-  const onboardingDone     = onboardingSteps.filter((s) => s.done).length
-  const onboardingComplete = onboardingDone === onboardingSteps.length
+  // Onboarding card — derived from the shared setup helper (single source of
+  // truth, also used by the /school/setup hub). Shows the required steps; the
+  // optional steps (parents, transport) + review live in the hub.
+  const setup = await getSetupState(supabase, schoolId)
+  const STEP_ICON: Record<string, string> = {
+    profile: P.building, academic_year: P.calendar, classes: P.classes, subjects: P.academic,
+    teachers: P.teachers, students: P.students, assignments: P.document,
+  }
+  const onboardingSteps: OnboardingStep[] = setup.steps
+    .filter((s) => !s.optional && s.key !== 'review')
+    .map((s) => ({ iconPath: STEP_ICON[s.key] ?? P.academic, title: s.title, desc: s.desc, href: s.href, done: s.done }))
+  const onboardingDone     = setup.requiredDone
+  const onboardingComplete = setup.ready
 
   // ── Today's attendance widgets ──────────────────────────────────────────────
   // Present/absent/late counts, classes still pending, and who's absent today.
@@ -641,6 +641,7 @@ export default async function SchoolAdminPage() {
         steps={onboardingSteps}
         doneCount={onboardingDone}
         complete={onboardingComplete}
+        setupHref="/school/setup"
       />
 
       {/* ── KPI grid ────────────────────────────────────────────────────────── */}
