@@ -3,14 +3,14 @@
 import { useFormState, useFormStatus } from 'react-dom'
 import { recordPayment, type PaymentState } from '../../actions'
 
-const PAYMENT_METHODS = [
+const DEFAULT_METHODS = [
   { value: 'cash',                 label: 'Espèces' },
   { value: 'wave_manual',          label: 'Wave' },
   { value: 'orange_money_manual',  label: 'Orange Money' },
   { value: 'bank_transfer',        label: 'Virement bancaire' },
   { value: 'cheque',               label: 'Chèque' },
   { value: 'other',                label: 'Autre' },
-] as const
+]
 
 function SubmitButton() {
   const { pending } = useFormStatus()
@@ -27,8 +27,9 @@ function SubmitButton() {
 
 const initialState: PaymentState = {}
 
-export function PaymentForm({ invoiceId, balance }: { invoiceId: string; balance: number }) {
+export function PaymentForm({ invoiceId, balance, methods }: { invoiceId: string; balance: number; methods?: { value: string; label: string }[] }) {
   const [state, formAction] = useFormState(recordPayment, initialState)
+  const paymentMethods = methods && methods.length > 0 ? methods : DEFAULT_METHODS
 
   const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(n) + ' FCFA'
 
@@ -83,7 +84,7 @@ export function PaymentForm({ invoiceId, balance }: { invoiceId: string; balance
           defaultValue="cash"
           className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600"
         >
-          {PAYMENT_METHODS.map((m) => (
+          {paymentMethods.map((m) => (
             <option key={m.value} value={m.value}>{m.label}</option>
           ))}
         </select>

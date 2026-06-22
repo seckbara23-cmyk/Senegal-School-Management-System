@@ -5,6 +5,7 @@ import { CancelInvoiceForm } from './_cancel_form'
 import { PlanForm } from './_plan_form'
 import { cancelPaymentPlan } from '../../actions'
 import { deriveInstallments, INSTALLMENT_STATUS_LABEL } from '@/lib/finance/payment-plans'
+import { getPaymentProviders, getPaymentMethodOptions } from '@/lib/payments/providers'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -140,6 +141,8 @@ export default async function InvoiceDetailPage({ params }: Props) {
         new Date().toISOString().split('T')[0],
       )
     : []
+
+  const paymentMethods = getPaymentMethodOptions(await getPaymentProviders(supabase))
 
   const balance       = invoice.total_amount - invoice.amount_paid
   const canAddPayment = invoice.status !== 'paid' && invoice.status !== 'cancelled'
@@ -364,7 +367,7 @@ export default async function InvoiceDetailPage({ params }: Props) {
         <div>
           <h2 className="text-base font-semibold text-gray-800 mb-3">Enregistrer un paiement</h2>
           <div className="rounded-xl border border-sand-200 bg-white px-6 py-5 shadow-sm">
-            <PaymentForm invoiceId={invoice.id} balance={balance} />
+            <PaymentForm invoiceId={invoice.id} balance={balance} methods={paymentMethods} />
           </div>
         </div>
       )}
