@@ -64,7 +64,11 @@ export default async function GenerateTimetablePage({ searchParams }: Props) {
 }
 
 async function WizardLoader({ supabase, schoolId, yearId }: { supabase: ReturnType<typeof createClient>; schoolId: string; yearId: string }) {
-  const data = await loadGenerationData(supabase, schoolId, yearId)
+  const [data, statusRes] = await Promise.all([
+    loadGenerationData(supabase, schoolId, yearId),
+    supabase.from('timetable_status').select('status').eq('school_id', schoolId).eq('academic_year_id', yearId).maybeSingle(),
+  ])
+  const status = ((statusRes.data as { status: 'draft' | 'published' | 'locked' } | null)?.status) ?? null
 
   if (data.classes.length === 0 || data.classSubjects.length === 0) {
     return (
@@ -83,6 +87,7 @@ async function WizardLoader({ supabase, schoolId, yearId }: { supabase: ReturnTy
       teachers={data.teachers}
       availability={data.availability}
       existing={data.existing}
+      status={status}
     />
   )
 }

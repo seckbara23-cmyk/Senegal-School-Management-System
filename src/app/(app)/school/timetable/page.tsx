@@ -1,6 +1,27 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { PrintableTimetable } from '@/components/PrintableTimetable'
+import { setTimetableStatus } from './generate/actions'
+
+const STATUS_META: Record<string, { label: string; cls: string }> = {
+  draft:     { label: 'Brouillon',  cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  published: { label: 'Publié',     cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  locked:    { label: 'Verrouillé', cls: 'bg-gray-100 text-gray-600 border-gray-300' },
+}
+
+function StatusBtn({ year, status, label, tone }: { year: string; status: 'draft' | 'published' | 'locked'; label: string; tone: 'primary' | 'ghost' }) {
+  return (
+    <form action={setTimetableStatus}>
+      <input type="hidden" name="year_id" value={year} />
+      <input type="hidden" name="status" value={status} />
+      <button type="submit" className={tone === 'primary'
+        ? 'rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700 transition-colors'
+        : 'rounded-lg border border-sand-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-sand-50 transition-colors'}>
+        {label}
+      </button>
+    </form>
+  )
+}
 
 const DAYS = [
   { value: 1, label: 'Lundi' },
@@ -36,7 +57,7 @@ const SLOT_SELECT =
   'classes!class_id(name, section), ' +
   'teachers!teacher_id(first_name, last_name)'
 
-type Props = { searchParams: { year?: string; class?: string; teacher?: string; view?: string; error?: string; generated?: string } }
+type Props = { searchParams: { year?: string; class?: string; teacher?: string; view?: string; error?: string; generated?: string; status_ok?: string } }
 
 export default async function TimetablePage({ searchParams }: Props) {
   const supabase = createClient()
@@ -90,6 +111,17 @@ export default async function TimetablePage({ searchParams }: Props) {
     ? (genCount > 0
         ? `${genCount} créneau${genCount > 1 ? 'x' : ''} généré${genCount > 1 ? 's' : ''} et enregistré${genCount > 1 ? 's' : ''}.`
         : 'Aucun créneau à générer (volumes horaires déjà couverts ou non définis).')
+    : ''
+
+  // Timetable lifecycle status for the selected year.
+  let timetableStatus: 'draft' | 'published' | 'locked' | null = null
+  if (selectedYear) {
+    const { data: st } = await supabase
+      .from('timetable_status').select('status').eq('school_id', schoolId).eq('academic_year_id', selectedYear).maybeSingle()
+    timetableStatus = ((st as { status: 'draft' | 'published' | 'locked' } | null)?.status) ?? null
+  }
+  const statusOk = searchParams.status_ok && STATUS_META[searchParams.status_ok]
+    ? `Emploi du temps : ${STATUS_META[searchParams.status_ok].label.toLowerCase()}.`
     : ''
 
   // Fetch slots for the current selection.
@@ -174,6 +206,38 @@ export default async function TimetablePage({ searchParams }: Props) {
       {generatedMsg && (
         <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
           <p className="text-sm text-emerald-800">{generatedMsg}</p>
+        </div>
+      )}
+
+      {statusOk && (
+        <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm text-emerald-800">{statusOk}</p>
+        </div>
+      )}
+
+      {/* Lifecycle status + transitions */}
+      {selectedYear && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sand-200 bg-white px-5 py-3 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">État</span>
+            <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${(timetableStatus && STATUS_META[timetableStatus]?.cls) ?? 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+              {timetableStatus ? STATUS_META[timetableStatus].label : 'Non défini'}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {(timetableStatus === 'draft' || timetableStatus === null) && (
+              <StatusBtn year={selectedYear} status="published" label="Publier" tone="primary" />
+            )}
+            {timetableStatus === 'published' && (
+              <StatusBtn year={selectedYear} status="draft" label="Repasser en brouillon" tone="ghost" />
+            )}
+            {timetableStatus !== 'locked' && (
+              <StatusBtn year={selectedYear} status="locked" label="Verrouiller" tone="ghost" />
+            )}
+            {timetableStatus === 'locked' && (
+              <StatusBtn year={selectedYear} status="draft" label="Déverrouiller" tone="primary" />
+            )}
+          </div>
         </div>
       )}
 
