@@ -26,7 +26,14 @@ type ClassSubjectRow = {
   classes: { name: string; level: string | null } | null
   subjects: { name: string; code: string | null } | null
   academic_years: { name: string; is_active: boolean } | null
-  teacher_subject_assignments: { teacher_id: string }[]
+  // UNIQUE(class_subject_id) → PostgREST embeds this as to-ONE (object | null).
+  teacher_subject_assignments: { teacher_id: string } | { teacher_id: string }[] | null
+}
+
+// Normalise the to-one/array/null embed to the assigned teacher id (or null).
+function assignedTeacherId(r: ClassSubjectRow): string | null {
+  const tsa = r.teacher_subject_assignments
+  return (Array.isArray(tsa) ? tsa[0] : tsa)?.teacher_id ?? null
 }
 
 function classLabel(r: ClassSubjectRow): string {
@@ -74,8 +81,8 @@ export default async function TeacherAssignmentsPage({ params, searchParams }: P
 
   const rows = (csData ?? []) as unknown as ClassSubjectRow[]
 
-  const current   = rows.filter((r) => r.teacher_subject_assignments[0]?.teacher_id === teacher.id)
-  const available = rows.filter((r) => r.teacher_subject_assignments.length === 0)
+  const current   = rows.filter((r) => assignedTeacherId(r) === teacher.id)
+  const available = rows.filter((r) => assignedTeacherId(r) === null)
 
   // Group current assignments by academic year (active first).
   const yearMap = new Map<string, { yearName: string; isActive: boolean; items: ClassSubjectRow[] }>()

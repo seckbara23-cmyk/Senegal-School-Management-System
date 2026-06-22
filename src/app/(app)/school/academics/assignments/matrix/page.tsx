@@ -156,7 +156,8 @@ export default async function AssignmentMatrixPage({ searchParams }: Props) {
                     <table className="w-full text-sm">
                       <tbody>
                         {rows.map((cs, idx) => {
-                          const current = cs.teacher_subject_assignments[0]?.teacher_id ?? ''
+                          const tsa = cs.teacher_subject_assignments
+                          const current = (Array.isArray(tsa) ? tsa[0] : tsa)?.teacher_id ?? ''
                           return (
                             <tr key={cs.id} className={`border-b border-sand-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-sand-50'}`}>
                               <td className="px-4 py-2.5">

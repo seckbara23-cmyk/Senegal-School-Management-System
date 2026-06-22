@@ -244,7 +244,8 @@ export default async function AssignmentsPage({ searchParams }: Props) {
                       </thead>
                       <tbody>
                         {classSubjects.map((cs, idx) => {
-                          const assignment = cs.teacher_subject_assignments[0] ?? null
+                          const tsa = cs.teacher_subject_assignments
+                          const assignment = (Array.isArray(tsa) ? tsa[0] : tsa) ?? null
                           const teacher = assignment
                             ? (assignment.teachers as unknown as { first_name: string; last_name: string })
                             : null

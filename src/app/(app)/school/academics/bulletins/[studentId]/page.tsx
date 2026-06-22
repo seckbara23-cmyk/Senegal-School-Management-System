@@ -255,7 +255,8 @@ export default async function BulletinPage({ params, searchParams }: Props) {
   const subjectRows = classSubjects.map((cs) => {
     const { avg, gradedCount, totalCount, classAvg } = subjectAvg(cs.id, student.id)
     const csAssessments = assessByCS.get(cs.id) ?? []
-    const teacher = cs.teacher_subject_assignments[0]?.teachers ?? null
+    const tsa = cs.teacher_subject_assignments
+    const teacher = (Array.isArray(tsa) ? tsa[0] : tsa)?.teachers ?? null
     const gradeEntries = csAssessments.map((a) => {
       const entry = gradeIndex.get(a.id)?.get(student.id)
       return { id: a.id, title: a.title, type: a.assessment_type, score: entry ? round2(entry.score) : null, maxScore: a.max_score, comment: entry?.comment ?? null }

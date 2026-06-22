@@ -210,7 +210,8 @@ export default async function ParentBulletinsPage({ searchParams }: { searchPara
           totalWeight += subjectCoeff
         }
 
-        const tsa = cs.teacher_subject_assignments[0]
+        const tsaEmbed = cs.teacher_subject_assignments
+        const tsa = Array.isArray(tsaEmbed) ? tsaEmbed[0] : tsaEmbed
         const teacherName = tsa?.teachers
           ? `${tsa.teachers.first_name} ${tsa.teachers.last_name}`
           : null
