@@ -34,8 +34,10 @@ export async function loadProviderConfig(schoolId: string, provider: OnlineProvi
   }
 }
 
-// The set of providers a school has enabled for online checkout (for the parent UI).
-export async function enabledProvidersForSchool(client: { from: ReturnType<typeof createAdminClient>['from'] }, schoolId: string): Promise<OnlineProvider[]> {
-  const { data } = await client.from('school_payment_config').select('provider, is_enabled').eq('school_id', schoolId)
+// The set of providers a school has enabled for online checkout (for the parent
+// UI). Uses the service-role client — config is admin-only under RLS.
+export async function enabledProvidersForSchool(schoolId: string): Promise<OnlineProvider[]> {
+  const admin = createAdminClient()
+  const { data } = await admin.from('school_payment_config').select('provider, is_enabled').eq('school_id', schoolId)
   return ((data ?? []) as { provider: OnlineProvider; is_enabled: boolean }[]).filter((r) => r.is_enabled).map((r) => r.provider)
 }

@@ -1,6 +1,8 @@
 import { requireParentCtx } from '../../../_auth'
 import { notFound } from 'next/navigation'
 import { deriveInstallments, INSTALLMENT_STATUS_LABEL } from '@/lib/finance/payment-plans'
+import { enabledProvidersForSchool } from '@/lib/payments/config'
+import { PayPanel } from './_pay'
 
 function fmt(n: number) {
   return new Intl.NumberFormat('fr-FR').format(n) + ' FCFA'
@@ -70,6 +72,12 @@ export default async function ParentInvoiceDetailPage({ params }: Props) {
   const planInstallments = plan
     ? deriveInstallments([...(plan.payment_plan_installments ?? [])].sort((a, b) => a.sequence - b.sequence), inv.amount_paid, today)
     : []
+
+  // Online payment: which providers are enabled + a plan-aware default amount.
+  const payable = balance > 0 && (inv.status === 'unpaid' || inv.status === 'partial')
+  const providers = payable ? await enabledProvidersForSchool(schoolId) : []
+  const nextInstallment = planInstallments.find((i) => i.status !== 'paid')
+  const defaultAmount = nextInstallment ? Math.min(nextInstallment.remaining || nextInstallment.amount, balance) : balance
   const isOverdue = inv.due_date !== null && inv.due_date < today && (inv.status === 'unpaid' || inv.status === 'partial')
   const childName = inv.students ? `${inv.students.first_name} ${inv.students.last_name}` : ''
 
@@ -107,6 +115,11 @@ export default async function ParentInvoiceDetailPage({ params }: Props) {
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mt-0.5">Solde</p>
         </div>
       </div>
+
+      {/* Pay online */}
+      {payable && providers.length > 0 && (
+        <PayPanel invoiceId={inv.id} balance={balance} providers={providers} defaultAmount={defaultAmount} />
+      )}
 
       {/* Lines */}
       <section>

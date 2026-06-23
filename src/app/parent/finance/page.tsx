@@ -228,8 +228,8 @@ export default async function ParentFinancePage({ searchParams }: { searchParams
                 {invoices.map((inv, idx) => (
                   <tr key={inv.id} className={`border-b border-sand-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-sand-50'}`}>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900 truncate max-w-[160px]">{inv.title}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">#{inv.invoice_number}</p>
+                      <a href={`/parent/finance/invoices/${inv.id}`} className="font-medium text-gray-900 hover:text-primary-600 hover:underline truncate max-w-[160px] inline-block">{inv.title}</a>
+                      <p className="text-xs text-gray-400 mt-0.5">#{inv.invoice_number}{['unpaid', 'partial'].includes(inv.status) ? ' · Payer →' : ''}</p>
                     </td>
                     <td className="hidden sm:table-cell px-4 py-3 text-gray-600">
                       {inv.due_date ? fmtDate(inv.due_date) : '—'}
