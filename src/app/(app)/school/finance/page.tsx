@@ -316,6 +316,10 @@ export default async function FinancePage() {
           <span className="text-lg">🚌</span>
           Facturation transport
         </a>
+        <a href="/school/finance/payment-settings" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
+          <span className="text-lg">🔌</span>
+          Paiements en ligne
+        </a>
         <a href="/school/finance/fees/new" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
           <span className="text-lg">➕</span>
           Nouveau frais

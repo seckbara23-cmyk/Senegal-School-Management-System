@@ -131,6 +131,17 @@ export function getNotificationHref(n: NotificationLike, role: NotificationRole)
         default:        return FALLBACK
       }
 
+    // ── Online payment confirmed (recipient: parent/student) ────────────────
+    case 'payment_succeeded': {
+      const invoiceId = meta(m, 'invoice_id')
+      switch (role) {
+        case 'parent':  return invoiceId ? `/parent/finance/invoices/${invoiceId}`  : '/parent/finance'
+        case 'student': return invoiceId ? `/student/finance/invoices/${invoiceId}` : '/student/finance'
+        case 'school_admin': return invoiceId ? `/school/finance/invoices/${invoiceId}` : '/school/finance'
+        default:        return FALLBACK
+      }
+    }
+
     // ── New online admission (recipient: school_admin) ──────────────────────
     case 'admission_received': {
       const appId = meta(m, 'application_id')
