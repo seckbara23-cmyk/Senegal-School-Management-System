@@ -19,6 +19,7 @@ export type NormalizedStatus = 'paid' | 'failed' | 'pending' | 'unknown'
 export type WebhookVerification = {
   valid: boolean              // signature / authenticity check passed
   eventId: string             // dedupe key (UNIQUE per provider)
+  clientReference: string | null  // our payment_request id (client_reference / order_id)
   providerSessionId: string | null
   providerReference: string | null
   status: NormalizedStatus

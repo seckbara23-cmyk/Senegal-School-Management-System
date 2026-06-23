@@ -72,6 +72,7 @@ export const orangeMoneyProvider: OnlinePaymentProvider = {
     return {
       valid: !!(body.order_id),
       eventId: `${body.order_id ?? ''}:${body.txnid ?? ''}`,
+      clientReference: body.order_id ?? null,
       providerSessionId: null,
       providerReference: body.txnid ?? null,
       status: mapStatus(body.status),

@@ -56,6 +56,7 @@ export const waveProvider: OnlinePaymentProvider = {
     return {
       valid,
       eventId: body.id ?? d.id ?? '',
+      clientReference: d.client_reference ?? null,
       providerSessionId: d.id ?? null,
       providerReference: d.id ?? null,
       status: body.type === 'checkout.session.completed' ? mapPaymentStatus(d.payment_status) : mapPaymentStatus(d.payment_status),
