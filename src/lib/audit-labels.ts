@@ -23,6 +23,8 @@ export const ACTION_LABELS: Record<string, string> = {
   payment_request_created:       'Paiement en ligne initié',
   online_payment_reconciled:     'Paiement en ligne confirmé',
   online_payment_failed:         'Paiement en ligne échoué',
+  // Copilot
+  copilot_query:                 'Requête Copilot',
   // Classes / inscriptions
   class_created:                 'Classe créée',
   class_updated:                 'Classe modifiée',
@@ -174,6 +176,7 @@ export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Cycle de vie tenant',  actions: ['school_suspended', 'school_reactivated', 'school_archived'] },
   { label: 'Admins d’école',       actions: ['school_admin_added', 'school_admin_removed', 'school_admin_deactivated', 'school_admin_reactivated', 'school_admin_password_reset_generated'] },
   { label: 'Abonnements',          actions: ['subscription_created', 'subscription_updated', 'subscription_cancelled', 'subscription_invoice_created', 'subscription_payment_recorded'] },
+  { label: 'Copilot',              actions: ['copilot_query'] },
 ]
 
 // ── Resource type → human label ──────────────────────────────────────────────
