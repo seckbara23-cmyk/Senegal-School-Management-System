@@ -32,6 +32,12 @@ export default async function SuperAdminPage() {
         <p className="text-gray-600">Manage all schools and platform settings</p>
       </div>
 
+      <a href="/super-admin/command-center" className="block rounded-xl bg-primary-800 px-6 py-5 hover:bg-primary-700 transition-colors">
+        <p className="text-sm font-semibold text-accent-300">Exploitation</p>
+        <p className="mt-0.5 text-xl font-bold text-white">Centre de commande →</p>
+        <p className="mt-0.5 text-sm text-primary-200">Santé des écoles, supervision, adoption, pilotes et support.</p>
+      </a>
+
       {/* ── Platform tools ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white shadow rounded-lg p-6 flex flex-col">
