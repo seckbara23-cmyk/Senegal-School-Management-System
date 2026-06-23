@@ -12,7 +12,9 @@ type Client = ReturnType<typeof createServerClient>
 
 const METHOD_LABEL: Record<string, string> = {
   cash: 'Espèces', bank_transfer: 'Virement', cheque: 'Chèque',
-  wave_manual: 'Wave', orange_money_manual: 'Orange Money', other: 'Autre',
+  wave_manual: 'Wave', orange_money_manual: 'Orange Money',
+  wave: 'Wave',
+  orange_money: 'Orange Money', other: 'Autre',
 }
 const STATUS_LABEL: Record<string, string> = {
   unpaid: 'Impayée', partial: 'Partielle', paid: 'Réglée', cancelled: 'Annulée',

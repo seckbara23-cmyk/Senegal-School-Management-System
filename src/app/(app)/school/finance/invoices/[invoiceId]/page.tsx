@@ -45,6 +45,8 @@ const METHOD_LABEL: Record<string, string> = {
   cheque:              'Chèque',
   wave_manual:         'Wave',
   orange_money_manual: 'Orange Money',
+  wave: 'Wave',
+  orange_money: 'Orange Money',
   other:               'Autre',
 }
 

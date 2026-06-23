@@ -7,7 +7,9 @@ function fmtDateTime(iso: string): string {
 
 const METHOD_LABEL: Record<string, string> = {
   cash: 'Espèces', bank_transfer: 'Virement', cheque: 'Chèque',
-  wave_manual: 'Wave', orange_money_manual: 'Orange Money', other: 'Autre',
+  wave_manual: 'Wave', orange_money_manual: 'Orange Money',
+  wave: 'Wave',
+  orange_money: 'Orange Money', other: 'Autre',
 }
 const METHODS = [
   { value: '', label: 'Tous modes' },

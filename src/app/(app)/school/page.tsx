@@ -71,7 +71,9 @@ const ASSESS_TYPE_LABEL: Record<string, string> = {
 
 const PAYMENT_METHOD_LABEL: Record<string, string> = {
   cash: 'Espèces', bank_transfer: 'Virement', cheque: 'Chèque',
-  wave_manual: 'Wave', orange_money_manual: 'Orange Money', other: 'Autre',
+  wave_manual: 'Wave', orange_money_manual: 'Orange Money',
+  wave: 'Wave',
+  orange_money: 'Orange Money', other: 'Autre',
 }
 
 const ATT_STATUS_LABEL: Record<string, string> = { absent: 'Absent', late: 'Retard' }

@@ -7,7 +7,9 @@ function fmtLong(iso: string): string {
 
 const METHOD_LABEL: Record<string, string> = {
   cash: 'Espèces', bank_transfer: 'Virement', cheque: 'Chèque',
-  wave_manual: 'Wave', orange_money_manual: 'Orange Money', other: 'Autre',
+  wave_manual: 'Wave', orange_money_manual: 'Orange Money',
+  wave: 'Wave',
+  orange_money: 'Orange Money', other: 'Autre',
 }
 
 type Props = { searchParams: { date_from?: string; date_to?: string } }

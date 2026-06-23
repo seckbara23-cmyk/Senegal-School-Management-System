@@ -4,7 +4,9 @@ import type { createClient as createServerClient } from '@/lib/supabase/server'
 
 type Client = ReturnType<typeof createServerClient>
 
-const METHOD_LABELS: Record<string, string> = { cash: 'Espèces', bank_transfer: 'Virement', cheque: 'Chèque', wave_manual: 'Wave', orange_money_manual: 'Orange Money', other: 'Autre' }
+const METHOD_LABELS: Record<string, string> = { cash: 'Espèces', bank_transfer: 'Virement', cheque: 'Chèque', wave_manual: 'Wave', orange_money_manual: 'Orange Money',
+  wave: 'Wave',
+  orange_money: 'Orange Money', other: 'Autre' }
 
 export type FinanceAnalytics = {
   invoiced: number; collected: number; outstanding: number; collectionRate: number

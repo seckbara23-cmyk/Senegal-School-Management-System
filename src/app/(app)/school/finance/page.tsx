@@ -105,7 +105,9 @@ export default async function FinancePage() {
   }
 
   // Payment-method breakdown
-  const methodLabels: Record<string, string> = { cash: 'Espèces', bank_transfer: 'Virement', cheque: 'Chèque', wave_manual: 'Wave', orange_money_manual: 'Orange Money', other: 'Autre' }
+  const methodLabels: Record<string, string> = { cash: 'Espèces', bank_transfer: 'Virement', cheque: 'Chèque', wave_manual: 'Wave', orange_money_manual: 'Orange Money',
+  wave: 'Wave',
+  orange_money: 'Orange Money', other: 'Autre' }
   const byMethod = new Map<string, number>()
   for (const p of (paymentsRes.data ?? []) as { payment_method: string; amount: number }[]) byMethod.set(p.payment_method, (byMethod.get(p.payment_method) ?? 0) + p.amount)
   const methodRows = Array.from(byMethod.entries()).map(([m, amt]) => ({ label: methodLabels[m] ?? m, amount: amt })).sort((a, b) => b.amount - a.amount)
@@ -316,9 +318,13 @@ export default async function FinancePage() {
           <span className="text-lg">🚌</span>
           Facturation transport
         </a>
+        <a href="/school/finance/online-payments" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
+          <span className="text-lg">📲</span>
+          Suivi paiements en ligne
+        </a>
         <a href="/school/finance/payment-settings" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
           <span className="text-lg">🔌</span>
-          Paiements en ligne
+          Config. paiements
         </a>
         <a href="/school/finance/fees/new" className="flex items-center gap-3 rounded-lg border border-sand-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-primary-300 hover:text-primary-700 transition-colors shadow-sm">
           <span className="text-lg">➕</span>
