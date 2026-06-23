@@ -21,6 +21,25 @@ async function nextReceiptNumber(admin: Admin, schoolId: string): Promise<string
   return `REC-${year}-${String((count ?? 0) + 1).padStart(6, '0')}`
 }
 
+type RecordRow = { payment_id: string | null; outcome: string; new_status: string }
+
+// Record via the RPC, retrying with a fresh receipt number on a receipt-uniqueness
+// collision (concurrent reconciliations for different invoices in the same school
+// can compute the same sequential REC-… number). The RPC transaction rolls back on
+// the unique violation, so the request is untouched and the retry is safe.
+async function recordWithRetry(admin: Admin, requestId: string, providerRef: string, schoolId: string): Promise<{ row: RecordRow | null; receipt: string | null; failed: boolean }> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const receipt = await nextReceiptNumber(admin, schoolId)
+    const { data, error } = await admin.rpc('record_online_payment' as never, { p_request_id: requestId, p_provider_ref: providerRef, p_receipt_number: receipt } as never)
+    if (!error) return { row: (data as RecordRow[] | null)?.[0] ?? null, receipt, failed: false }
+    const code = (error as { code?: string }).code
+    const msg = String((error as { message?: string }).message ?? '')
+    const collision = code === '23505' || /duplicate|unique|receipt/i.test(msg)
+    if (!collision) return { row: null, receipt, failed: true }
+  }
+  return { row: null, receipt: null, failed: true }
+}
+
 // ── Create a request + open the provider checkout ─────────────────────────────
 export async function createPaymentRequestAndCharge(input: {
   schoolId: string; invoiceId: string; studentId: string; initiatedBy: string | null
@@ -83,13 +102,11 @@ export async function reconcilePaymentRequest(requestId: string): Promise<Reconc
       await admin.from('payment_requests').update({ status: 'failed', error_message: 'amount_mismatch' }).eq('id', req.id)
       return { status: 'failed' }
     }
-    const receipt = await nextReceiptNumber(admin, req.school_id)
     const providerRef = tx.providerReference ?? req.provider_session_id
-    const { data: rpcData, error } = await admin.rpc('record_online_payment' as never, { p_request_id: req.id, p_provider_ref: providerRef, p_receipt_number: receipt } as never)
-    if (error) return { status: 'processing' }
-    const row = (rpcData as { payment_id: string | null; outcome: string; new_status: string }[] | null)?.[0]
-    if (row && row.outcome === 'recorded') {
-      await notifyPaymentRecorded(admin, { schoolId: req.school_id, paymentId: row.payment_id!, receiptNumber: receipt, invoiceId: req.invoice_id, studentId: req.student_id, amount: req.amount, paymentMethod: req.provider })
+    const { row, receipt, failed } = await recordWithRetry(admin, req.id, providerRef, req.school_id)
+    if (failed || !row) return { status: 'processing' }
+    if (row.outcome === 'recorded') {
+      await notifyPaymentRecorded(admin, { schoolId: req.school_id, paymentId: row.payment_id!, receiptNumber: receipt ?? '', invoiceId: req.invoice_id, studentId: req.student_id, amount: req.amount, paymentMethod: req.provider })
       if (req.initiated_by) {
         await createNotification(admin, { userId: req.initiated_by, type: 'payment_succeeded', title: 'Paiement confirmé', body: `Votre paiement de ${new Intl.NumberFormat('fr-FR').format(req.amount)} FCFA a été reçu.`, schoolId: req.school_id, metadata: { invoice_id: req.invoice_id, payment_id: row.payment_id } })
         await logAuditEvent(admin, { actorId: req.initiated_by, schoolId: req.school_id, action: 'online_payment_reconciled', resourceType: 'payment_request', resourceId: req.id, metadata: { invoice_id: req.invoice_id, amount: req.amount, payment_id: row.payment_id, provider: req.provider } })
