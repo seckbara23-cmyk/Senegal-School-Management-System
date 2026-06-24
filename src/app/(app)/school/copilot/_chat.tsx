@@ -6,6 +6,24 @@ import type { CopilotAnswer } from '@/lib/copilot/types'
 
 type Msg = { role: 'user'; text: string } | { role: 'assistant'; answer: CopilotAnswer }
 
+const CONFIDENCE: Record<string, { label: string; cls: string }> = {
+  high: { label: 'Confiance élevée', cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+  medium: { label: 'Confiance moyenne', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
+  low: { label: 'Confiance faible', cls: 'border-gray-200 bg-gray-100 text-gray-500' },
+}
+
+function MetaFooter({ meta }: { meta: NonNullable<CopilotAnswer['meta']> }) {
+  const conf = CONFIDENCE[meta.confidence] ?? CONFIDENCE.medium
+  const time = new Date(meta.generatedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t border-sand-100 pt-2 text-[11px] text-gray-400">
+      <span className={`rounded-full border px-2 py-0.5 font-semibold ${conf.cls}`}>{conf.label}</span>
+      {meta.sources.length > 0 && <span>Sources : {meta.sources.map((s) => s.label).join(', ')}</span>}
+      <span className="ml-auto">{time}</span>
+    </div>
+  )
+}
+
 function AnswerCard({ answer, onSuggestion }: { answer: CopilotAnswer; onSuggestion: (q: string) => void }) {
   return (
     <div className="max-w-[90%] space-y-3 rounded-2xl rounded-tl-sm border border-sand-200 bg-white px-4 py-3 shadow-sm">
@@ -30,6 +48,7 @@ function AnswerCard({ answer, onSuggestion }: { answer: CopilotAnswer; onSuggest
           {answer.suggestions.map((s, i) => <button key={i} type="button" onClick={() => onSuggestion(s)} className="rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100">{s}</button>)}
         </div>
       )}
+      {answer.meta && <MetaFooter meta={answer.meta} />}
     </div>
   )
 }

@@ -6,11 +6,14 @@ import { logAuditEvent } from '@/lib/audit'
 import { routeIntent } from '@/lib/copilot/intent-router'
 import { canAccess } from '@/lib/copilot/permissions'
 import { buildContext } from '@/lib/copilot/context-builder'
-import { generateAnswer } from '@/lib/copilot/answer-generator'
+import { getCopilotProvider } from '@/lib/copilot/registry'
 import type { CopilotAnswer } from '@/lib/copilot/types'
 
-// Read-only. Route → permission check → tenant-scoped context → deterministic
-// answer → audit. No writes, no automation, no notifications.
+// Read-only. Pipeline preserved end-to-end:
+//   Intent Router → Permissions → Context Builder → Provider → Response.
+// The Context Builder is the ONLY component that touches the database; the
+// provider receives the built context and never accesses data directly. No
+// writes, no automation, no notifications.
 export async function askCopilot(query: string): Promise<CopilotAnswer> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -24,19 +27,31 @@ export async function askCopilot(query: string): Promise<CopilotAnswer> {
   const schoolId = (membership as { school_id: string }).school_id
 
   const trimmed = (query ?? '').slice(0, 300)
+
+  // 1) Intent Router
   const routed = routeIntent(trimmed)
 
+  // 2) Permissions
   if (!canAccess('school_admin', routed.intent)) {
-    return { intent: routed.intent, title: 'Accès restreint', summary: 'Vous n’êtes pas autorisé à consulter ces informations.', sections: [], links: [] }
+    return {
+      intent: routed.intent, title: 'Accès restreint',
+      summary: 'Vous n’êtes pas autorisé à consulter ces informations.', sections: [], links: [],
+      meta: { provider: 'deterministic', sources: [], confidence: 'low', generatedAt: new Date().toISOString() },
+    }
   }
 
+  // 3) Context Builder (sole database access, tenant-scoped under RLS)
   const ctx = await buildContext(supabase, schoolId, routed)
-  const answer = generateAnswer(ctx)
 
+  // 4) Provider (no DB access — consumes the built context only)
+  const provider = getCopilotProvider()
+  const answer = await provider.generate({ query: trimmed, routed, context: ctx })
+
+  // 5) Response (audited)
   await logAuditEvent(supabase, {
     actorId: user.id, actorEmail: user.email, schoolId,
     action: 'copilot_query', resourceType: 'school', resourceId: schoolId,
-    metadata: { intent: routed.intent, query: trimmed },
+    metadata: { intent: routed.intent, query: trimmed, provider: provider.id, confidence: answer.meta?.confidence ?? null },
   })
 
   return answer
