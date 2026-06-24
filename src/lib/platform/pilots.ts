@@ -9,7 +9,7 @@ import { getSetupState } from '@/lib/setup'
 import { loadPlatformOps, type PlatformSchool } from './ops'
 import type { HealthBand } from './health'
 
-const MILESTONES: { key: string; label: string; actions: string[] }[] = [
+export const MILESTONES: { key: string; label: string; actions: string[] }[] = [
   { key: 'student', label: '1er élève', actions: ['student_created', 'students_bulk_created'] },
   { key: 'attendance', label: '1re présence', actions: ['teacher_attendance_records_saved', 'admin_attendance_records_saved'] },
   { key: 'grade', label: '1re note', actions: ['teacher_grades_saved', 'grades_saved'] },
@@ -18,7 +18,7 @@ const MILESTONES: { key: string; label: string; actions: string[] }[] = [
   { key: 'online_pay', label: '1er paiement en ligne', actions: ['online_payment_reconciled'] },
 ]
 
-function median(nums: number[]): number | null {
+export function median(nums: number[]): number | null {
   if (nums.length === 0) return null
   const s = [...nums].sort((a, b) => a - b)
   const mid = Math.floor(s.length / 2)

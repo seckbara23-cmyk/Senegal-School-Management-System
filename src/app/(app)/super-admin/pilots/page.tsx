@@ -3,6 +3,7 @@ import { loadPilotDashboard } from '@/lib/platform/pilots'
 import { togglePilot } from './actions'
 import { KpiCard, HBar, Panel } from '@/components/charts'
 import { HEALTH_BAND_LABEL } from '@/lib/platform/health'
+import { PilotNav } from './_nav'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,9 +17,11 @@ export default async function PilotsPage() {
     <div className="space-y-6 pb-8">
       <div className="rounded-xl bg-primary-800 px-6 py-5">
         <div className="mb-1"><a href="/super-admin/command-center" className="text-primary-300 hover:text-white text-sm">← Centre de commande</a></div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">Succès des pilotes</h1>
+        <h1 className="text-2xl font-bold text-white tracking-tight">Exécution des pilotes</h1>
         <p className="text-primary-300 text-sm mt-0.5">Cohorte de {d.cohort.length} école(s) pilote(s).</p>
       </div>
+
+      <PilotNav active="dashboard" />
 
       {d.cohort.length === 0 ? (
         <div className="rounded-xl border-2 border-dashed border-sand-300 bg-white py-12 text-center">
