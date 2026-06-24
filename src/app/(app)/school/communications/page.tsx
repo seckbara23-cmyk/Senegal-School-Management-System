@@ -51,6 +51,7 @@ export default async function CommunicationsPage({ searchParams }: Props) {
       <div className="flex flex-wrap gap-2">
         <a href="/school/communications/broadcast" className="rounded-lg bg-primary-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700">Diffuser un message</a>
         <a href="/school/communications/templates" className="rounded-lg border border-sand-300 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 hover:bg-sand-50">Modèles de messages</a>
+        <a href="/school/communications/log" className="rounded-lg border border-sand-300 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 hover:bg-sand-50">Journal des envois</a>
       </div>
 
       <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
