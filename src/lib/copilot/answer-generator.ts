@@ -5,6 +5,7 @@
 
 import type { CopilotAnswer } from './types'
 import type { CopilotContext } from './context-builder'
+import { generateStudentNarrative } from './student-narrative'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA'
 const RISK_LABEL: Record<string, string> = { low: 'faible', medium: 'moyen', high: 'élevé' }
@@ -111,18 +112,16 @@ export function generateAnswer(ctx: CopilotContext): CopilotAnswer {
       return info('homework', 'Devoirs', `${ctx.data.upcoming} devoir(s) à venir sur ${ctx.data.total} au total.`, [])
 
     case 'student': {
-      const s = ctx.data
-      const sections = [
-        { heading: 'Scolarité', lines: [`Classe : ${s.className}`, s.average !== null ? `Moyenne : ${s.average}/20` : 'Pas de moyenne (notes insuffisantes).'] },
-        { heading: 'Risque', lines: [`Niveau : ${RISK_LABEL[s.level]}`, ...(s.reasons.length ? s.reasons : ['Aucun signal d’alerte.'])] },
-        ...(s.actions.length ? [{ heading: 'Actions recommandées', lines: s.actions }] : []),
-        { heading: 'Finance', lines: [s.outstanding > 0 ? `Solde dû : ${fmt(s.outstanding)}` : 'À jour financièrement.'] },
-      ]
+      // Phase 10B: the shared Student Narrative Engine produces the summary.
+      const n = generateStudentNarrative(ctx.data)
       return {
-        intent: 'student_360', title: `${s.lastName} ${s.firstName}`,
-        summary: `${s.className} · ${s.average !== null ? `moyenne ${s.average}/20 · ` : ''}risque ${RISK_LABEL[s.level]}${s.outstanding > 0 ? ` · ${fmt(s.outstanding)} dû` : ''}.`,
-        sections,
-        links: [{ label: 'Dossier élève', href: `/school/students/${s.studentId}` }, { label: 'Bulletin', href: `/school/academics/bulletins/${s.studentId}` }],
+        intent: 'student_360', title: n.name,
+        summary: n.headline,
+        sections: [
+          ...n.sections.map((s) => ({ heading: s.heading, lines: s.lines })),
+          { heading: 'Actions recommandées', lines: n.recommendations },
+        ],
+        links: [{ label: 'Dossier élève', href: `/school/students/${n.studentId}` }, { label: 'Bulletin', href: `/school/academics/bulletins/${n.studentId}` }],
       }
     }
 

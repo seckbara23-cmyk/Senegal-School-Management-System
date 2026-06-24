@@ -6,16 +6,16 @@
 
 import type { createClient } from '@/lib/supabase/server'
 import type { RoutedQuery } from './types'
-import { loadSchoolRisk, type StudentRisk } from '@/lib/academic/risk-data'
 import { loadExecutiveSummary, type ExecutiveSummary } from '@/lib/analytics/executive'
 import { loadAcademicAnalytics, type AcademicAnalytics } from '@/lib/analytics/academic'
 import { loadFinanceAnalytics, type FinanceAnalytics } from '@/lib/analytics/finance'
 import { loadInsights, type Insights } from '@/lib/analytics/insights'
 import { attendanceRate } from '@/lib/attendance'
+import { loadStudentSnapshot, type StudentSnapshot } from './student-snapshot'
 
 type Client = ReturnType<typeof createClient>
 
-export type StudentSnapshot = StudentRisk & { outstanding: number }
+export type { StudentSnapshot }
 
 export type CopilotContext =
   | { kind: 'school_overview'; data: ExecutiveSummary }
@@ -58,14 +58,8 @@ async function resolveStudent(supabase: Client, schoolId: string, rawName: strin
   }
 
   const student = top[0]
-  const risk = (await loadSchoolRisk(supabase, schoolId, { studentId: student.id })).results[0]
-  const { data: invs } = await supabase.from('student_invoices').select('total_amount, amount_paid, status').eq('school_id', schoolId).eq('student_id', student.id).in('status', ['unpaid', 'partial'])
-  const outstanding = ((invs ?? []) as { total_amount: number; amount_paid: number }[]).reduce((s, i) => s + (i.total_amount - i.amount_paid), 0)
-
-  const snapshot: StudentSnapshot = risk
-    ? { ...risk, outstanding }
-    : { studentId: student.id, firstName: student.first_name, lastName: student.last_name, classId: '', className: '—', average: null, level: 'low', score: 0, reasons: [], actions: [], outstanding }
-  return { kind: 'student', data: snapshot }
+  const snapshot = await loadStudentSnapshot(supabase, schoolId, student.id, { firstName: student.first_name, lastName: student.last_name })
+  return { kind: 'student', data: snapshot! }
 }
 
 export async function buildContext(supabase: Client, schoolId: string, routed: RoutedQuery): Promise<CopilotContext> {

@@ -184,6 +184,10 @@ export default async function ParentDashboard() {
                   )}
 
                   <div className="mt-3 flex flex-wrap gap-2">
+                    <a href={`/parent/children/${s.id}`}
+                      className="rounded-md bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700 transition-colors">
+                      Synthèse 360
+                    </a>
                     <a href={`/parent/bulletins?child=${s.id}`}
                       className="rounded-md bg-primary-50 px-3 py-1.5 text-xs font-semibold text-primary-700 hover:bg-primary-100 transition-colors">
                       Bulletins
