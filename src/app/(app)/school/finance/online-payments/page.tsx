@@ -19,6 +19,13 @@ const STATUS: Record<string, { label: string; cls: string }> = {
 
 function one<T>(v: T | T[] | null | undefined): T | null { return v == null ? null : (Array.isArray(v) ? (v[0] ?? null) : v) }
 
+function reviewReason(errorMessage: string | null, status: string, updatedAt: string, cutoff: number): string | null {
+  if (errorMessage === 'overpayment_no_balance') return 'Trop-perçu — facture déjà soldée. Remboursement à étudier.'
+  if (errorMessage === 'amount_mismatch') return 'Montant incohérent signalé par l’opérateur.'
+  if (status === 'processing' && new Date(updatedAt).getTime() < cutoff) return 'En attente de confirmation depuis plus de 30 min.'
+  return null
+}
+
 type Props = { searchParams: { reverified?: string } }
 
 export default async function OnlinePaymentsPage({ searchParams }: Props) {
@@ -32,15 +39,23 @@ export default async function OnlinePaymentsPage({ searchParams }: Props) {
   if (!membership) redirect('/school')
   const schoolId = (membership as { school_id: string }).school_id
 
-  const { data } = await supabase
-    .from('payment_requests')
-    .select('id, status, amount, provider, created_at, invoice_id, students!student_id(first_name, last_name)')
-    .eq('school_id', schoolId).order('created_at', { ascending: false }).limit(50)
-  type Row = { id: string; status: string; amount: number; provider: string; created_at: string; invoice_id: string; students: unknown }
-  const rows = ((data ?? []) as Row[]).map((r) => {
-    const s = one<{ first_name: string; last_name: string }>(r.students as never)
-    return { ...r, name: s ? `${s.last_name} ${s.first_name}` : '—' }
-  })
+  const cutoff = Date.now() - 30 * 60 * 1000
+  const cutoffIso = new Date(cutoff).toISOString()
+
+  const [{ data }, { data: reviewData }] = await Promise.all([
+    supabase.from('payment_requests')
+      .select('id, status, amount, provider, created_at, updated_at, error_message, invoice_id, students!student_id(first_name, last_name)')
+      .eq('school_id', schoolId).order('created_at', { ascending: false }).limit(50),
+    supabase.from('payment_requests')
+      .select('id, status, amount, provider, created_at, updated_at, error_message, invoice_id, students!student_id(first_name, last_name)')
+      .eq('school_id', schoolId)
+      .or(`error_message.eq.overpayment_no_balance,error_message.eq.amount_mismatch,and(status.eq.processing,updated_at.lt.${cutoffIso})`)
+      .order('created_at', { ascending: false }).limit(50),
+  ])
+  type Row = { id: string; status: string; amount: number; provider: string; created_at: string; updated_at: string; error_message: string | null; invoice_id: string; students: unknown }
+  const mapRow = (r: Row) => { const s = one<{ first_name: string; last_name: string }>(r.students as never); return { ...r, name: s ? `${s.last_name} ${s.first_name}` : '—' } }
+  const rows = ((data ?? []) as Row[]).map(mapRow)
+  const review = ((reviewData ?? []) as Row[]).map((r) => ({ ...mapRow(r), reason: reviewReason(r.error_message, r.status, r.updated_at, cutoff) })).filter((r) => r.reason)
 
   return (
     <div className="space-y-6 pb-8">
@@ -51,6 +66,23 @@ export default async function OnlinePaymentsPage({ searchParams }: Props) {
       </div>
 
       {searchParams.reverified && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Statut actualisé auprès de l’opérateur.</div>}
+
+      {review.length > 0 && (
+        <div className="overflow-hidden rounded-xl border-2 border-amber-300 bg-amber-50 shadow-sm">
+          <div className="border-b border-amber-200 px-5 py-3"><h2 className="text-xs font-bold uppercase tracking-widest text-amber-700">À examiner ({review.length})</h2></div>
+          <ul className="divide-y divide-amber-100">
+            {review.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+                <div className="min-w-0">
+                  <a href={`/school/finance/invoices/${r.invoice_id}`} className="text-sm font-semibold text-gray-900 hover:text-primary-600 hover:underline">{r.name}</a>
+                  <p className="text-xs text-amber-700">{r.reason} · {PROVIDER_LABEL[r.provider] ?? r.provider} · {fmt(r.amount)}</p>
+                </div>
+                <form action={reverifyPayment}><input type="hidden" name="request_id" value={r.id} /><button type="submit" className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100">Vérifier à nouveau</button></form>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {rows.length === 0 ? (
         <div className="rounded-xl border-2 border-dashed border-sand-300 bg-white py-14 text-center">

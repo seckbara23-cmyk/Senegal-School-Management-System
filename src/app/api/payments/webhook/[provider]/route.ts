@@ -3,13 +3,21 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getOnlineProvider } from '@/lib/payments/providers/index'
 import { loadProviderConfig, type OnlineProvider } from '@/lib/payments/config'
 import { reconcilePaymentRequest } from '@/lib/payments/service'
+import { rateLimit, clientIpFrom } from '@/lib/rate-limit'
 
-// Public, service-role. Verify signature → dedupe → reconcile (which re-polls the
-// provider authoritatively before recording any money). Always responds quickly.
+// Public, service-role. Rate-limit → verify signature → dedupe → reconcile (which
+// re-polls the provider authoritatively before recording any money). Always
+// responds quickly.
 export async function POST(req: Request, { params }: { params: { provider: string } }) {
   const providerCode = params.provider as OnlineProvider
   const provider = getOnlineProvider(providerCode)
   if (!provider) return NextResponse.json({ error: 'unknown_provider' }, { status: 404 })
+
+  // Throttle a single source: caps cost of the authoritative re-poll + DB writes.
+  const ip = clientIpFrom(req.headers)
+  if (!rateLimit(`whk:${providerCode}:${ip}`, 60, 60_000) || !rateLimit(`whk:${providerCode}`, 600, 60_000)) {
+    return NextResponse.json({ error: 'rate_limited' }, { status: 429, headers: { 'Retry-After': '60' } })
+  }
 
   const raw = await req.text()
 

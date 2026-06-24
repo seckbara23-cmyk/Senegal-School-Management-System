@@ -90,7 +90,11 @@ export const orangeMoneyProvider: OnlinePaymentProvider = {
       body: JSON.stringify({ order_id: ctx?.orderId, amount: ctx?.amount, pay_token: providerSessionId }),
     })
     if (!res.ok) return { status: 'unknown', amount: null, currency: null, providerReference: null }
-    const d = (await res.json()) as { status?: string; txnid?: string }
-    return { status: mapStatus(d.status), amount: ctx?.amount ?? null, currency: null, providerReference: d.txnid ?? null }
+    const d = (await res.json()) as { status?: string; txnid?: string; amount?: number | string }
+    // Prefer the settled amount reported by the provider (enables the
+    // amount-mismatch guard in reconcile); fall back to the order amount.
+    const settled = d.amount != null && d.amount !== '' ? Number(d.amount) : null
+    const amount = settled !== null && !Number.isNaN(settled) ? settled : (ctx?.amount ?? null)
+    return { status: mapStatus(d.status), amount, currency: null, providerReference: d.txnid ?? null }
   },
 }
