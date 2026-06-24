@@ -1,7 +1,6 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { askCopilot } from './actions'
 import type { CopilotAnswer } from '@/lib/copilot/types'
 
 type Msg = { role: 'user'; text: string } | { role: 'assistant'; answer: CopilotAnswer }
@@ -53,7 +52,12 @@ function AnswerCard({ answer, onSuggestion }: { answer: CopilotAnswer; onSuggest
   )
 }
 
-export function CopilotChat({ suggestions }: { suggestions: string[] }) {
+export function CopilotChat({ ask, suggestions, placeholder, intro }: {
+  ask: (query: string) => Promise<CopilotAnswer>
+  suggestions: string[]
+  placeholder?: string
+  intro?: string
+}) {
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(false)
@@ -65,7 +69,7 @@ export function CopilotChat({ suggestions }: { suggestions: string[] }) {
     setMessages((m) => [...m, { role: 'user', text: query }])
     setInput(''); setPending(true)
     try {
-      const answer = await askCopilot(query)
+      const answer = await ask(query)
       setMessages((m) => [...m, { role: 'assistant', answer }])
     } catch {
       setMessages((m) => [...m, { role: 'assistant', answer: { intent: 'unknown', title: 'Erreur', summary: 'Une erreur est survenue. Réessayez.', sections: [], links: [] } }])
@@ -78,8 +82,8 @@ export function CopilotChat({ suggestions }: { suggestions: string[] }) {
     <div className="flex flex-col gap-4">
       {messages.length === 0 ? (
         <div className="rounded-xl border border-sand-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-medium text-gray-900">Posez une question sur votre école</p>
-          <p className="mt-1 text-xs text-gray-500">Réponses en lecture seule, calculées à partir de vos données. Aucune modification n’est effectuée.</p>
+          <p className="text-sm font-medium text-gray-900">Posez une question</p>
+          <p className="mt-1 text-xs text-gray-500">{intro ?? 'Réponses en lecture seule, calculées à partir de vos données. Aucune modification n’est effectuée.'}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {suggestions.map((s) => <button key={s} type="button" onClick={() => send(s)} className="rounded-full border border-primary-200 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-100">{s}</button>)}
           </div>
@@ -99,7 +103,7 @@ export function CopilotChat({ suggestions }: { suggestions: string[] }) {
       )}
 
       <form onSubmit={(e) => { e.preventDefault(); send(input) }} className="sticky bottom-0 flex items-center gap-2 rounded-xl border border-sand-200 bg-white p-2 shadow-sm">
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ex. « Résumé de Awa Diop » ou « Situation financière »" maxLength={300}
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={placeholder ?? 'Posez votre question…'} maxLength={300}
           className="flex-1 rounded-lg border border-sand-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600" />
         <button type="submit" disabled={pending || !input.trim()} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50">Demander</button>
       </form>

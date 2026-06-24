@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { CopilotChat } from './_chat'
+import { CopilotChat } from '@/components/CopilotChat'
+import { askCopilot } from './actions'
 import { SUGGESTED_PROMPTS } from '@/lib/copilot/intent-router'
 
 export const dynamic = 'force-dynamic'
@@ -24,7 +25,7 @@ export default async function CopilotPage() {
         <p className="text-primary-300 text-sm mt-0.5">{schoolName} · assistant en lecture seule</p>
       </div>
 
-      <CopilotChat suggestions={SUGGESTED_PROMPTS} />
+      <CopilotChat ask={askCopilot} suggestions={SUGGESTED_PROMPTS} intro="Réponses en lecture seule, calculées à partir des données de votre école. Aucune modification n’est effectuée." placeholder="Ex. « Résumé de Awa Diop » ou « Situation financière »" />
     </div>
   )
 }
