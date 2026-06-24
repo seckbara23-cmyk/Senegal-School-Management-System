@@ -85,6 +85,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Configuration',    href: '/school/setup',              iconPath: P.rocket    },
       { label: 'Profil de l’école', href: '/school/settings',          iconPath: P.building  },
+      { label: 'Communication',    href: '/school/communications',     iconPath: P.megaphone },
       { label: 'Années scolaires', href: '/school/academic-years',     iconPath: P.calendar  },
       { label: 'Classes',          href: '/school/classes',            iconPath: P.classes   },
       { label: 'Matières',         href: '/school/academics/subjects', iconPath: P.academic  },
