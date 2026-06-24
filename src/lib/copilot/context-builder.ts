@@ -6,7 +6,7 @@
 
 import type { createClient } from '@/lib/supabase/server'
 import type { RoutedQuery } from './types'
-import { loadExecutiveSummary, type ExecutiveSummary } from '@/lib/analytics/executive'
+import { loadExecutiveSnapshot, type ExecutiveSnapshot } from './executive-snapshot'
 import { loadAcademicAnalytics, type AcademicAnalytics } from '@/lib/analytics/academic'
 import { loadFinanceAnalytics, type FinanceAnalytics } from '@/lib/analytics/finance'
 import { loadInsights, type Insights } from '@/lib/analytics/insights'
@@ -18,7 +18,7 @@ type Client = ReturnType<typeof createClient>
 export type { StudentSnapshot }
 
 export type CopilotContext =
-  | { kind: 'school_overview'; data: ExecutiveSummary }
+  | { kind: 'school_overview'; data: ExecutiveSnapshot }
   | { kind: 'academic'; data: AcademicAnalytics }
   | { kind: 'finance'; data: FinanceAnalytics }
   | { kind: 'attendance'; data: { rate: number | null; worstClass: { name: string; rate: number } | null } }
@@ -65,7 +65,7 @@ async function resolveStudent(supabase: Client, schoolId: string, rawName: strin
 export async function buildContext(supabase: Client, schoolId: string, routed: RoutedQuery): Promise<CopilotContext> {
   switch (routed.intent) {
     case 'school_overview':
-      return { kind: 'school_overview', data: await loadExecutiveSummary(supabase, schoolId) }
+      return { kind: 'school_overview', data: await loadExecutiveSnapshot(supabase, schoolId) }
     case 'academic':
       return { kind: 'academic', data: await loadAcademicAnalytics(supabase, schoolId) }
     case 'finance':

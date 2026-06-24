@@ -37,6 +37,13 @@ export function routeIntent(query: string): RoutedQuery {
 
   if (/\b(aide|help|que peux[- ]tu|capacites)\b/.test(q)) return { intent: 'help', entities: {} }
 
+  // Executive / leadership prompts → school-wide executive synthesis. Checked
+  // before the student trigger so "comment va l'école" / "résumé de
+  // l'établissement" are not mistaken for a student lookup.
+  if (/(priorite|surveiller|cette semaine|comment va l ecole|etat de l ecole|resume de l (ecole|etablissement)|synthese executive|comment se porte l ecole)/.test(q)) {
+    return { intent: 'school_overview', entities: {} }
+  }
+
   // Explicit student trigger ("résumé de X", "élève X", "comment va X").
   if (STUDENT_TRIGGER.test(q)) {
     const name = extractStudentName(raw)
@@ -60,10 +67,10 @@ export function routeIntent(query: string): RoutedQuery {
 }
 
 export const SUGGESTED_PROMPTS = [
-  'Vue d’ensemble de l’école',
+  'Comment va l’école ?',
+  'Que dois-je surveiller cette semaine ?',
+  'Quelles sont les priorités ?',
   'Quels élèves sont à risque ?',
   'Résumé financier',
-  'Résultats académiques',
-  'Assiduité générale',
   'Où en sont les candidatures ?',
 ]

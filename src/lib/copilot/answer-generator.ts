@@ -6,6 +6,7 @@
 import type { CopilotAnswer } from './types'
 import type { CopilotContext } from './context-builder'
 import { generateStudentNarrative } from './student-narrative'
+import { generateExecutiveNarrative } from './executive-narrative'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA'
 const RISK_LABEL: Record<string, string> = { low: 'faible', medium: 'moyen', high: 'élevé' }
@@ -17,15 +18,16 @@ const ADMISSION_LABEL: Record<string, string> = {
 export function generateAnswer(ctx: CopilotContext): CopilotAnswer {
   switch (ctx.kind) {
     case 'school_overview': {
-      const d = ctx.data
+      // Phase 10C: the shared Executive Narrative Engine produces the synthesis.
+      const n = generateExecutiveNarrative(ctx.data)
       return {
-        intent: 'school_overview', title: 'Vue d’ensemble de l’école',
-        summary: `${d.students} élèves, assiduité ${d.attendanceRate ?? '—'}%, recouvrement ${d.collectionRate}%, ${d.atRisk.total} élève(s) à surveiller.`,
+        intent: 'school_overview', title: 'Synthèse exécutive',
+        summary: n.headline,
         sections: [
-          { heading: 'Effectifs', lines: [`${d.students} élèves · ${d.teachers} enseignants · ${d.parents} parents`] },
-          { heading: 'Académique', lines: [d.academicAverage !== null ? `Moyenne générale ${d.academicAverage}/20 · taux de réussite ${d.passRate}% (${d.gradedStudents} élèves notés)` : 'Pas encore de notes pour la période active.'] },
-          { heading: 'Finance', lines: [`Recouvrement ${d.collectionRate}%${d.outstanding > 0 ? ` · ${fmt(d.outstanding)} en attente` : ''}`] },
-          { heading: 'Suivi', lines: [`${d.atRisk.total} élève(s) à risque (${d.atRisk.high} élevé, ${d.atRisk.medium} moyen)`] },
+          ...(n.attention.length ? [{ heading: 'Points d’attention', lines: n.attention }] : []),
+          ...(n.positives.length ? [{ heading: 'Points positifs', lines: n.positives }] : []),
+          { heading: 'Priorités de la semaine', lines: n.priorities },
+          ...(n.recommendations.length ? [{ heading: 'Recommandations', lines: n.recommendations }] : []),
         ],
         links: [{ label: 'Tableau de bord analytique', href: '/school/analytics' }],
       }

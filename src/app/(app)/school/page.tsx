@@ -4,6 +4,9 @@ import Link from 'next/link'
 import { tallyStatuses, attendanceRate as computeAttendanceRate, rateTone, RATE_TEXT_CLASS } from '@/lib/attendance'
 import { getSetupState } from '@/lib/setup'
 import { loadSchoolRisk } from '@/lib/academic/risk-data'
+import { loadExecutiveSnapshot } from '@/lib/copilot/executive-snapshot'
+import { generateExecutiveNarrative } from '@/lib/copilot/executive-narrative'
+import { ExecutiveNarrativeCard } from '@/components/ExecutiveNarrativeCard'
 
 // ─── Icon helper ──────────────────────────────────────────────────────────────
 
@@ -575,6 +578,10 @@ export default async function SchoolAdminPage() {
   // Students at risk — derived (never stored); see lib/academic/risk-data.
   const risk = await loadSchoolRisk(supabase, schoolId)
 
+  // Executive synthesis — derived leadership narrative (shared engine, never
+  // stored). Aggregates the analytics + risk modules; the engine has no DB access.
+  const execNarrative = generateExecutiveNarrative(await loadExecutiveSnapshot(supabase, schoolId))
+
   // ── Today's attendance widgets ──────────────────────────────────────────────
   // Present/absent/late counts, classes still pending, and who's absent today.
   const { data: todaySessData } = await supabase
@@ -689,6 +696,9 @@ export default async function SchoolAdminPage() {
           href="/school/academic-years" iconPath={P.calendar} tone="gold"
         />
       </div>
+
+      {/* ── Synthèse exécutive (narrative dérivée, jamais stockée) ──────────── */}
+      <ExecutiveNarrativeCard narrative={execNarrative} href="/school/copilot" />
 
       {/* ── Modules de gestion (grouped, mirrors the sidebar) ───────────────── */}
       <div>
