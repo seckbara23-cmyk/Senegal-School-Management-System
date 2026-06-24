@@ -25,6 +25,11 @@ export const ACTION_LABELS: Record<string, string> = {
   online_payment_failed:         'Paiement en ligne échoué',
   // Copilot
   copilot_query:                 'Requête Copilot',
+  // Communication
+  comms_config_updated:          'Canal de communication configuré',
+  comms_template_updated:        'Modèle de message modifié',
+  comms_broadcast_sent:          'Message diffusé',
+  comms_preferences_updated:     'Préférences de communication modifiées',
   // Exploitation plateforme
   school_pilot_toggled:          'Statut pilote modifié',
   support_ticket_created:        'Ticket de support créé',
@@ -182,6 +187,7 @@ export const ACTION_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Admins d’école',       actions: ['school_admin_added', 'school_admin_removed', 'school_admin_deactivated', 'school_admin_reactivated', 'school_admin_password_reset_generated'] },
   { label: 'Abonnements',          actions: ['subscription_created', 'subscription_updated', 'subscription_cancelled', 'subscription_invoice_created', 'subscription_payment_recorded'] },
   { label: 'Copilot',              actions: ['copilot_query'] },
+  { label: 'Communication',        actions: ['comms_config_updated', 'comms_template_updated', 'comms_broadcast_sent', 'comms_preferences_updated'] },
   { label: 'Exploitation',         actions: ['school_pilot_toggled', 'support_ticket_created', 'support_ticket_updated', 'support_ticket_note_added'] },
 ]
 
@@ -219,6 +225,7 @@ export const RESOURCE_TYPE_LABELS: Record<string, string> = {
   payment:            'Paiement',
   payment_plan:       'Échéancier',
   payment_request:    'Paiement en ligne',
+  communication:      'Communication',
   subscription:       'Abonnement',
   subscription_invoice: 'Facture d’abonnement',
   subscription_payment: 'Paiement d’abonnement',
