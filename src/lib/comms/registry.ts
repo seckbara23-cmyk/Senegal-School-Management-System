@@ -6,11 +6,13 @@
 
 import type { CommunicationChannelProvider, ExternalChannel } from './types'
 import { resendProvider } from './providers/resend'
+import { twilioSmsProvider } from './providers/twilio-sms'
+import { metaWhatsappProvider } from './providers/meta-whatsapp'
 
 const REGISTRY: Partial<Record<ExternalChannel, CommunicationChannelProvider>> = {
-  email: resendProvider,           // 9D.2
-  // sms: twilioSmsProvider,       // 9D.3
-  // whatsapp: metaWhatsappProvider, // 9D.4
+  email: resendProvider,            // 9D.2
+  sms: twilioSmsProvider,           // 9D.3
+  whatsapp: metaWhatsappProvider,   // 9D.4
 }
 
 export function getCommProvider(channel: ExternalChannel): CommunicationChannelProvider | null {
