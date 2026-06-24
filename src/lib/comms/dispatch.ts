@@ -36,8 +36,8 @@ export async function dispatch(input: DispatchInput): Promise<void> {
       await Promise.all(ids.map((userId) => createNotification(admin, { userId, type: input.inApp!.type, title: input.inApp!.title, body: input.inApp!.body, schoolId: input.schoolId, metadata: input.inApp!.metadata })))
     }
 
-    // 2) External channels — email → SMS → WhatsApp.
-    const channels: ExternalChannel[] = ['email', 'sms', 'whatsapp']
+    // 2) External channels — email → SMS → WhatsApp (optionally restricted).
+    const channels: ExternalChannel[] = (input.channels ?? ['email', 'sms', 'whatsapp']).filter((c) => ['email', 'sms', 'whatsapp'].includes(c))
     for (const ch of channels) {
       const config = await loadChannelConfig(input.schoolId, ch)
       if (!config) continue // channel not enabled for this school
@@ -51,7 +51,9 @@ export async function dispatch(input: DispatchInput): Promise<void> {
         const allowed = await allowedChannels(admin, input.schoolId, r.userId, input.category, [ch])
         if (allowed.length === 0) { await logMessage(admin, input, ch, config.providerCode, r, to, { status: 'skipped', error: 'opted_out' }); continue }
 
-        const tpl = await renderTemplate(input.schoolId, input.templateKey, ch, { ...input.vars, name: r.name })
+        const tpl = input.content
+          ? { subject: ch === 'email' ? (input.content.subject ?? null) : null, body: input.content.body }
+          : await renderTemplate(input.schoolId, input.templateKey, ch, { ...input.vars, name: r.name })
         if (!tpl) { await logMessage(admin, input, ch, config.providerCode, r, to, { status: 'skipped', error: 'no_template' }); continue }
 
         if (!provider || !provider.enabled) { await logMessage(admin, input, ch, config.providerCode, r, to, { status: 'skipped', subject: tpl.subject, bodyPreview: tpl.body.slice(0, 200), error: 'channel_not_configured' }); continue }

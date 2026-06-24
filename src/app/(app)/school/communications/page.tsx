@@ -49,6 +49,7 @@ export default async function CommunicationsPage({ searchParams }: Props) {
       {searchParams.tested === 'fail' && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Échec de l’envoi du test — vérifiez la configuration.</div>}
 
       <div className="flex flex-wrap gap-2">
+        <a href="/school/communications/broadcast" className="rounded-lg bg-primary-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700">Diffuser un message</a>
         <a href="/school/communications/templates" className="rounded-lg border border-sand-300 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 hover:bg-sand-50">Modèles de messages</a>
       </div>
 

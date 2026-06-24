@@ -47,6 +47,10 @@ export type DispatchInput = {
   templateKey: string
   recipients: RecipientContact[]
   vars: Record<string, string>
+  // Ad-hoc content (broadcast composer) — bypasses template rendering when set.
+  content?: { subject?: string | null; body: string }
+  // Restrict which external channels to attempt (default: all). Preferences still apply.
+  channels?: ExternalChannel[]
   inApp?: { type: NotificationType; title: string; body: string; metadata?: Record<string, unknown> }
   related?: { type: string; id: string }
   actorId?: string | null
