@@ -8,6 +8,8 @@
 
 import type { CopilotConfidence, CopilotMetadata, CopilotSource } from './types'
 import type { ExecutiveSnapshot } from './executive-snapshot'
+import type { Locale } from '@/lib/i18n/locale'
+import { trExec, fmtFCFA as fmtMoney } from '@/lib/i18n/messages'
 
 export type ExecutiveNarrative = {
   headline: string
@@ -17,8 +19,6 @@ export type ExecutiveNarrative = {
   recommendations: string[]
   meta: CopilotMetadata
 }
-
-const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA'
 
 const SOURCES: CopilotSource[] = [
   { kind: 'analytics_academic', label: 'Analytique académique' },
@@ -36,14 +36,14 @@ function deriveConfidence(s: ExecutiveSnapshot): CopilotConfidence {
   return grounded === 3 ? 'high' : grounded >= 1 ? 'medium' : 'low'
 }
 
-export function generateExecutiveNarrative(s: ExecutiveSnapshot): ExecutiveNarrative {
-  const meta: CopilotMetadata = { provider: 'deterministic', sources: SOURCES, confidence: deriveConfidence(s), generatedAt: s.generatedAt }
+export function generateExecutiveNarrative(s: ExecutiveSnapshot, locale: Locale = 'fr'): ExecutiveNarrative {
+  const meta: CopilotMetadata = { provider: 'deterministic', locale, sources: SOURCES, confidence: deriveConfidence(s), generatedAt: s.generatedAt }
 
   if (!s.hasData) {
     return {
-      headline: 'Données insuffisantes pour une synthèse — inscrivez des élèves pour l’activer.',
+      headline: trExec(locale, 'emptyHeadline'),
       attention: [], positives: [],
-      priorities: ['Terminer la configuration de l’école et inscrire les élèves.'],
+      priorities: [trExec(locale, 'emptyPriority')],
       recommendations: [], meta,
     }
   }
@@ -52,50 +52,50 @@ export function generateExecutiveNarrative(s: ExecutiveSnapshot): ExecutiveNarra
 
   // ── Points d'attention ────────────────────────────────────────────────────────
   const attention: string[] = []
-  if (att.rate !== null && att.rate < 90) attention.push(`Assiduité à ${att.rate}% (sous l’objectif de 90 %).`)
-  if (att.worstClass && att.worstClass.rate < 80) attention.push(`Classe la moins assidue : ${att.worstClass.name} (${att.worstClass.rate}%).`)
-  if (a.average !== null && a.average < 10) attention.push(`Moyenne générale faible : ${a.average}/20.`)
-  if (a.passRate !== null && a.passRate < 60) attention.push(`Taux de réussite à ${a.passRate}%.`)
-  if (a.weakSubject && a.weakSubject.average < 10) attention.push(`Matière en difficulté : ${a.weakSubject.name} (${a.weakSubject.average}/20).`)
-  if (fin.collectionRate < 70) attention.push(`Recouvrement à ${fin.collectionRate}%${fin.outstanding > 0 ? ` · ${fmt(fin.outstanding)} en attente` : ''}.`)
-  if (fin.overdue > 0) attention.push(`Impayés en retard : ${fmt(fin.overdue)}.`)
-  if (risk.high > 0) attention.push(`${risk.high} élève(s) à risque élevé.`)
-  if (eng.parents > 0 && eng.low > eng.engaged) attention.push(`Engagement parental faible (${eng.low}/${eng.parents} familles peu actives).`)
-  if (s.admissions.pending > 0) attention.push(`${s.admissions.pending} candidature(s) en attente de traitement.`)
+  if (att.rate !== null && att.rate < 90) attention.push(trExec(locale, 'attLow', { rate: att.rate }))
+  if (att.worstClass && att.worstClass.rate < 80) attention.push(trExec(locale, 'attWorst', { name: att.worstClass.name, rate: att.worstClass.rate }))
+  if (a.average !== null && a.average < 10) attention.push(trExec(locale, 'avgLow', { avg: a.average }))
+  if (a.passRate !== null && a.passRate < 60) attention.push(trExec(locale, 'passLow', { rate: a.passRate }))
+  if (a.weakSubject && a.weakSubject.average < 10) attention.push(trExec(locale, 'weakSubj', { name: a.weakSubject.name, avg: a.weakSubject.average }))
+  if (fin.collectionRate < 70) attention.push(trExec(locale, 'collLow', { rate: fin.collectionRate, clause: fin.outstanding > 0 ? trExec(locale, 'collLowClause', { amount: fmtMoney(fin.outstanding) }) : '' }))
+  if (fin.overdue > 0) attention.push(trExec(locale, 'overdue', { amount: fmtMoney(fin.overdue) }))
+  if (risk.high > 0) attention.push(trExec(locale, 'riskHigh', { n: risk.high }))
+  if (eng.parents > 0 && eng.low > eng.engaged) attention.push(trExec(locale, 'engLow', { low: eng.low, parents: eng.parents }))
+  if (s.admissions.pending > 0) attention.push(trExec(locale, 'admPending', { n: s.admissions.pending }))
 
   // ── Points positifs ───────────────────────────────────────────────────────────
   const positives: string[] = []
-  if (att.rate !== null && att.rate >= 95) positives.push(`Excellente assiduité (${att.rate}%).`)
-  if (a.passRate !== null && a.passRate >= 75) positives.push(`Bon taux de réussite (${a.passRate}%).`)
-  if (a.average !== null && a.average >= 12) positives.push(`Bonne moyenne générale (${a.average}/20).`)
-  if (a.bestClass && a.bestClass.average >= 12) positives.push(`Classe en tête : ${a.bestClass.name} (${a.bestClass.average}/20).`)
-  if (fin.collectionRate >= 90) positives.push(`Recouvrement solide (${fin.collectionRate}%).`)
-  if (risk.total === 0 && a.gradedStudents > 0) positives.push('Aucun élève à risque détecté.')
-  if (eng.parents > 0 && eng.engaged >= eng.low && eng.engaged > 0) positives.push(`Engagement parental encourageant (${eng.engaged}/${eng.parents} familles actives).`)
+  if (att.rate !== null && att.rate >= 95) positives.push(trExec(locale, 'posAtt', { rate: att.rate }))
+  if (a.passRate !== null && a.passRate >= 75) positives.push(trExec(locale, 'posPass', { rate: a.passRate }))
+  if (a.average !== null && a.average >= 12) positives.push(trExec(locale, 'posAvg', { avg: a.average }))
+  if (a.bestClass && a.bestClass.average >= 12) positives.push(trExec(locale, 'posBest', { name: a.bestClass.name, avg: a.bestClass.average }))
+  if (fin.collectionRate >= 90) positives.push(trExec(locale, 'posColl', { rate: fin.collectionRate }))
+  if (risk.total === 0 && a.gradedStudents > 0) positives.push(trExec(locale, 'posNoRisk'))
+  if (eng.parents > 0 && eng.engaged >= eng.low && eng.engaged > 0) positives.push(trExec(locale, 'posEng', { engaged: eng.engaged, parents: eng.parents }))
 
   // ── Priorités de la semaine ─────────────────────────────────────────────────────
   const priorities: string[] = []
-  if (risk.high > 0) priorities.push(`Suivre ${risk.high} élève(s) à risque élevé via la cellule de soutien${risk.top[0] ? ` (ex. ${risk.top[0].name})` : ''}.`)
-  if (fin.overdue > 0) priorities.push(`Relancer les familles en retard de paiement (${fmt(fin.overdue)}).`)
-  if (att.worstClass && att.worstClass.rate < 85) priorities.push(`Vérifier l’assiduité en ${att.worstClass.name} (${att.worstClass.rate}%).`)
-  if (s.admissions.pending > 0) priorities.push(`Traiter ${s.admissions.pending} candidature(s) en attente.`)
-  if (a.weakSubject && a.weakSubject.average < 10) priorities.push(`Organiser un soutien en ${a.weakSubject.name}.`)
-  if (priorities.length === 0) priorities.push('Aucune urgence cette semaine — maintenir le suivi habituel.')
+  if (risk.high > 0) priorities.push(trExec(locale, 'prRisk', { n: risk.high, ex: risk.top[0] ? risk.top[0].name : '' }))
+  if (fin.overdue > 0) priorities.push(trExec(locale, 'prOverdue', { amount: fmtMoney(fin.overdue) }))
+  if (att.worstClass && att.worstClass.rate < 85) priorities.push(trExec(locale, 'prAtt', { name: att.worstClass.name, rate: att.worstClass.rate }))
+  if (s.admissions.pending > 0) priorities.push(trExec(locale, 'prAdm', { n: s.admissions.pending }))
+  if (a.weakSubject && a.weakSubject.average < 10) priorities.push(trExec(locale, 'prWeakSubj', { name: a.weakSubject.name }))
+  if (priorities.length === 0) priorities.push(trExec(locale, 'prNone'))
 
   // ── Recommandations (du facteur de risque dominant + structurel) ───────────────
   const recommendations: string[] = []
   const f = risk.factors
   const maxFactor = Math.max(f.academic, f.attendance, f.finance)
   if (maxFactor > 0) {
-    if (f.academic === maxFactor) recommendations.push(`Renforcer le soutien scolaire${a.weakSubject ? ` (priorité : ${a.weakSubject.name})` : ''}.`)
-    if (f.finance === maxFactor) recommendations.push('Déployer des rappels de paiement et proposer des échéanciers.')
-    if (f.attendance === maxFactor) recommendations.push('Mettre en place un suivi rapproché de l’assiduité.')
+    if (f.academic === maxFactor) recommendations.push(trExec(locale, 'recAcad', { clause: a.weakSubject ? trExec(locale, 'recAcadClause', { name: a.weakSubject.name }) : '' }))
+    if (f.finance === maxFactor) recommendations.push(trExec(locale, 'recFinance'))
+    if (f.attendance === maxFactor) recommendations.push(trExec(locale, 'recAtt'))
   }
-  if (eng.parents > 0 && eng.low > 0) recommendations.push('Encourager l’usage du portail parent (notifications, messagerie).')
-  if (fin.collectionRate < 70 && fin.activePlans === 0) recommendations.push('Introduire des échéanciers de paiement pour lisser la trésorerie.')
-  if (recommendations.length === 0) recommendations.push('Poursuivre la dynamique actuelle.')
+  if (eng.parents > 0 && eng.low > 0) recommendations.push(trExec(locale, 'recEng'))
+  if (fin.collectionRate < 70 && fin.activePlans === 0) recommendations.push(trExec(locale, 'recPlans'))
+  if (recommendations.length === 0) recommendations.push(trExec(locale, 'recNone'))
 
-  const headline = `${s.roster.students} élèves · assiduité ${att.rate ?? '—'}% · recouvrement ${fin.collectionRate}% · ${risk.total} élève(s) à surveiller.`
+  const headline = trExec(locale, 'headline', { students: s.roster.students, rate: att.rate ?? '—', collection: fin.collectionRate, watch: risk.total })
 
   return {
     headline,

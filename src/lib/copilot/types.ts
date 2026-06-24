@@ -34,6 +34,7 @@ export type CopilotConfidence = 'high' | 'medium' | 'low'
 export type CopilotSource = { kind: string; label: string }
 export type CopilotMetadata = {
   provider: string        // provider id that produced the answer (e.g. 'deterministic')
+  locale: string          // language the answer was rendered in ('fr' | 'en' | 'wo')
   sources: CopilotSource[]
   confidence: CopilotConfidence
   generatedAt: string     // ISO 8601

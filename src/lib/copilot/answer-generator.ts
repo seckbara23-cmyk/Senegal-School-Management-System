@@ -7,6 +7,7 @@ import type { CopilotAnswer } from './types'
 import type { CopilotContext } from './context-builder'
 import { generateStudentNarrative } from './student-narrative'
 import { generateExecutiveNarrative } from './executive-narrative'
+import type { Locale } from '@/lib/i18n/locale'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA'
 const RISK_LABEL: Record<string, string> = { low: 'faible', medium: 'moyen', high: 'élevé' }
@@ -15,11 +16,11 @@ const ADMISSION_LABEL: Record<string, string> = {
   accepted: 'Acceptées', rejected: 'Refusées', waitlisted: 'Liste d’attente', withdrawn: 'Retirées',
 }
 
-export function generateAnswer(ctx: CopilotContext): CopilotAnswer {
+export function generateAnswer(ctx: CopilotContext, locale: Locale = 'fr'): CopilotAnswer {
   switch (ctx.kind) {
     case 'school_overview': {
       // Phase 10C: the shared Executive Narrative Engine produces the synthesis.
-      const n = generateExecutiveNarrative(ctx.data)
+      const n = generateExecutiveNarrative(ctx.data, locale)
       return {
         intent: 'school_overview', title: 'Synthèse exécutive',
         summary: n.headline,
@@ -115,7 +116,7 @@ export function generateAnswer(ctx: CopilotContext): CopilotAnswer {
 
     case 'student': {
       // Phase 10B: the shared Student Narrative Engine produces the summary.
-      const n = generateStudentNarrative(ctx.data)
+      const n = generateStudentNarrative(ctx.data, locale)
       return {
         intent: 'student_360', title: n.name,
         summary: n.headline,

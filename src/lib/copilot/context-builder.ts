@@ -12,6 +12,7 @@ import { loadFinanceAnalytics, type FinanceAnalytics } from '@/lib/analytics/fin
 import { loadInsights, type Insights } from '@/lib/analytics/insights'
 import { attendanceRate } from '@/lib/attendance'
 import { loadStudentSnapshot, type StudentSnapshot } from './student-snapshot'
+import type { Locale } from '@/lib/i18n/locale'
 
 type Client = ReturnType<typeof createClient>
 
@@ -37,7 +38,7 @@ function norm(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
 }
 
-async function resolveStudent(supabase: Client, schoolId: string, rawName: string): Promise<CopilotContext> {
+async function resolveStudent(supabase: Client, schoolId: string, rawName: string, locale: Locale): Promise<CopilotContext> {
   const tokens = norm(rawName).split(' ').filter((t) => t.length >= 2)
   if (tokens.length === 0) return { kind: 'student_not_found', data: { name: rawName } }
 
@@ -58,11 +59,11 @@ async function resolveStudent(supabase: Client, schoolId: string, rawName: strin
   }
 
   const student = top[0]
-  const snapshot = await loadStudentSnapshot(supabase, schoolId, student.id, { firstName: student.first_name, lastName: student.last_name })
+  const snapshot = await loadStudentSnapshot(supabase, schoolId, student.id, { firstName: student.first_name, lastName: student.last_name }, locale)
   return { kind: 'student', data: snapshot! }
 }
 
-export async function buildContext(supabase: Client, schoolId: string, routed: RoutedQuery): Promise<CopilotContext> {
+export async function buildContext(supabase: Client, schoolId: string, routed: RoutedQuery, locale: Locale = 'fr'): Promise<CopilotContext> {
   switch (routed.intent) {
     case 'school_overview':
       return { kind: 'school_overview', data: await loadExecutiveSnapshot(supabase, schoolId) }
@@ -114,7 +115,7 @@ export async function buildContext(supabase: Client, schoolId: string, routed: R
       return { kind: 'homework', data: { upcoming: rows.filter((r) => !r.due_date || r.due_date >= today).length, total: rows.length } }
     }
     case 'student_360':
-      return resolveStudent(supabase, schoolId, routed.entities.studentName ?? '')
+      return resolveStudent(supabase, schoolId, routed.entities.studentName ?? '', locale)
     case 'help':
       return { kind: 'help' }
     default:

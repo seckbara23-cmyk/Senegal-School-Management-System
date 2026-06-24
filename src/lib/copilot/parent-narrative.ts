@@ -8,6 +8,8 @@
 
 import type { CopilotConfidence, CopilotMetadata, CopilotSource } from './types'
 import type { ParentSnapshot, ChildSummary } from './parent-snapshot'
+import type { Locale } from '@/lib/i18n/locale'
+import { trParent, parentAppreciation, fmtFCFA as fmtMoney, fmtDateShort } from '@/lib/i18n/messages'
 
 export type ParentSectionKey = 'enfants' | 'scolarite' | 'presences' | 'devoirs' | 'paiements' | 'transport' | 'messages'
 export type ParentSection = { key: ParentSectionKey; heading: string; lines: string[] }
@@ -18,9 +20,6 @@ export type ParentNarrative = {
   priorities: string[]
   meta: CopilotMetadata
 }
-
-const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA'
-const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : 'sans échéance')
 
 const SOURCES: CopilotSource[] = [
   { kind: 'children', label: 'Mes enfants' },
@@ -33,24 +32,17 @@ const SOURCES: CopilotSource[] = [
   { kind: 'risk_engine', label: 'Suivi' },
 ]
 
-function appreciation(avg: number): string {
-  if (avg >= 14) return 'très bon niveau'
-  if (avg >= 12) return 'bon niveau'
-  if (avg >= 10) return 'niveau moyen'
-  return 'à soutenir'
-}
-
 const tag = (c: ChildSummary, multi: boolean) => (multi ? `${c.firstName} : ` : '')
 
-export function generateParentNarrative(s: ParentSnapshot, opts?: { childId?: string }): ParentNarrative {
+export function generateParentNarrative(s: ParentSnapshot, locale: Locale = 'fr', opts?: { childId?: string }): ParentNarrative {
   const confidence: CopilotConfidence = !s.hasChildren ? 'low' : s.children.some((c) => c.average !== null) ? 'high' : 'medium'
-  const meta: CopilotMetadata = { provider: 'deterministic', sources: SOURCES, confidence, generatedAt: s.generatedAt }
+  const meta: CopilotMetadata = { provider: 'deterministic', locale, sources: SOURCES, confidence, generatedAt: s.generatedAt }
 
   if (!s.hasChildren) {
     return {
-      headline: 'Aucun enfant n’est encore rattaché à votre compte.',
-      sections: [{ key: 'enfants', heading: 'Mes enfants', lines: ['Contactez l’administration de l’école pour lier votre enfant.'] }],
-      priorities: ['Demander à l’école de rattacher votre enfant.'],
+      headline: trParent(locale, 'emptyHeadline'),
+      sections: [{ key: 'enfants', heading: trParent(locale, 'headEnfants'), lines: [trParent(locale, 'emptyEnfants')] }],
+      priorities: [trParent(locale, 'emptyPriority')],
       meta,
     }
   }
@@ -58,51 +50,49 @@ export function generateParentNarrative(s: ParentSnapshot, opts?: { childId?: st
   const children = opts?.childId ? s.children.filter((c) => c.studentId === opts.childId) : s.children
   const multi = s.children.length > 1
 
-  const enfants = children.map((c) => `${c.firstName} (${c.className})${c.average !== null ? ` — moyenne ${c.average}/20` : ''}${c.attendance.rate !== null ? ` · assiduité ${c.attendance.rate}%` : ''}${c.level !== 'low' ? ' · à surveiller' : ''}`)
+  const enfants = children.map((c) => trParent(locale, 'enfantLine', { firstName: c.firstName, className: c.className, avg: c.average, rate: c.attendance.rate, watch: c.level !== 'low' }))
 
   const scolarite = children.map((c) => {
-    if (c.average === null) return `${tag(c, multi)}pas encore de notes pour la période.`
-    const w = c.watch.length ? ` · ${c.watch.slice(0, 2).join(' ; ')}` : ''
-    return `${tag(c, multi)}moyenne ${c.average}/20 (${appreciation(c.average)})${w}.`
+    if (c.average === null) return trParent(locale, 'scolNone', { tag: tag(c, multi) })
+    return trParent(locale, 'scolLine', { tag: tag(c, multi), avg: c.average, appr: parentAppreciation(locale, c.average), watch: c.watch.length ? c.watch.slice(0, 2).join(' ; ') : '' })
   })
 
   const presences = children.map((c) => {
-    if (c.attendance.rate === null) return `${tag(c, multi)}aucune présence enregistrée.`
-    const extra = [c.attendance.absent ? `${c.attendance.absent} absence(s)` : '', c.attendance.late ? `${c.attendance.late} retard(s)` : ''].filter(Boolean).join(', ')
-    return `${tag(c, multi)}${c.attendance.rate}% de présence${extra ? ` (${extra})` : ' — assiduité parfaite'}.`
+    if (c.attendance.rate === null) return trParent(locale, 'presNone', { tag: tag(c, multi) })
+    const extra = [c.attendance.absent ? trParent(locale, 'absWord', { n: c.attendance.absent }) : '', c.attendance.late ? trParent(locale, 'lateWord', { n: c.attendance.late }) : ''].filter(Boolean).join(', ')
+    return trParent(locale, 'presLine', { tag: tag(c, multi), rate: c.attendance.rate, extra })
   })
 
   const devoirs = children.map((c) => {
-    if (c.homework.upcoming === 0) return `${tag(c, multi)}aucun devoir à venir.`
-    const next = c.homework.next ? ` — prochain : ${c.homework.next.subject} (${fmtDate(c.homework.next.due)})` : ''
-    return `${tag(c, multi)}${c.homework.upcoming} devoir(s) à venir${next}.`
+    if (c.homework.upcoming === 0) return trParent(locale, 'devNone', { tag: tag(c, multi) })
+    const nextStr = c.homework.next
+      ? trParent(locale, 'devNext', { subject: c.homework.next.subject, due: c.homework.next.due ? fmtDateShort(locale, c.homework.next.due) : trParent(locale, 'devDueNone') })
+      : ''
+    return trParent(locale, 'devLine', { tag: tag(c, multi), n: c.homework.upcoming, next: nextStr })
   })
 
   const paiements = children.map((c) => {
-    if (c.finance.outstanding <= 0) return `${tag(c, multi)}à jour.`
-    const od = c.finance.overdue > 0 ? ` · ${fmt(c.finance.overdue)} en retard` : ''
-    const due = c.finance.nextDue ? ` (échéance ${fmtDate(c.finance.nextDue.due)})` : ''
-    return `${tag(c, multi)}${fmt(c.finance.outstanding)} à régler${due}${od}.`
+    if (c.finance.outstanding <= 0) return trParent(locale, 'payOk', { tag: tag(c, multi) })
+    return trParent(locale, 'payLine', { tag: tag(c, multi), amount: fmtMoney(c.finance.outstanding), due: c.finance.nextDue ? fmtDateShort(locale, c.finance.nextDue.due) : '', od: c.finance.overdue > 0 ? fmtMoney(c.finance.overdue) : '' })
   })
 
   const transport = children.map((c) => {
-    if (!c.transport) return `${tag(c, multi)}aucun transport scolaire.`
-    const pick = c.transport.pickup ? ` · ramassage ${c.transport.pickup.slice(0, 5)}` : ''
-    return `${tag(c, multi)}${c.transport.route}${c.transport.stop ? ` · arrêt ${c.transport.stop}` : ''}${pick}.`
+    if (!c.transport) return trParent(locale, 'transNone', { tag: tag(c, multi) })
+    return trParent(locale, 'transLine', { tag: tag(c, multi), route: c.transport.route, stop: c.transport.stop ?? '', pickup: c.transport.pickup ? c.transport.pickup.slice(0, 5) : '' })
   })
 
   const messages = s.messages.unread > 0
-    ? [`${s.messages.unread} message(s) non lu(s).`, ...s.messages.unreadFrom.map((m) => `${m.from} : ${m.subject}`)]
-    : ['Aucun message non lu.']
+    ? [trParent(locale, 'msgUnread', { n: s.messages.unread }), ...s.messages.unreadFrom.map((m) => trParent(locale, 'msgFrom', { from: m.from, subject: m.subject }))]
+    : [trParent(locale, 'msgNone')]
 
   const sections: ParentSection[] = [
-    { key: 'enfants', heading: 'Mes enfants', lines: enfants },
-    { key: 'scolarite', heading: 'Scolarité', lines: scolarite },
-    { key: 'presences', heading: 'Présences', lines: presences },
-    { key: 'devoirs', heading: 'Devoirs', lines: devoirs },
-    { key: 'paiements', heading: 'Paiements', lines: paiements },
-    { key: 'transport', heading: 'Transport', lines: transport },
-    { key: 'messages', heading: 'Messages', lines: messages },
+    { key: 'enfants', heading: trParent(locale, 'headEnfants'), lines: enfants },
+    { key: 'scolarite', heading: trParent(locale, 'headScolarite'), lines: scolarite },
+    { key: 'presences', heading: trParent(locale, 'headPresences'), lines: presences },
+    { key: 'devoirs', heading: trParent(locale, 'headDevoirs'), lines: devoirs },
+    { key: 'paiements', heading: trParent(locale, 'headPaiements'), lines: paiements },
+    { key: 'transport', heading: trParent(locale, 'headTransport'), lines: transport },
+    { key: 'messages', heading: trParent(locale, 'headMessages'), lines: messages },
   ]
 
   // Priorities scoped to the visible children (+ parent-level messages).
@@ -110,16 +100,16 @@ export function generateParentNarrative(s: ParentSnapshot, opts?: { childId?: st
   const upcomingHw = children.reduce((a, c) => a + c.homework.upcoming, 0)
   const watch = children.filter((c) => c.level !== 'low')
   const priorities: string[] = []
-  if (overdue > 0) priorities.push(`Régler les frais en retard (${fmt(overdue)}).`)
-  if (s.messages.unread > 0) priorities.push(`Lire ${s.messages.unread} message(s) des enseignants.`)
-  if (watch.length > 0) priorities.push(`Suivre la situation de ${watch.map((c) => c.firstName).slice(0, 3).join(', ')}.`)
-  if (upcomingHw > 0) priorities.push(`${upcomingHw} devoir(s) à venir — vérifier avec ${multi && !opts?.childId ? 'vos enfants' : 'votre enfant'}.`)
-  if (priorities.length === 0) priorities.push('Tout est en ordre cette semaine. 👍')
+  if (overdue > 0) priorities.push(trParent(locale, 'prOverdue', { amount: fmtMoney(overdue) }))
+  if (s.messages.unread > 0) priorities.push(trParent(locale, 'prMessages', { n: s.messages.unread }))
+  if (watch.length > 0) priorities.push(trParent(locale, 'prWatch', { names: watch.map((c) => c.firstName).slice(0, 3).join(', ') }))
+  if (upcomingHw > 0) priorities.push(trParent(locale, 'prHw', { n: upcomingHw, who: trParent(locale, multi && !opts?.childId ? 'whoChildren' : 'whoChild') }))
+  if (priorities.length === 0) priorities.push(trParent(locale, 'prNone'))
 
   const single = opts?.childId && children[0]
   const headline = single
-    ? `${children[0].firstName} · ${children[0].className}${children[0].average !== null ? ` · moyenne ${children[0].average}/20` : ''}${children[0].attendance.rate !== null ? ` · assiduité ${children[0].attendance.rate}%` : ''}.`
-    : `${s.totals.children} enfant(s)${s.totals.watch ? ` · ${s.totals.watch} à surveiller` : ''}${s.totals.outstanding > 0 ? ` · ${fmt(s.totals.outstanding)} à régler` : ''}${s.messages.unread ? ` · ${s.messages.unread} message(s) non lu(s)` : ''}.`
+    ? trParent(locale, 'headlineSingle', { firstName: children[0].firstName, className: children[0].className, avg: children[0].average, rate: children[0].attendance.rate })
+    : trParent(locale, 'headlineAll', { children: s.totals.children, watch: s.totals.watch || '', out: s.totals.outstanding > 0, amount: fmtMoney(s.totals.outstanding), unread: s.messages.unread || '' })
 
   return { headline, sections, priorities: priorities.slice(0, 4), meta }
 }

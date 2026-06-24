@@ -17,6 +17,7 @@ export type CopilotRequest = {
   query: string
   routed: RoutedQuery
   context: CopilotContext
+  locale?: string
 }
 
 export interface CopilotProvider {
@@ -64,9 +65,10 @@ function deriveConfidence(ctx: CopilotContext): CopilotConfidence {
   }
 }
 
-export function buildMetadata(providerId: string, ctx: CopilotContext, generatedAt: string): CopilotMetadata {
+export function buildMetadata(providerId: string, ctx: CopilotContext, generatedAt: string, locale: string = 'fr'): CopilotMetadata {
   return {
     provider: providerId,
+    locale,
     sources: SOURCE_MAP[ctx.kind] ?? [],
     confidence: deriveConfidence(ctx),
     generatedAt,

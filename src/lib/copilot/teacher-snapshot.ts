@@ -10,6 +10,7 @@
 
 import type { createClient } from '@/lib/supabase/server'
 import { assessRisk, type RiskLevel } from '@/lib/academic/risk-engine'
+import type { Locale } from '@/lib/i18n/locale'
 
 type Client = ReturnType<typeof createClient>
 
@@ -41,9 +42,10 @@ function emptySnapshot(teacherName: string, todayLabel: string): TeacherSnapshot
 
 export async function loadTeacherSnapshot(
   supabase: Client,
-  args: { schoolId: string; teacherId: string; teacherName: string; assignedClassSubjectIds: string[] },
+  args: { schoolId: string; teacherId: string; teacherName: string; assignedClassSubjectIds: string[]; locale?: Locale },
 ): Promise<TeacherSnapshot> {
   const { schoolId, teacherId, teacherName, assignedClassSubjectIds: csIds } = args
+  const locale: Locale = args.locale ?? 'fr'
   const now = new Date()
   const dow = ((now.getDay() + 6) % 7) + 1 // Mon=1 … Sun=7
   const todayLabel = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -186,7 +188,7 @@ export async function loadTeacherSnapshot(
       if (avgs.length) avg = round2(avgs.reduce((s, x) => s + x, 0) / avgs.length)
     }
     const att = absById.get(sid) ?? { absent: 0, late: 0 }
-    const r = assessRisk({ currentAverage: avg, previousAverage: null, failedSubjects: failed, rank: null, previousRank: null, classSize: 0, absences: att.absent, lates: att.late, unpaidInvoices: 0, overdueBalance: 0, disciplineIncidents: 0 })
+    const r = assessRisk({ currentAverage: avg, previousAverage: null, failedSubjects: failed, rank: null, previousRank: null, classSize: 0, absences: att.absent, lates: att.late, unpaidInvoices: 0, overdueBalance: 0, disciplineIncidents: 0 }, locale)
     const cid = studentClass.get(sid)
     return { studentId: sid, name: studentName.get(sid) ?? '—', classLabel: cid ? classLabelById.get(cid) ?? '—' : '—', level: r.level, score: r.score, reasons: r.reasons }
   }).filter((w) => w.level !== 'low').sort((a, b) => b.score - a.score).slice(0, 6)

@@ -1,5 +1,6 @@
 import type { createClient } from '@/lib/supabase/server'
 import { assessRisk, type RiskResult } from './risk-engine'
+import type { Locale } from '@/lib/i18n/locale'
 
 type SchoolClient = ReturnType<typeof createClient>
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -21,7 +22,7 @@ export type SchoolRisk = {
 // Computes risk for the active year's active students — entirely derived, never
 // stored. Pass opts.studentId to bound the work to a single student (profile).
 // All queries are tenant-scoped. Returns empty when there is no active year.
-export async function loadSchoolRisk(supabase: SchoolClient, schoolId: string, opts?: { studentId?: string }): Promise<SchoolRisk> {
+export async function loadSchoolRisk(supabase: SchoolClient, schoolId: string, opts?: { studentId?: string; locale?: Locale }): Promise<SchoolRisk> {
   const empty: SchoolRisk = { results: [], summary: { total: 0, high: 0, medium: 0 } }
 
   const { data: yearData } = await supabase
@@ -127,7 +128,7 @@ export async function loadSchoolRisk(supabase: SchoolClient, schoolId: string, o
       rank: null, previousRank: null, classSize: 0,
       absences: a.absent, lates: a.late,
       unpaidInvoices: f.unpaid, overdueBalance: f.overdue, disciplineIncidents: 0,
-    })
+    }, opts?.locale ?? 'fr')
     results.push({
       ...r, studentId: e.student_id, firstName: e.students?.first_name ?? '', lastName: e.students?.last_name ?? '',
       classId: e.class_id, className: [e.classes?.name, e.classes?.section].filter(Boolean).join(' '), average,

@@ -8,6 +8,8 @@
 
 import type { RiskLevel } from '@/lib/academic/risk-engine'
 import type { CopilotConfidence, CopilotMetadata, CopilotSource } from './types'
+import type { Locale } from '@/lib/i18n/locale'
+import { trStudent, studentAppreciation, riskLevelLabel, fmtFCFA as fmtMoney } from '@/lib/i18n/messages'
 
 // Structural input — satisfied by StudentSnapshot (risk + outstanding).
 export type StudentNarrativeInput = {
@@ -38,9 +40,6 @@ export type StudentNarrative = {
   meta: CopilotMetadata
 }
 
-const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA'
-const RISK_LABEL: Record<RiskLevel, string> = { low: 'faible', medium: 'moyen', high: 'élevé' }
-
 // Reuses the Phase 10A CopilotMetadata contract (provider-agnostic envelope).
 const NARRATIVE_SOURCES: CopilotSource[] = [
   { kind: 'student_record', label: 'Dossier élève' },
@@ -48,83 +47,73 @@ const NARRATIVE_SOURCES: CopilotSource[] = [
   { kind: 'finance', label: 'Finance' },
 ]
 
-// Risk reasons are emitted by our own deterministic engine, so bucketing them by
-// their French tokens is reliable.
+// Risk reasons come from our own deterministic catalog, so bucketing by tokens is
+// reliable across fr/en/wo (we control every wording).
 function categorize(reasons: string[]) {
   const academic: string[] = [], attendance: string[] = [], finance: string[] = [], other: string[] = []
   for (const r of reasons) {
     const n = r.toLowerCase()
-    if (/(moyenne|mati[èe]re|[ée]chec|classement|point|baisse)/.test(n)) academic.push(r)
-    else if (/(absence|retard)/.test(n)) attendance.push(r)
-    else if (/(solde|facture|frais)/.test(n)) finance.push(r)
+    if (/(moyenne|moyenn|mati[èe]re|matiere|[ée]chec|ñàkk|classement|ranking|point|poñ|baisse|drop|w[àa]ññ|average|subject|failing)/.test(n)) academic.push(r)
+    else if (/(absence|retard|late|yeegu)/.test(n)) attendance.push(r)
+    else if (/(solde|balance|facture|invoice|faktur|frais|fee|bor|overdue)/.test(n)) finance.push(r)
     else other.push(r)
   }
   return { academic, attendance, finance, other }
 }
 
-function appreciation(avg: number): string {
-  if (avg >= 14) return 'très bon niveau'
-  if (avg >= 12) return 'bon niveau'
-  if (avg >= 10) return 'niveau moyen'
-  if (avg >= 8) return 'en difficulté'
-  return 'en grande difficulté'
-}
-
-export function generateStudentNarrative(input: StudentNarrativeInput): StudentNarrative {
+export function generateStudentNarrative(input: StudentNarrativeInput, locale: Locale = 'fr'): StudentNarrative {
   const cat = categorize(input.reasons)
 
   // ── Academic ────────────────────────────────────────────────────────────────
   const academicLines: string[] = []
   let academicTone: NarrativeTone = 'neutral'
   if (input.average !== null) {
-    academicLines.push(`Moyenne générale : ${input.average}/20 (${appreciation(input.average)}).`)
+    academicLines.push(trStudent(locale, 'acadLine', { avg: input.average, appr: studentAppreciation(locale, input.average) }))
     academicTone = input.average >= 12 ? 'positive' : input.average >= 10 ? 'neutral' : input.average >= 8 ? 'warning' : 'critical'
   } else {
-    academicLines.push('Aucune moyenne disponible pour la période active.')
+    academicLines.push(trStudent(locale, 'acadNone'))
   }
   academicLines.push(...cat.academic)
 
   // ── Attendance ────────────────────────────────────────────────────────────────
-  const attendanceLines: string[] = cat.attendance.length > 0 ? cat.attendance : ['Assiduité sans signal particulier.']
+  const attendanceLines: string[] = cat.attendance.length > 0 ? cat.attendance : [trStudent(locale, 'attNone')]
   const attendanceTone: NarrativeTone = cat.attendance.length === 0 ? 'positive'
-    : cat.attendance.some((r) => /(8|9|\d{2})\s*absence/.test(r.toLowerCase())) ? 'critical' : 'warning'
+    : cat.attendance.some((r) => /(8|9|\d{2})\s*(absence|yeegu)/.test(r.toLowerCase())) ? 'critical' : 'warning'
 
   // ── Finance ─────────────────────────────────────────────────────────────────
   const financeLines: string[] = []
   let financeTone: NarrativeTone = 'positive'
   if (input.outstanding > 0) {
-    financeLines.push(`Solde dû : ${fmt(input.outstanding)}.`)
-    financeTone = cat.finance.some((r) => /retard/.test(r.toLowerCase())) ? 'critical' : 'warning'
+    financeLines.push(trStudent(locale, 'finDue', { amount: fmtMoney(input.outstanding) }))
+    financeTone = cat.finance.some((r) => /(retard|overdue|weesu)/.test(r.toLowerCase())) ? 'critical' : 'warning'
   } else {
-    financeLines.push('Situation financière à jour.')
+    financeLines.push(trStudent(locale, 'finOk'))
   }
   for (const r of cat.finance) if (!financeLines.includes(r)) financeLines.push(r)
 
   // ── Risk ──────────────────────────────────────────────────────────────────────
   const riskTone: NarrativeTone = input.level === 'high' ? 'critical' : input.level === 'medium' ? 'warning' : 'positive'
-  const riskLines: string[] = [`Niveau de risque global : ${RISK_LABEL[input.level]} (score ${input.score}/100).`, ...cat.other]
+  const riskLines: string[] = [trStudent(locale, 'riskLine', { level: riskLevelLabel(locale, input.level), score: input.score }), ...cat.other]
 
   const sections: NarrativeSection[] = [
-    { key: 'academic', heading: 'Scolarité', lines: academicLines, tone: academicTone },
-    { key: 'attendance', heading: 'Assiduité', lines: attendanceLines, tone: attendanceTone },
-    { key: 'finance', heading: 'Finance', lines: financeLines, tone: financeTone },
-    { key: 'risk', heading: 'Suivi & risque', lines: riskLines, tone: riskTone },
+    { key: 'academic', heading: trStudent(locale, 'headScolarite'), lines: academicLines, tone: academicTone },
+    { key: 'attendance', heading: trStudent(locale, 'headAssiduite'), lines: attendanceLines, tone: attendanceTone },
+    { key: 'finance', heading: trStudent(locale, 'headFinance'), lines: financeLines, tone: financeTone },
+    { key: 'risk', heading: trStudent(locale, 'headRisque'), lines: riskLines, tone: riskTone },
   ]
 
   // Recommendations are the risk engine's grounded interventions (deduped).
   const recommendations = input.actions.length > 0
     ? Array.from(new Set(input.actions))
-    : ['Aucune action particulière — poursuivre le suivi habituel.']
+    : [trStudent(locale, 'recNone')]
 
-  const headline = `${input.className} · ${input.average !== null ? `moyenne ${input.average}/20 · ` : ''}risque ${RISK_LABEL[input.level]}${input.outstanding > 0 ? ` · ${fmt(input.outstanding)} dû` : ''}.`
+  const headline = trStudent(locale, 'headline', {
+    className: input.className, avg: input.average, level: riskLevelLabel(locale, input.level),
+    out: input.outstanding > 0, amount: fmtMoney(input.outstanding),
+  })
 
   const confidence: CopilotConfidence = input.average === null ? 'medium' : 'high'
-  const meta: CopilotMetadata = {
-    provider: 'deterministic',
-    sources: NARRATIVE_SOURCES,
-    confidence,
-    generatedAt: new Date().toISOString(),
-  }
+  const meta: CopilotMetadata = { provider: 'deterministic', locale, sources: NARRATIVE_SOURCES, confidence, generatedAt: new Date().toISOString() }
 
   return {
     studentId: input.studentId,

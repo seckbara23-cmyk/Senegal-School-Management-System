@@ -12,6 +12,7 @@ import type { createClient } from '@/lib/supabase/server'
 import { loadStudentSnapshot } from './student-snapshot'
 import { loadParentThreads } from '@/lib/messaging'
 import type { RiskLevel } from '@/lib/academic/risk-engine'
+import type { Locale } from '@/lib/i18n/locale'
 
 type Client = ReturnType<typeof createClient>
 
@@ -44,9 +45,10 @@ const WATCH_TOKENS = /(moyenne|mati[èe]re|[ée]chec|baisse|classement|point|abs
 
 export async function loadParentSnapshot(
   supabase: Client,
-  args: { schoolId: string; parentId: string; parentName: string },
+  args: { schoolId: string; parentId: string; parentName: string; locale?: Locale },
 ): Promise<ParentSnapshot> {
   const { schoolId, parentId, parentName } = args
+  const locale: Locale = args.locale ?? 'fr'
   const todayISO = new Date().toISOString().slice(0, 10)
 
   const { data: linksData } = await supabase
@@ -92,7 +94,7 @@ export async function loadParentSnapshot(
     classIds.length
       ? supabase.from('homework').select('title, due_date, class_id, class_subjects!class_subject_id(subjects!subject_id(name))').eq('school_id', schoolId).in('class_id', classIds)
       : Promise.resolve({ data: [] }),
-    Promise.all(links.map((l) => loadStudentSnapshot(supabase, schoolId, l.student_id, { firstName: l.students?.first_name ?? '', lastName: l.students?.last_name ?? '', className: classByChild.get(l.student_id)?.className }))),
+    Promise.all(links.map((l) => loadStudentSnapshot(supabase, schoolId, l.student_id, { firstName: l.students?.first_name ?? '', lastName: l.students?.last_name ?? '', className: classByChild.get(l.student_id)?.className }, locale))),
     Promise.all(links.map(async (l) => {
       const { data } = await supabase.rpc('parent_child_transport', { p_student_id: l.student_id })
       const row = ((data ?? []) as { route_name: string; stop_name: string | null; pickup_time: string | null }[])[0] ?? null

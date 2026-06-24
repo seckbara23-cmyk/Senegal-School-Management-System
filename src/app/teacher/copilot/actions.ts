@@ -3,6 +3,7 @@
 import { requireTeacherCtx } from '../_auth'
 import { loadTeacherSnapshot } from '@/lib/copilot/teacher-snapshot'
 import { generateTeacherNarrative, type TeacherNarrative, type TeacherNarrativeKey } from '@/lib/copilot/teacher-narrative'
+import { resolveLocale } from '@/lib/i18n/server'
 import type { CopilotAnswer, CopilotIntent } from '@/lib/copilot/types'
 
 type Focus = 'overview' | 'watch' | 'homework' | 'attendance' | 'grading' | 'help'
@@ -29,10 +30,11 @@ function section(n: TeacherNarrative, key: TeacherNarrativeKey) {
 // No writes, no audit mutation, no notifications.
 export async function askTeacherCopilot(query: string): Promise<CopilotAnswer> {
   const { supabase, schoolId, teacher, assignedClassSubjectIds } = await requireTeacherCtx()
+  const locale = resolveLocale()
   const snapshot = await loadTeacherSnapshot(supabase, {
-    schoolId, teacherId: teacher.id, teacherName: `${teacher.last_name} ${teacher.first_name}`.trim(), assignedClassSubjectIds,
+    schoolId, teacherId: teacher.id, teacherName: `${teacher.last_name} ${teacher.first_name}`.trim(), assignedClassSubjectIds, locale,
   })
-  const n = generateTeacherNarrative(snapshot)
+  const n = generateTeacherNarrative(snapshot, locale)
   const focus = routeFocus(query)
   const meta = n.meta
 

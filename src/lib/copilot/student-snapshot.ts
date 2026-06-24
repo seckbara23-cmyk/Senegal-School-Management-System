@@ -7,6 +7,7 @@
 
 import type { createClient } from '@/lib/supabase/server'
 import { loadSchoolRisk, type StudentRisk } from '@/lib/academic/risk-data'
+import type { Locale } from '@/lib/i18n/locale'
 
 type Client = ReturnType<typeof createClient>
 
@@ -17,8 +18,9 @@ export async function loadStudentSnapshot(
   schoolId: string,
   studentId: string,
   fallback?: { firstName: string; lastName: string; className?: string },
+  locale: Locale = 'fr',
 ): Promise<StudentSnapshot | null> {
-  const risk = (await loadSchoolRisk(supabase, schoolId, { studentId })).results[0]
+  const risk = (await loadSchoolRisk(supabase, schoolId, { studentId, locale })).results[0]
 
   const { data: invs } = await supabase
     .from('student_invoices').select('total_amount, amount_paid, status')

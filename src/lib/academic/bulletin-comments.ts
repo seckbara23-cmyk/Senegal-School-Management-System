@@ -121,18 +121,80 @@ function closingFr(input: CommentInput, v: number): string {
   return pick([' Un accompagnement et un travail soutenu sont nécessaires pour redresser la situation.', ' Une mobilisation rapide est indispensable.'], v)
 }
 
+// en/wo (Phase 10F) ───────────────────────────────────────────────────────────
+// Single-phrasing localized builders (variant cycling is a French feature). Same
+// data-gated structure as fr; the teacher reviews and edits before approval.
+
+function joinList(names: string[], conj: string): string {
+  if (names.length === 0) return ''
+  if (names.length === 1) return names[0]
+  return `${names.slice(0, -1).join(', ')} ${conj} ${names[names.length - 1]}`
+}
+
+function buildEn(i: CommentInput): string {
+  const n = i.firstName, a = i.average
+  let t = a === null ? `${n}'s assessment data is insufficient to compute a mark this term.`
+    : a >= 16 ? `${n} has an excellent term with an average of ${a}/20.`
+    : a >= 14 ? `${n} achieves good results this term, with an average of ${a}/20.`
+    : a >= 12 ? `${n} shows satisfactory results, with an average of ${a}/20.`
+    : a >= 10 ? `${n} obtains an average of ${a}/20 — fair results that need consolidating.`
+    : `${n} is struggling this term, with an average of ${a}/20.`
+  if (a !== null && i.previousAverage !== null) {
+    const d = Math.round((a - i.previousAverage) * 10) / 10
+    if (d >= 1) t += ` Clear progress (+${d} from the previous term).`
+    else if (d <= -1) t += ` Results are down (${d}) from the previous term.`
+    else t += ' Results are stable compared with the previous term.'
+  }
+  if (i.rank !== null && i.classSize > 1) {
+    if (i.rank <= 3) t += ` ${n} ranks among the top of the class (${i.rank}/${i.classSize}).`
+    else if (i.rank / i.classSize <= 0.5) t += ` The ranking (${i.rank}/${i.classSize}) places ${n} in the top half of the class.`
+  }
+  if (i.strongSubjects.length) t += ` Results are especially solid in ${joinList(i.strongSubjects, 'and')}.`
+  if (i.weakSubjects.length) t += ` Sustained effort is expected in ${joinList(i.weakSubjects, 'and')}.`
+  if (i.absences >= 5 || (i.attendanceRate !== null && i.attendanceRate < 85)) t += ` Attendance must improve (${i.absences} absence${i.absences > 1 ? 's' : ''} recorded).`
+  else if (i.absences >= 1 || i.lates >= 3) t += ` Attendance should be watched (${i.absences} absence${i.absences > 1 ? 's' : ''}${i.lates > 0 ? `, ${i.lates} late arrival${i.lates > 1 ? 's' : ''}` : ''}).`
+  else if (i.attendanceRate !== null && i.attendanceRate >= 98) t += ' Attendance is exemplary.'
+  if (a !== null) t += a >= 14 ? ' Keep it up.' : a >= 10 ? ' Regular effort will bring progress.' : ' Close support and sustained work are needed.'
+  return t
+}
+
+function buildWo(i: CommentInput): string {
+  const n = i.firstName, a = i.average
+  let t = a === null ? `Jukki yu ${n} doy-uñu ngir jël moyenn ci trimestre bii.`
+    : a >= 16 ? `${n} def na trimestre bu rafet, moyenn bu ${a}/20.`
+    : a >= 14 ? `${n} am na njariñ yu baax ci trimestre bii, moyenn bu ${a}/20.`
+    : a >= 12 ? `${n} am na njariñ yu doy, moyenn bu ${a}/20.`
+    : a >= 10 ? `${n} am na moyenn bu ${a}/20, njariñ yu war a dëgëral.`
+    : `${n} am na jafe-jafe ci trimestre bii, moyenn bu ${a}/20.`
+  if (a !== null && i.previousAverage !== null) {
+    const d = Math.round((a - i.previousAverage) * 10) / 10
+    if (d >= 1) t += ` Yokkute bu leer (+${d} ci trimestre bi weesu).`
+    else if (d <= -1) t += ` Njariñ yi wàññiku nañu (${d}) ci trimestre bi weesu.`
+    else t += ' Njariñ yi sax nañu ni trimestre bi weesu.'
+  }
+  if (i.rank !== null && i.classSize > 1) {
+    if (i.rank <= 3) t += ` ${n} nekk na ci njiit yi ci kalaas bi (${i.rank}/${i.classSize}).`
+    else if (i.rank / i.classSize <= 0.5) t += ` Classement bi (${i.rank}/${i.classSize}) teg na ${n} ci genn-wàll bu njëkk bi.`
+  }
+  if (i.strongSubjects.length) t += ` Njariñ yi dëgër nañu lool ci ${joinList(i.strongSubjects, 'ak')}.`
+  if (i.weakSubjects.length) t += ` Coono bu sax ñu ngi xaar ci ${joinList(i.weakSubjects, 'ak')}.`
+  if (i.absences >= 5 || (i.attendanceRate !== null && i.attendanceRate < 85)) t += ` Teew bi war na gën a baax (${i.absences} absence).`
+  else if (i.absences >= 1 || i.lates >= 3) t += ` War nañoo topp teew bi (${i.absences} absence${i.lates > 0 ? `, ${i.lates} yeegu` : ''}).`
+  else if (i.attendanceRate !== null && i.attendanceRate >= 98) t += ' Teew bi mat na sëkk.'
+  if (a !== null) t += a >= 14 ? ' Wéyal noonu.' : a >= 10 ? ' Liggéey bu sax dina indi yokkute.' : ' Ndimbal ak liggéey bu sax a soxla.'
+  return t
+}
+
 export function generateBulletinComment(input: CommentInput): string {
   const v = input.variant ?? 0
-  // Only 'fr' is implemented; other locales fall back to French for now.
-  const parts = [
-    openingFr(input, v),
-    trendFr(input, v),
-    rankFr(input, v),
-    subjectsFr(input, v),
-    attendanceFr(input, v),
-    closingFr(input, v),
-  ]
-  let text = parts.join('').replace(/\s+/g, ' ').trim()
+  let text: string
+  if (input.locale === 'en') text = buildEn(input)
+  else if (input.locale === 'wo') text = buildWo(input)
+  else {
+    // French (canonical) — variant-aware, byte-identical to the original.
+    text = [openingFr(input, v), trendFr(input, v), rankFr(input, v), subjectsFr(input, v), attendanceFr(input, v), closingFr(input, v)].join('')
+  }
+  text = text.replace(/\s+/g, ' ').trim()
 
   // Teacher's own observation is appended verbatim (never altered/invented).
   const obs = input.observations.trim()

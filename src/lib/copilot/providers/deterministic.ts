@@ -7,12 +7,14 @@
 import type { CopilotProvider, CopilotRequest } from '../provider'
 import { buildMetadata } from '../provider'
 import { generateAnswer } from '../answer-generator'
+import { parseLocale } from '@/lib/i18n/locale'
 
 export const deterministicProvider: CopilotProvider = {
   id: 'deterministic',
   label: 'Moteur déterministe',
   async generate(req: CopilotRequest) {
-    const answer = generateAnswer(req.context)
-    return { ...answer, meta: buildMetadata('deterministic', req.context, new Date().toISOString()) }
+    const locale = parseLocale(req.locale)
+    const answer = generateAnswer(req.context, locale)
+    return { ...answer, meta: buildMetadata('deterministic', req.context, new Date().toISOString(), locale) }
   },
 }

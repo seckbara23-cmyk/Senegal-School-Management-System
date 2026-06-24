@@ -3,6 +3,7 @@
 import { requireParentCtx } from '../_auth'
 import { loadParentSnapshot, type ParentSnapshot } from '@/lib/copilot/parent-snapshot'
 import { generateParentNarrative, type ParentNarrative, type ParentSectionKey } from '@/lib/copilot/parent-narrative'
+import { resolveLocale } from '@/lib/i18n/server'
 import type { CopilotAnswer, CopilotIntent } from '@/lib/copilot/types'
 
 type Focus = 'overview' | 'scolarite' | 'presences' | 'devoirs' | 'paiements' | 'transport' | 'messages' | 'help'
@@ -36,7 +37,8 @@ function sec(nar: ParentNarrative, keys: ParentSectionKey[]) {
 // writes, no audit mutation, no notifications.
 export async function askParentCopilot(query: string): Promise<CopilotAnswer> {
   const { supabase, schoolId, parent } = await requireParentCtx()
-  const snapshot = await loadParentSnapshot(supabase, { schoolId, parentId: parent.id, parentName: `${parent.last_name} ${parent.first_name}`.trim() })
+  const locale = resolveLocale()
+  const snapshot = await loadParentSnapshot(supabase, { schoolId, parentId: parent.id, parentName: `${parent.last_name} ${parent.first_name}`.trim(), locale })
 
   // Multi-child name disambiguation.
   const matched = matchChildren(query, snapshot.children)
@@ -45,12 +47,12 @@ export async function askParentCopilot(query: string): Promise<CopilotAnswer> {
     return {
       intent: 'student_360', title: 'De quel enfant s’agit-il ?',
       summary: `Plusieurs enfants correspondent : ${names.join(', ')}. Précisez le prénom.`,
-      sections: [], links: [], meta: generateParentNarrative(snapshot).meta,
+      sections: [], links: [], meta: generateParentNarrative(snapshot, locale).meta,
       suggestions: snapshot.children.map((c) => `Comment va ${c.firstName} ?`),
     }
   }
   const childId = matched.length === 1 ? matched[0] : undefined
-  const nar = generateParentNarrative(snapshot, childId ? { childId } : undefined)
+  const nar = generateParentNarrative(snapshot, locale, childId ? { childId } : undefined)
   const focus = routeFocus(query)
   const meta = nar.meta
   const cq = childId ? `?child=${childId}` : ''

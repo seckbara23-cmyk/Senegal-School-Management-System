@@ -7,6 +7,7 @@ import { routeIntent } from '@/lib/copilot/intent-router'
 import { canAccess } from '@/lib/copilot/permissions'
 import { buildContext } from '@/lib/copilot/context-builder'
 import { getCopilotProvider } from '@/lib/copilot/registry'
+import { resolveLocale } from '@/lib/i18n/server'
 import type { CopilotAnswer } from '@/lib/copilot/types'
 
 // Read-only. Pipeline preserved end-to-end:
@@ -27,6 +28,7 @@ export async function askCopilot(query: string): Promise<CopilotAnswer> {
   const schoolId = (membership as { school_id: string }).school_id
 
   const trimmed = (query ?? '').slice(0, 300)
+  const locale = resolveLocale()
 
   // 1) Intent Router
   const routed = routeIntent(trimmed)
@@ -36,16 +38,16 @@ export async function askCopilot(query: string): Promise<CopilotAnswer> {
     return {
       intent: routed.intent, title: 'Accès restreint',
       summary: 'Vous n’êtes pas autorisé à consulter ces informations.', sections: [], links: [],
-      meta: { provider: 'deterministic', sources: [], confidence: 'low', generatedAt: new Date().toISOString() },
+      meta: { provider: 'deterministic', locale, sources: [], confidence: 'low', generatedAt: new Date().toISOString() },
     }
   }
 
   // 3) Context Builder (sole database access, tenant-scoped under RLS)
-  const ctx = await buildContext(supabase, schoolId, routed)
+  const ctx = await buildContext(supabase, schoolId, routed, locale)
 
   // 4) Provider (no DB access — consumes the built context only)
   const provider = getCopilotProvider()
-  const answer = await provider.generate({ query: trimmed, routed, context: ctx })
+  const answer = await provider.generate({ query: trimmed, routed, context: ctx, locale })
 
   // 5) Response (audited)
   await logAuditEvent(supabase, {
